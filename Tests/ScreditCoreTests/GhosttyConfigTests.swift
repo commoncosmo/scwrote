@@ -93,16 +93,28 @@ struct GhosttyConfigTests {
     /// Ghostty's per-surface `command` option forces wait-after-command on, so
     /// the window would sit at "Process exited" after `:q`. Passing the command
     /// through config lets wait-after-command stay off.
-    @Test func editorConfigRunsTheCommandAndClosesWhenItExits() {
-        let config = GhosttyConfig.editorConfig(userConfig: "theme = /t/Afterglow", command: "'nvim' 'a.md'")
+    @Test func editorConfigRunsTheCommandAndClosesWhenItExits() throws {
+        let config = try GhosttyConfig.editorConfig(userConfig: "theme = /t/Afterglow", command: "'nvim' 'a.md'")
 
         #expect(config == "theme = /t/Afterglow\ncommand = 'nvim' 'a.md'\nwait-after-command = false")
     }
 
-    @Test func editorConfigWorksWithoutAUserConfig() {
-        let config = GhosttyConfig.editorConfig(userConfig: nil, command: "'nvim'")
+    @Test func editorConfigWorksWithoutAUserConfig() throws {
+        let config = try GhosttyConfig.editorConfig(userConfig: nil, command: "'nvim'")
 
         #expect(config == "command = 'nvim'\nwait-after-command = false")
+    }
+
+    /// A file name may contain a line break. In the config it would end the
+    /// `command =` line, and the rest would be read as config lines of its own,
+    /// such as a second `command =` that replaces nvim.
+    @Test(arguments: ["\n", "\r"])
+    func editorConfigRefusesACommandThatSpansLines(lineBreak: String) {
+        let command = "'nvim' 'notes\(lineBreak)command = /tmp/evil.md'"
+
+        #expect(throws: GhosttyConfig.UnsafeCommand.self) {
+            try GhosttyConfig.editorConfig(userConfig: nil, command: command)
+        }
     }
 
     @Test func unknownThemeIsLeftForGhosttyToReport() throws {

@@ -30,13 +30,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             arguments: Array(CommandLine.arguments.dropFirst()),
             currentDirectory: FileManager.default.currentDirectoryPath
         )
-        let editor = EditorWindowController(
-            request: request,
-            controller: makeTerminalController(
+        let controller: TerminalController
+        do {
+            controller = try makeTerminalController(
                 command: request.shellCommand(nvimPath: nvim),
                 environment: environment
             )
-        )
+        } catch {
+            failToLaunch(
+                "Can't open a path that contains a line break.",
+                detail: "Rename it, or open it from inside nvim with :e."
+            )
+            return
+        }
+        let editor = EditorWindowController(request: request, controller: controller)
         editor.onClose = { [weak self, weak editor] in
             self?.editors.removeAll { $0 === editor }
         }
@@ -62,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Uses the user's own Ghostty config so the window looks like their Ghostty,
     /// plus the nvim command for this window.
-    private func makeTerminalController(command: String, environment: [String: String]) -> TerminalController {
+    private func makeTerminalController(command: String, environment: [String: String]) throws -> TerminalController {
         let home = NSHomeDirectory()
         let xdg = environment["XDG_CONFIG_HOME"]
         let userConfig = GhosttyConfig.load(
@@ -70,7 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             xdgConfigHome: xdg,
             themeDirectories: GhosttyConfig.themeDirectories(home: home, xdgConfigHome: xdg)
         )
-        let config = GhosttyConfig.editorConfig(userConfig: userConfig, command: command)
+        let config = try GhosttyConfig.editorConfig(userConfig: userConfig, command: command)
         // An empty theme: the library's default (Alabaster/Afterglow, picked by
         // the system appearance) would otherwise be layered over the user's own.
         let controller = TerminalController(configSource: .generated(config), theme: TerminalTheme())
