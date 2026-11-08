@@ -47,6 +47,11 @@ the repo runs the latest `swift build -c release`.
 
 ## Known quirks
 
+- macOS only lets a new app take focus while it still descends from the app
+  you're typing in. So the launcher waits (up to 5 seconds) until scredit
+  signals it's in front, via SIGUSR1 to `SCREDIT_NOTIFY_PID`, before giving
+  the prompt back. If it exited at once, the window would open behind your
+  terminal.
 - The nvim command is passed through Ghostty's config, not the surface's
   `command` option: libghostty forces `wait-after-command` on for surface
   commands, which would leave the window at "Process exited" after `:q`.

@@ -5,11 +5,20 @@ import ScreditCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var editors: [EditorWindowController] = []
+    /// The `scredit` launcher waiting to hear that this app is in front.
+    private var launcherToNotify: pid_t?
 
     func applicationDidFinishLaunching(_: Notification) {
         NSApp.mainMenu = MainMenu.make()
 
         let environment = ProcessInfo.processInfo.environment
+        launcherToNotify = LauncherHandoff.pidToNotify(
+            environmentValue: environment[LauncherHandoff.environmentKey],
+            parentPID: getppid()
+        )
+        // Keep it out of nvim's environment, and of anything nvim starts.
+        unsetenv(LauncherHandoff.environmentKey)
+
         // SCREDIT_DEBUG=1 logs libghostty's lifecycle and actions to
         // ~/Library/Logs/scredit.log (the launcher sends stderr there).
         if environment["SCREDIT_DEBUG"] != nil {
@@ -50,6 +59,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editors.append(editor)
         editor.showWindow(nil)
         NSApp.activate()
+    }
+
+    /// We're in front: the launcher can exit and give the shell its prompt back.
+    func applicationDidBecomeActive(_: Notification) {
+        guard let launcher = launcherToNotify else { return }
+        launcherToNotify = nil
+        kill(launcher, SIGUSR1)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {

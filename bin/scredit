@@ -27,7 +27,16 @@ else
   exit 1
 fi
 
-# Detach so the prompt comes back right away and closing the terminal
-# doesn't take the window with it.
+# Start the app detached (nohup), so closing the terminal doesn't take the
+# window with it.
+#
+# Then wait: macOS only lets a new app take focus while it still descends from
+# the app you're typing in, so if this script exited now, the window would open
+# behind your terminal. The app sends SIGUSR1 once it's in front; after 5
+# seconds we give the prompt back regardless.
 log="$HOME/Library/Logs/scredit.log"
-nohup "$app" "$@" </dev/null >>"$log" 2>&1 &
+trap 'kill "$timer" 2>/dev/null; exit 0' USR1
+SCREDIT_NOTIFY_PID=$$ nohup "$app" "$@" </dev/null >>"$log" 2>&1 &
+sleep 5 &
+timer=$!
+wait "$timer"
