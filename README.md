@@ -17,15 +17,23 @@ uses your Ghostty config (font, theme) and closes when nvim exits.
 Requires macOS 27, Xcode 27, and Neovim (`brew install neovim`).
 
 ```bash
-swift build -c release
-ln -s "$PWD/bin/scredit" ~/.local/bin/scredit   # any folder on your PATH
-swift test                                      # unit tests for ScreditCore
+./install.sh                  # test, build, install to ~/.local
+PREFIX=/opt/me ./install.sh   # or somewhere else
 ```
+
+This puts the command at `~/.local/bin/scredit` and the app (binary plus the
+resource folder libghostty loads from beside it) in `~/.local/share/scredit/`.
+The installed copy doesn't depend on the repo; run `./install.sh` again to
+update it. Day-to-day loop: `./install.sh && scredit README.md`.
+
+Without installing, `swift test` runs the unit tests, and `bin/scredit` from
+the repo runs the latest `swift build -c release`.
 
 ## Layout
 
 - `bin/scredit`: launcher. Runs the app binary directly (not via `open`) so it
   inherits the shell's environment and working directory.
+- `install.sh`: tests, builds, and installs the launcher and app under `PREFIX`.
 - `Sources/ScreditCore`: pure logic, unit tested: argument handling, Ghostty
   config loading, finding `nvim` on `PATH`.
 - `Sources/Scredit`: the AppKit app: one window per process, hosting a

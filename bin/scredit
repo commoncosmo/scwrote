@@ -5,7 +5,7 @@
 # child of this shell and inherits its environment (PATH, etc.) and working
 # directory. Apps started with `open` get a minimal environment instead.
 
-# Follow symlinks (e.g. ~/.local/bin/scredit) back to the repo.
+# Follow symlinks back to where this script really lives.
 script="$0"
 while [ -L "$script" ]; do
   target=$(readlink "$script")
@@ -16,9 +16,14 @@ while [ -L "$script" ]; do
 done
 root=$(cd "$(dirname "$script")/.." && pwd)
 
-app="$root/.build/release/Scredit"
-if [ ! -x "$app" ]; then
-  echo "scredit: not built yet. Run: swift build -c release --package-path \"$root\"" >&2
+# Installed by install.sh: <prefix>/bin/scredit runs <prefix>/share/scredit/Scredit.
+# Run from the repo: bin/scredit runs the latest release build.
+if [ -x "$root/share/scredit/Scredit" ]; then
+  app="$root/share/scredit/Scredit"
+elif [ -x "$root/.build/release/Scredit" ]; then
+  app="$root/.build/release/Scredit"
+else
+  echo "scredit: no build found. Run ./install.sh in the scredit repo." >&2
   exit 1
 fi
 
