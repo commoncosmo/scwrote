@@ -1,0 +1,28 @@
+#!/bin/sh
+# scredit <file|folder> — open a scredit window running nvim on it.
+#
+# Runs the app's binary directly instead of through `open`, so the app is a
+# child of this shell and inherits its environment (PATH, etc.) and working
+# directory. Apps started with `open` get a minimal environment instead.
+
+# Follow symlinks (e.g. ~/.local/bin/scredit) back to the repo.
+script="$0"
+while [ -L "$script" ]; do
+  target=$(readlink "$script")
+  case "$target" in
+    /*) script="$target" ;;
+    *) script="$(dirname "$script")/$target" ;;
+  esac
+done
+root=$(cd "$(dirname "$script")/.." && pwd)
+
+app="$root/.build/release/Scredit"
+if [ ! -x "$app" ]; then
+  echo "scredit: not built yet. Run: swift build -c release --package-path \"$root\"" >&2
+  exit 1
+fi
+
+# Detach so the prompt comes back right away and closing the terminal
+# doesn't take the window with it.
+log="$HOME/Library/Logs/scredit.log"
+nohup "$app" "$@" </dev/null >>"$log" 2>&1 &
