@@ -9,6 +9,8 @@ public struct FileEntry: Equatable, Sendable {
 /// A key press, already translated from the platform's key event.
 public enum BrowserKey: Equatable, Sendable {
     case character(Character)
+    /// A Ctrl+letter chord other than Ctrl-d / Ctrl-u, such as Ctrl-w.
+    case control(Character)
     case up, down, left, right
     case enter, escape
     case halfPageDown, halfPageUp
@@ -46,6 +48,8 @@ public struct FileBrowser {
     private var count: Int?
     /// `g` was typed and waits for its second key (`gg`, `gh`).
     private var pendingG = false
+    /// Ctrl-w was typed and waits for its direction, as between vim splits.
+    private var pendingWindowCommand = false
 
     public init(root: String) {
         self.root = root
@@ -57,6 +61,19 @@ public struct FileBrowser {
     }
 
     public mutating func handle(_ key: BrowserKey, pageHeight: Int) -> BrowserAction? {
+        if pendingWindowCommand {
+            pendingWindowCommand = false
+            count = nil
+            // The editor is right of the browser, and next and previous in
+            // the window cycle. There's nothing above, below or left of it.
+            switch key {
+            case .character("l"), .character("w"), .character("W"), .control("l"), .control("w"), .right:
+                return .leave
+            default:
+                return nil
+            }
+        }
+
         if pendingG {
             pendingG = false
             defer { count = nil }
@@ -90,6 +107,7 @@ public struct FileBrowser {
             pendingG = true
             count = typedCount
         case .character("-"): goUp()
+        case .control("w"): pendingWindowCommand = true
         case .halfPageDown: move(by: halfPage)
         case .halfPageUp: move(by: -halfPage)
         case .escape: return .leave

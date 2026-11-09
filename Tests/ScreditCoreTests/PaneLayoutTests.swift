@@ -157,3 +157,45 @@ struct PaneLayoutPinTests {
         #expect(layout.focus == .editor)
     }
 }
+
+/// nvim hands off to the browser (Ctrl-w h from its leftmost window, and the like).
+struct PaneLayoutFocusBrowserTests {
+    @Test func aHiddenBrowserIsShownAndFocused() {
+        var layout = PaneLayout(startsInBrowser: false)
+
+        layout.focusBrowser()
+
+        #expect(layout.mode == .split)
+        #expect(layout.focus == .browser)
+    }
+
+    @Test func aPinnedBrowserJustTakesFocus() {
+        var layout = PaneLayout(startsInBrowser: false)
+        layout.togglePin()
+
+        layout.focusBrowser()
+
+        #expect(layout.mode == .split)
+        #expect(layout.focus == .browser)
+    }
+
+    /// Unlike Cmd+1, asking again never hides it.
+    @Test func askingFromInsideTheBrowserChangesNothing() {
+        var layout = PaneLayout(startsInBrowser: false)
+        layout.focusBrowser()
+
+        layout.focusBrowser()
+
+        #expect(layout.mode == .split)
+        #expect(layout.focus == .browser)
+    }
+
+    @Test func theFullWindowBrowserStaysFullWindow() {
+        var layout = PaneLayout(startsInBrowser: true)
+
+        layout.focusBrowser()
+
+        #expect(layout.mode == .browserOnly)
+        #expect(layout.focus == .browser)
+    }
+}

@@ -67,6 +67,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window.center()
         watch(request.browserRoot)
         applyPanes()
+        listenForNvim(socketPath: nvimSocket)
     }
 
     @available(*, unavailable)
@@ -135,6 +136,30 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             guard let file = try? await nvimCall({ try $0.currentFile() }) else { return }
             browserView.reveal(file)
         }
+    }
+
+    /// Adds nvim's Ctrl-w mappings and waits for them to ask for the browser,
+    /// on a connection and thread of their own, for as long as nvim runs.
+    private func listenForNvim(socketPath: String) {
+        let events = NvimClient(socketPath: socketPath, connectTimeout: 10)
+        let focusBrowser: @MainActor @Sendable () -> Void = { [weak self] in
+            self?.change { $0.focusBrowser() }
+        }
+        let thread = Thread {
+            do {
+                try events.installPaneMappings()
+                while let notification = try events.nextNotification() {
+                    guard notification == NvimPaneMappings.browserRequest else { continue }
+                    Task { @MainActor in focusBrowser() }
+                }
+            } catch NvimClient.Failure.connectionLost {
+                // nvim exited; the window closes with it.
+            } catch {
+                FileHandle.standardError.write(Data("scredit: no Ctrl-w to the file browser: \(error)\n".utf8))
+            }
+        }
+        thread.name = "scredit.nvim-events"
+        thread.start()
     }
 
     private func nvimCall<T: Sendable>(_ work: @escaping @Sendable (NvimClient) throws -> T) async throws -> T {

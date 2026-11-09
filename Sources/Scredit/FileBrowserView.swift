@@ -94,10 +94,13 @@ final class FileBrowserView: NSView {
         default: break
         }
         if flags.contains(.control) {
-            switch event.charactersIgnoringModifiers {
+            guard let characters = event.charactersIgnoringModifiers, characters.count == 1,
+                  let character = characters.first
+            else { return nil }
+            switch character {
             case "d": return .halfPageDown
             case "u": return .halfPageUp
-            default: return nil
+            default: return .control(character) // Ctrl-w and the like
             }
         }
         guard let characters = event.characters, characters.count == 1, let character = characters.first else {

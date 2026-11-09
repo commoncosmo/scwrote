@@ -5,8 +5,8 @@ import ScreditCore
 ///
 ///   SCREDIT_DEBUG_KEYS="jj<CR><D-1>"   keys to press after launch, 0.4 s apart:
 ///       plain characters go to the browser; <CR>, <Esc>, <Up>, <Down>,
-///       <Left>, <Right>, <C-d>, <C-u> are browser keys; <D-1> is Cmd+1 and
-///       <D-S-1> is Cmd+Shift+1.
+///       <Left>, <Right>, <C-d>, <C-u>, <C-w>, <C-l> are browser keys; <D-1>
+///       is Cmd+1 and <D-S-1> is Cmd+Shift+1.
 ///   SCREDIT_DEBUG_SNAPSHOT=/path.png   afterwards, save a picture of the window.
 extension EditorWindowController {
     func runDebugHooks() {
@@ -43,6 +43,7 @@ extension EditorWindowController {
             "<Up>": .browser(.up), "<Down>": .browser(.down),
             "<Left>": .browser(.left), "<Right>": .browser(.right),
             "<C-d>": .browser(.halfPageDown), "<C-u>": .browser(.halfPageUp),
+            "<C-w>": .browser(.control("w")), "<C-l>": .browser(.control("l")),
             "<D-1>": .toggleBrowser, "<D-S-1>": .togglePin,
         ]
         var keys: [DebugKey] = []
