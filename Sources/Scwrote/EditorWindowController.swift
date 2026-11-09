@@ -1,6 +1,6 @@
 import AppKit
 import GhosttyTerminal
-import ScreditCore
+import ScwroteCore
 
 /// One window: the file browser and a Ghostty terminal surface running nvim,
 /// shown according to `PaneLayout`.
@@ -17,7 +17,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
     /// nvim's RPC socket. Calls block, so they run on `nvimQueue`.
     private let nvim: NvimClient
-    private let nvimQueue = DispatchQueue(label: "scredit.nvim")
+    private let nvimQueue = DispatchQueue(label: "scwrote.nvim")
     private var watcher: FolderWatcher?
 
     /// `controller` carries the nvim command in its config (see
@@ -143,7 +143,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
                 change { $0.openedFile() }
             } catch {
                 NSSound.beep()
-                FileHandle.standardError.write(Data("scredit: couldn't open \(path) in nvim: \(error)\n".utf8))
+                FileHandle.standardError.write(Data("scwrote: couldn't open \(path) in nvim: \(error)\n".utf8))
             }
         }
     }
@@ -230,7 +230,7 @@ extension EditorWindowController: TerminalSurfaceTitleDelegate, TerminalSurfaceC
 
 /// Catches the window's own keys (`WindowShortcut`: Cmd+1, Cmd+Shift+1,
 /// Cmd+[, Cmd+]) before the terminal sees them: Ghostty binds Cmd+digit to
-/// tabs and Cmd+[ / Cmd+] to splits, neither of which scredit has.
+/// tabs and Cmd+[ / Cmd+] to splits, neither of which scwrote has.
 @MainActor
 final class EditorWindow: NSWindow {
     var onShortcut: ((WindowShortcut) -> Void)?

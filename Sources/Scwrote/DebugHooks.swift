@@ -1,19 +1,19 @@
 import AppKit
-import ScreditCore
+import ScwroteCore
 
 /// Opt-in hooks for checking the window without a keyboard or screen access.
 ///
-///   SCREDIT_DEBUG_KEYS="jj<CR><D-1>"   keys to press after launch, 0.4 s apart:
+///   SCWROTE_DEBUG_KEYS="jj<CR><D-1>"   keys to press after launch, 0.4 s apart:
 ///       plain characters go to the browser; <CR>, <Esc>, <Up>, <Down>,
 ///       <Left>, <Right>, <C-d>, <C-u> are browser keys. The window's own
 ///       keys, <D-1> (Cmd+1), <D-S-1>, <D-[> and <D-]>, are posted as real
 ///       key events, so they take the path a keyboard's would.
-///   SCREDIT_DEBUG_SNAPSHOT=/path.png   afterwards, save a picture of the window.
+///   SCWROTE_DEBUG_SNAPSHOT=/path.png   afterwards, save a picture of the window.
 extension EditorWindowController {
     func runDebugHooks() {
         let environment = ProcessInfo.processInfo.environment
-        let keys = environment["SCREDIT_DEBUG_KEYS"].map(Self.parseKeys) ?? []
-        let snapshot = environment["SCREDIT_DEBUG_SNAPSHOT"]
+        let keys = environment["SCWROTE_DEBUG_KEYS"].map(Self.parseKeys) ?? []
+        let snapshot = environment["SCWROTE_DEBUG_SNAPSHOT"]
         guard !keys.isEmpty || snapshot != nil else { return }
 
         Task {
@@ -101,6 +101,6 @@ extension EditorWindowController {
               let png = bitmap.representation(using: .png, properties: [:])
         else { return }
         try? png.write(to: URL(fileURLWithPath: path))
-        FileHandle.standardError.write(Data("scredit: snapshot saved to \(path)\n".utf8))
+        FileHandle.standardError.write(Data("scwrote: snapshot saved to \(path)\n".utf8))
     }
 }

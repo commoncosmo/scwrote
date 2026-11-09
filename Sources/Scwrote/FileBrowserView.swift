@@ -1,5 +1,5 @@
 import AppKit
-import ScreditCore
+import ScwroteCore
 
 /// Draws a `FileBrowser` like a terminal pane (one monospaced line per row, in
 /// the Ghostty theme's colors) and feeds it vim keys.

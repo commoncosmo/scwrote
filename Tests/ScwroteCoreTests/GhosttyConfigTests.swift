@@ -1,12 +1,12 @@
 import Foundation
 import Testing
-@testable import ScreditCore
+@testable import ScwroteCore
 
 struct GhosttyConfigTests {
     /// A fresh folder holding empty theme files with the given names.
     private func themeFolder(_ names: String...) throws -> String {
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("scredit-themes-\(UUID().uuidString)")
+            .appendingPathComponent("scwrote-themes-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         for name in names {
             FileManager.default.createFile(atPath: folder.appendingPathComponent(name).path, contents: Data())

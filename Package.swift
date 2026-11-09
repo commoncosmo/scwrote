@@ -2,10 +2,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "scredit",
+    name: "scwrote",
     platforms: [.macOS("27.0")],
     products: [
-        .executable(name: "Scredit", targets: ["Scredit"]),
+        .executable(name: "Scwrote", targets: ["Scwrote"]),
     ],
     dependencies: [
         // Pinned exactly: libghostty's API is not stable yet, and this package
@@ -14,17 +14,17 @@ let package = Package(
     ],
     targets: [
         // Pure logic with no AppKit or Ghostty dependency, so it can be unit tested.
-        .target(name: "ScreditCore"),
+        .target(name: "ScwroteCore"),
         .executableTarget(
-            name: "Scredit",
+            name: "Scwrote",
             dependencies: [
-                "ScreditCore",
+                "ScwroteCore",
                 .product(name: "GhosttyTerminal", package: "libghostty-spm"),
                 // The C API, for reading theme colors out of the Ghostty config.
                 .product(name: "GhosttyKit", package: "libghostty-spm"),
             ]
         ),
-        .testTarget(name: "ScreditCoreTests", dependencies: ["ScreditCore"]),
+        .testTarget(name: "ScwroteCoreTests", dependencies: ["ScwroteCore"]),
     ],
     swiftLanguageModes: [.v6]
 )

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Reads the user's own Ghostty config so scredit windows look like their Ghostty.
+/// Reads the user's own Ghostty config so scwrote windows look like their Ghostty.
 public enum GhosttyConfig {
     /// Config files Ghostty itself reads on macOS, in the order it reads them
     /// (later files override earlier ones).

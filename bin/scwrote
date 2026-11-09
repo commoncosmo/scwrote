@@ -1,5 +1,5 @@
 #!/bin/sh
-# scredit <file|folder> — open a scredit window running nvim on it.
+# scwrote <file|folder> — open a scwrote window running nvim on it.
 #
 # Runs the app's binary directly instead of through `open`, so the app is a
 # child of this shell and inherits its environment (PATH, etc.) and working
@@ -16,14 +16,14 @@ while [ -L "$script" ]; do
 done
 root=$(cd "$(dirname "$script")/.." && pwd)
 
-# Installed by install.sh: <prefix>/bin/scredit runs <prefix>/share/scredit/Scredit.
-# Run from the repo: bin/scredit runs the latest release build.
-if [ -x "$root/share/scredit/Scredit" ]; then
-  app="$root/share/scredit/Scredit"
-elif [ -x "$root/.build/release/Scredit" ]; then
-  app="$root/.build/release/Scredit"
+# Installed by install.sh: <prefix>/bin/scwrote runs <prefix>/share/scwrote/Scwrote.
+# Run from the repo: bin/scwrote runs the latest release build.
+if [ -x "$root/share/scwrote/Scwrote" ]; then
+  app="$root/share/scwrote/Scwrote"
+elif [ -x "$root/.build/release/Scwrote" ]; then
+  app="$root/.build/release/Scwrote"
 else
-  echo "scredit: no build found. Run ./install.sh in the scredit repo." >&2
+  echo "scwrote: no build found. Run ./install.sh in the scwrote repo." >&2
   exit 1
 fi
 
@@ -34,9 +34,9 @@ fi
 # the app you're typing in, so if this script exited now, the window would open
 # behind your terminal. The app sends SIGUSR1 once it's in front; after 5
 # seconds we give the prompt back regardless.
-log="$HOME/Library/Logs/scredit.log"
+log="$HOME/Library/Logs/scwrote.log"
 trap 'kill "$timer" 2>/dev/null; exit 0' USR1
-SCREDIT_NOTIFY_PID=$$ nohup "$app" "$@" </dev/null >>"$log" 2>&1 &
+SCWROTE_NOTIFY_PID=$$ nohup "$app" "$@" </dev/null >>"$log" 2>&1 &
 sleep 5 &
 timer=$!
 wait "$timer"

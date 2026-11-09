@@ -1,11 +1,11 @@
 import AppKit
 import GhosttyTerminal
-import ScreditCore
+import ScwroteCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var editors: [EditorWindowController] = []
-    /// The `scredit` launcher waiting to hear that this app is in front.
+    /// The `scwrote` launcher waiting to hear that this app is in front.
     private var launcherToNotify: pid_t?
 
     func applicationDidFinishLaunching(_: Notification) {
@@ -19,9 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Keep it out of nvim's environment, and of anything nvim starts.
         unsetenv(LauncherHandoff.environmentKey)
 
-        // SCREDIT_DEBUG=1 logs libghostty's lifecycle and actions to
-        // ~/Library/Logs/scredit.log (the launcher sends stderr there).
-        if environment["SCREDIT_DEBUG"] != nil {
+        // SCWROTE_DEBUG=1 logs libghostty's lifecycle and actions to
+        // ~/Library/Logs/scwrote.log (the launcher sends stderr there).
+        if environment["SCWROTE_DEBUG"] != nil {
             TerminalDebugLog.enable([.lifecycle, .actions])
             TerminalDebugLog.sink = { message in
                 FileHandle.standardError.write(Data("ghostty: \(message)\n".utf8))
@@ -30,7 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let nvim = ExecutableLocator.find("nvim", searchPath: environment["PATH"] ?? "") else {
             failToLaunch(
                 "Couldn't find nvim on your PATH.",
-                detail: "Install it with `brew install neovim`, then run scredit again."
+                detail: "Install it with `brew install neovim`, then run scwrote again."
             )
             return
         }
@@ -44,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
         // nvim listens here so the file browser can tell it what to open.
-        let nvimSocket = NSTemporaryDirectory() + "scredit-\(getpid()).sock"
+        let nvimSocket = NSTemporaryDirectory() + "scwrote-\(getpid()).sock"
         let controller: TerminalController
         let config: String
         do {
@@ -88,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
         guard editors.contains(where: \.isNvimRunning) else { return .terminateNow }
         let alert = NSAlert()
-        alert.messageText = "Quit scredit?"
+        alert.messageText = "Quit scwrote?"
         alert.informativeText = "nvim is still running. Any unsaved changes will be lost."
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Cancel")
@@ -113,15 +113,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // An empty theme: the library's default (Alabaster/Afterglow, picked by
         // the system appearance) would otherwise be layered over the user's own.
         let controller = TerminalController(configSource: .generated(config), theme: TerminalTheme())
-        if environment["SCREDIT_DEBUG"] != nil {
+        if environment["SCWROTE_DEBUG"] != nil {
             let bg = controller.backgroundColor
-            FileHandle.standardError.write(Data("scredit: background=\(bg.red),\(bg.green),\(bg.blue)\n".utf8))
+            FileHandle.standardError.write(Data("scwrote: background=\(bg.red),\(bg.green),\(bg.blue)\n".utf8))
         }
         return (controller, config)
     }
 
     private func failToLaunch(_ message: String, detail: String) {
-        FileHandle.standardError.write(Data("scredit: \(message) \(detail)\n".utf8))
+        FileHandle.standardError.write(Data("scwrote: \(message) \(detail)\n".utf8))
         let alert = NSAlert()
         alert.messageText = message
         alert.informativeText = detail

@@ -1,6 +1,6 @@
 import Foundation
 
-/// What `scredit <args>` asked for, turned into what the window should run.
+/// What `scwrote <args>` asked for, turned into what the window should run.
 public struct LaunchRequest: Equatable, Sendable {
     /// Folder nvim starts in.
     public var workingDirectory: String
@@ -30,7 +30,7 @@ public struct LaunchRequest: Equatable, Sendable {
     /// No path, or a single folder, starts in the file browser on that folder,
     /// which also becomes nvim's working directory (like opening a project).
     /// Anything else goes to nvim exactly as typed, from the shell's folder, so
-    /// `scredit <files>` behaves like `nvim <files>` in that shell.
+    /// `scwrote <files>` behaves like `nvim <files>` in that shell.
     public static func resolve(
         arguments: [String],
         currentDirectory: String,
@@ -62,7 +62,7 @@ public struct LaunchRequest: Equatable, Sendable {
         )
     }
 
-    /// The command Ghostty runs. nvim listens on `listenAddress` so scredit can
+    /// The command Ghostty runs. nvim listens on `listenAddress` so scwrote can
     /// talk to it. Ghostty hands the command to a shell, so every word is
     /// single-quoted to keep spaces and quotes in paths intact.
     public func shellCommand(nvimPath: String, listenAddress: String) -> String {

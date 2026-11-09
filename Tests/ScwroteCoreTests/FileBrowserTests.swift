@@ -1,12 +1,12 @@
 import Foundation
 import Testing
-@testable import ScreditCore
+@testable import ScwroteCore
 
 /// Builds a real folder tree in a temporary directory. Paths ending in "/" are
 /// folders; everything else is an empty file.
 private func makeTree(_ paths: [String]) throws -> String {
     let root = FileManager.default.temporaryDirectory
-        .appendingPathComponent("scredit-tree-\(UUID().uuidString)").path
+        .appendingPathComponent("scwrote-tree-\(UUID().uuidString)").path
     try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
     for path in paths {
         let full = "\(root)/\(path)"
@@ -224,13 +224,13 @@ struct FileBrowserFolderTests {
     }
 
     @Test func revealOpensTheFoldersDownToAFileAndSelectsIt() throws {
-        let root = try makeTree(["Sources/Scredit/AppDelegate.swift", "Sources/Core/x.swift", "README.md"])
+        let root = try makeTree(["Sources/Scwrote/AppDelegate.swift", "Sources/Core/x.swift", "README.md"])
         var browser = FileBrowser(root: root)
 
-        browser.reveal("\(root)/Sources/Scredit/AppDelegate.swift")
+        browser.reveal("\(root)/Sources/Scwrote/AppDelegate.swift")
 
         #expect(browser.outline == [
-            "Sources/", "  Core/", "  Scredit/", "    AppDelegate.swift", "README.md",
+            "Sources/", "  Core/", "  Scwrote/", "    AppDelegate.swift", "README.md",
         ])
         #expect(browser.selectedName == "AppDelegate.swift")
     }

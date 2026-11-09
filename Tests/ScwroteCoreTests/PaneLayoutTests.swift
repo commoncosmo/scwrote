@@ -1,5 +1,5 @@
 import Testing
-@testable import ScreditCore
+@testable import ScwroteCore
 
 struct PaneLayoutStartTests {
     @Test func startingOnAFolderShowsOnlyTheBrowser() {

@@ -1,5 +1,5 @@
 import Testing
-@testable import ScreditCore
+@testable import ScwroteCore
 
 /// Physical keys (macOS virtual key codes, US layout positions).
 private let key1: UInt16 = 18

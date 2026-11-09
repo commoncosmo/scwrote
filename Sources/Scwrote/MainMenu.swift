@@ -5,15 +5,15 @@ import AppKit
 enum MainMenu {
     @MainActor
     static func make() -> NSMenu {
-        let appMenu = NSMenu(title: "scredit")
-        appMenu.addItem(withTitle: "About scredit", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        let appMenu = NSMenu(title: "scwrote")
+        appMenu.addItem(withTitle: "About scwrote", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide scredit", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "Hide scwrote", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthers.keyEquivalentModifierMask = [.command, .option]
         appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit scredit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit scwrote", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         // The window catches these keys first (see EditorWindow); the items
         // make them discoverable and clickable.

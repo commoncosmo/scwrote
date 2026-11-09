@@ -1,8 +1,8 @@
 import AppKit
 import GhosttyKit
-import ScreditCore
+import ScwroteCore
 
-/// Colors and font for what scredit draws itself (the file browser), taken
+/// Colors and font for what scwrote draws itself (the file browser), taken
 /// from the same Ghostty config the terminal uses so both panes match.
 struct Theme {
     var background: NSColor
@@ -24,7 +24,7 @@ struct Theme {
     /// TerminalController exists: creating one initializes libghostty.
     static func load(configContents: String) -> Theme {
         let file = FileManager.default.temporaryDirectory
-            .appendingPathComponent("scredit-theme-\(UUID().uuidString).conf")
+            .appendingPathComponent("scwrote-theme-\(UUID().uuidString).conf")
         try? configContents.write(to: file, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: file) }
 

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ScreditCore
+@testable import ScwroteCore
 
 private let nvimPath = ExecutableLocator.find("nvim", searchPath: ProcessInfo.processInfo.environment["PATH"] ?? "")
 
@@ -35,7 +35,7 @@ struct NvimClientTests {
     @Test func editOpensTheFileInNvim() throws {
         let nvim = try HeadlessNvim()
         let client = NvimClient(socketPath: nvim.socketPath)
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("scredit nvim \(UUID().uuidString)")
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("scwrote nvim \(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let file = folder.appendingPathComponent("it's my notes.md").path
         FileManager.default.createFile(atPath: file, contents: Data("# hi\n".utf8))

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ScreditCore
+@testable import ScwroteCore
 
 private func bytes(_ values: UInt8...) -> [UInt8] { values }
 

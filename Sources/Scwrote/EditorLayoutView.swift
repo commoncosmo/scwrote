@@ -1,5 +1,5 @@
 import AppKit
-import ScreditCore
+import ScwroteCore
 
 /// Lays out the file browser and the editor for a `PaneLayout.Mode`, with a
 /// draggable divider between them.

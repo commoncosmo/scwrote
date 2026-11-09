@@ -1,11 +1,11 @@
 import Foundation
 import Testing
-@testable import ScreditCore
+@testable import ScwroteCore
 
 struct ExecutableLocatorTests {
     private func folder(withExecutable name: String?, executable: Bool = true) throws -> String {
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("scredit-bin-\(UUID().uuidString)")
+            .appendingPathComponent("scwrote-bin-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         if let name {
             let file = folder.appendingPathComponent(name).path

@@ -1,8 +1,8 @@
 import Testing
-@testable import ScreditCore
+@testable import ScwroteCore
 
-/// SIGUSR1 terminates a process that isn't listening for it, so scredit may
-/// only signal a launcher that asked (via SCREDIT_NOTIFY_PID) and is still its
+/// SIGUSR1 terminates a process that isn't listening for it, so scwrote may
+/// only signal a launcher that asked (via SCWROTE_NOTIFY_PID) and is still its
 /// parent, never whatever process happens to be its parent, like a shell.
 struct LauncherHandoffTests {
     @Test func notifiesTheLauncherThatAskedWhileItIsStillTheParent() {

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ScreditCore
+@testable import ScwroteCore
 
 struct LaunchRequestTests {
     /// Folders that exist, for `isDirectory`; everything else counts as a file.
