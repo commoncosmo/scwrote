@@ -127,4 +127,27 @@ struct GhosttyConfigTests {
 
         #expect(resolved == "theme = Nonexistent")
     }
+
+    // MARK: - Top padding
+
+    @Test func topPaddingDefaultsToGhosttysTwoPoints() {
+        #expect(GhosttyConfig.topPadding(in: "theme = Afterglow") == 2)
+        #expect(GhosttyConfig.topPadding(in: nil) == 2)
+    }
+
+    @Test func topPaddingReadsASingleValue() {
+        #expect(GhosttyConfig.topPadding(in: "window-padding-y = 6") == 6)
+    }
+
+    @Test func topPaddingIsTheFirstOfTwoValues() {
+        #expect(GhosttyConfig.topPadding(in: "window-padding-y = 3,10") == 3)
+    }
+
+    @Test func laterPaddingLinesWin() {
+        #expect(GhosttyConfig.topPadding(in: "window-padding-y = 6\nwindow-padding-y = 1") == 1)
+    }
+
+    @Test func unreadablePaddingKeepsThePreviousValue() {
+        #expect(GhosttyConfig.topPadding(in: "window-padding-y = 6\nwindow-padding-y = lots") == 6)
+    }
 }

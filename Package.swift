@@ -20,6 +20,8 @@ let package = Package(
             dependencies: [
                 "ScreditCore",
                 .product(name: "GhosttyTerminal", package: "libghostty-spm"),
+                // The C API, for reading theme colors out of the Ghostty config.
+                .product(name: "GhosttyKit", package: "libghostty-spm"),
             ]
         ),
         .testTarget(name: "ScreditCoreTests", dependencies: ["ScreditCore"]),

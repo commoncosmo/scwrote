@@ -79,6 +79,20 @@ public enum GhosttyConfig {
         return "\(userConfig)\n\(editorLines)"
     }
 
+    /// Points between the top of the terminal and its first line: the first
+    /// of `window-padding-y`'s values (`2` or `2,4`), Ghostty's default 2 if
+    /// unset. A value Ghostty couldn't read leaves the previous one in place.
+    public static func topPadding(in config: String?) -> Double {
+        var top = 2.0
+        for line in (config ?? "").split(separator: "\n") {
+            let parts = line.split(separator: "=", maxSplits: 1)
+            guard parts.count == 2, parts[0].trimmingCharacters(in: .whitespaces) == "window-padding-y" else { continue }
+            let first = parts[1].split(separator: ",").first?.trimmingCharacters(in: .whitespaces) ?? ""
+            if let value = Double(first) { top = value }
+        }
+        return top
+    }
+
     /// The user's Ghostty config, ready to hand to the embedded library, or nil
     /// if they have none (the library's defaults apply).
     public static func load(home: String, xdgConfigHome: String?, themeDirectories: [String]) -> String? {

@@ -15,13 +15,20 @@ enum MainMenu {
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit scredit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
+        // The window catches these keys first (see EditorWindow); the items
+        // make them discoverable and clickable.
+        let viewMenu = NSMenu(title: "View")
+        viewMenu.addItem(withTitle: "Toggle File Browser", action: #selector(EditorWindowController.toggleFileBrowser(_:)), keyEquivalent: "1")
+        let pin = viewMenu.addItem(withTitle: "Pin File Browser", action: #selector(EditorWindowController.toggleFileBrowserPin(_:)), keyEquivalent: "1")
+        pin.keyEquivalentModifierMask = [.command, .shift]
+
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
 
         let mainMenu = NSMenu()
-        for menu in [appMenu, windowMenu] {
+        for menu in [appMenu, viewMenu, windowMenu] {
             mainMenu.addItem(withTitle: menu.title, action: nil, keyEquivalent: "").submenu = menu
         }
         NSApp.windowsMenu = windowMenu

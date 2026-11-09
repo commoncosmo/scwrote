@@ -8,9 +8,33 @@ scredit ./
 scredit ./source/testrepo/README.md
 ```
 
-`scredit <args>` behaves like `nvim <args>` typed in the same shell: same
-arguments, same working directory, same environment (`PATH` and all). The window
-uses your Ghostty config (font, theme) and closes when nvim exits.
+`scredit <files>` behaves like `nvim <files>` typed in the same shell: same
+arguments, same working directory, same environment (`PATH` and all). With a
+folder, or no argument, it opens a file browser on that folder instead, and the
+folder becomes nvim's working directory. The window uses your Ghostty config
+(font, theme) and closes when nvim exits.
+
+## File browser
+
+Fills the window when you start on a folder; choosing a file opens it in nvim
+and hides the browser. Pinned, it stays beside the editor.
+
+| Key | Does |
+|---|---|
+| Cmd+1 | show the browser and go to it / go to it / hide it |
+| Esc | back to the editor (hides the browser unless pinned) |
+| Cmd+Shift+1 | pin / unpin |
+| `j` `k`, ↓ ↑ | move (counts work: `5j`) |
+| `l`, → | open a folder, step into an open one, open a file |
+| `h`, ← | close a folder, or jump to the folder you're in |
+| Enter, `o` | open a file, or open/close a folder |
+| `gg` `G` | top / bottom (`3G`: third row) |
+| Ctrl-d Ctrl-u | half a page down / up |
+| `-` | go up a folder |
+| `gh` | show / hide dotfiles |
+
+Files open through nvim's RPC socket (scredit starts nvim with `--listen`),
+using `:edit`. The tree follows changes on disk.
 
 ## Build and install
 
@@ -35,7 +59,9 @@ the repo runs the latest `swift build -c release`.
   inherits the shell's environment and working directory.
 - `install.sh`: tests, builds, and installs the launcher and app under `PREFIX`.
 - `Sources/ScreditCore`: pure logic, unit tested: argument handling, Ghostty
-  config loading, finding `nvim` on `PATH`.
+  config loading, finding `nvim` on `PATH`, the file browser and its keys,
+  pane show/hide/pin rules, MessagePack and the nvim RPC client (tested
+  against a real headless nvim).
 - `Sources/Scredit`: the AppKit app: one window per process, hosting a
   libghostty surface ([libghostty-spm](https://github.com/Lakr233/libghostty-spm),
   pinned exactly because libghostty's API isn't stable yet).
@@ -44,6 +70,15 @@ the repo runs the latest `swift build -c release`.
 
 `SCREDIT_DEBUG=1 scredit README.md` logs libghostty's lifecycle and actions to
 `~/Library/Logs/scredit.log`.
+
+To check the window without touching it, press keys and save a picture:
+
+```bash
+SCREDIT_DEBUG_KEYS='G<CR>' SCREDIT_DEBUG_SNAPSHOT=/tmp/shot.png scredit ./
+```
+
+Keys go to the browser; `<CR>` `<Esc>` `<Up>` `<Down>` `<Left>` `<Right>`
+`<C-d>` `<C-u>` are named keys, `<D-1>` is Cmd+1 and `<D-S-1>` Cmd+Shift+1.
 
 ## Known quirks
 

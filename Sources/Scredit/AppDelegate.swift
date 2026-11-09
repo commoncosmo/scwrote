@@ -37,12 +37,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let request = LaunchRequest.resolve(
             arguments: Array(CommandLine.arguments.dropFirst()),
-            currentDirectory: FileManager.default.currentDirectoryPath
+            currentDirectory: FileManager.default.currentDirectoryPath,
+            isDirectory: { path in
+                var isDirectory: ObjCBool = false
+                return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
+            }
         )
+        // nvim listens here so the file browser can tell it what to open.
+        let nvimSocket = NSTemporaryDirectory() + "scredit-\(getpid()).sock"
         let controller: TerminalController
+        let config: String
         do {
-            controller = try makeTerminalController(
-                command: request.shellCommand(nvimPath: nvim),
+            (controller, config) = try makeTerminalController(
+                command: request.shellCommand(nvimPath: nvim, listenAddress: nvimSocket),
                 environment: environment
             )
         } catch {
@@ -52,7 +59,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             return
         }
-        let editor = EditorWindowController(request: request, controller: controller)
+        let editor = EditorWindowController(
+            request: request,
+            controller: controller,
+            nvimSocket: nvimSocket,
+            theme: Theme.load(configContents: config)
+        )
         editor.onClose = { [weak self, weak editor] in
             self?.editors.removeAll { $0 === editor }
         }
@@ -84,8 +96,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Uses the user's own Ghostty config so the window looks like their Ghostty,
-    /// plus the nvim command for this window.
-    private func makeTerminalController(command: String, environment: [String: String]) throws -> TerminalController {
+    /// plus the nvim command for this window. Returns the config too, for the
+    /// file browser's theme.
+    private func makeTerminalController(
+        command: String,
+        environment: [String: String]
+    ) throws -> (TerminalController, String) {
         let home = NSHomeDirectory()
         let xdg = environment["XDG_CONFIG_HOME"]
         let userConfig = GhosttyConfig.load(
@@ -101,7 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let bg = controller.backgroundColor
             FileHandle.standardError.write(Data("scredit: background=\(bg.red),\(bg.green),\(bg.blue)\n".utf8))
         }
-        return controller
+        return (controller, config)
     }
 
     private func failToLaunch(_ message: String, detail: String) {
