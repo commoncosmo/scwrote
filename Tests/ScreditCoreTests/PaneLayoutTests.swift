@@ -158,7 +158,7 @@ struct PaneLayoutPinTests {
     }
 }
 
-/// nvim hands off to the browser (Ctrl-w h from its leftmost window, and the like).
+/// Cmd+[: go to the browser, wherever you are.
 struct PaneLayoutFocusBrowserTests {
     @Test func aHiddenBrowserIsShownAndFocused() {
         var layout = PaneLayout(startsInBrowser: false)

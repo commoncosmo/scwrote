@@ -32,8 +32,8 @@ public struct PaneLayout: Equatable, Sendable {
         }
     }
 
-    /// nvim handed off to the browser (Ctrl-w h from its leftmost window):
-    /// show it if hidden and go to it. Never hides it, unlike Cmd+1.
+    /// Cmd+[: show the browser if hidden and go to it. Never hides it, unlike
+    /// Cmd+1, so pressing it twice leaves you in the browser.
     public mutating func focusBrowser() {
         if mode == .editorOnly { mode = .split }
         focus = .browser

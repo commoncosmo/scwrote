@@ -5,8 +5,9 @@ import ScreditCore
 ///
 ///   SCREDIT_DEBUG_KEYS="jj<CR><D-1>"   keys to press after launch, 0.4 s apart:
 ///       plain characters go to the browser; <CR>, <Esc>, <Up>, <Down>,
-///       <Left>, <Right>, <C-d>, <C-u>, <C-w>, <C-l> are browser keys; <D-1>
-///       is Cmd+1 and <D-S-1> is Cmd+Shift+1.
+///       <Left>, <Right>, <C-d>, <C-u> are browser keys. The window's own
+///       keys, <D-1> (Cmd+1), <D-S-1>, <D-[> and <D-]>, are posted as real
+///       key events, so they take the path a keyboard's would.
 ///   SCREDIT_DEBUG_SNAPSHOT=/path.png   afterwards, save a picture of the window.
 extension EditorWindowController {
     func runDebugHooks() {
@@ -20,8 +21,7 @@ extension EditorWindowController {
             for key in keys {
                 switch key {
                 case let .browser(browserKey): browserView.press(browserKey)
-                case .toggleBrowser: toggleFileBrowser(nil)
-                case .togglePin: toggleFileBrowserPin(nil)
+                case let .keyboard(keyCode, characters, modifiers): post(keyCode, characters, modifiers)
                 }
                 try? await Task.sleep(for: .milliseconds(400))
             }
@@ -34,7 +34,23 @@ extension EditorWindowController {
 
     private enum DebugKey {
         case browser(BrowserKey)
-        case toggleBrowser, togglePin
+        /// A key event for the app to deliver as if typed.
+        case keyboard(UInt16, String, NSEvent.ModifierFlags)
+    }
+
+    /// Posts a key press and release to the app's event queue: they go through
+    /// the same key-equivalent and first-responder handling as a keyboard's.
+    private func post(_ keyCode: UInt16, _ characters: String, _ modifiers: NSEvent.ModifierFlags) {
+        guard let window else { return }
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            guard let event = NSEvent.keyEvent(
+                with: type, location: .zero, modifierFlags: modifiers,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                context: nil, characters: characters, charactersIgnoringModifiers: characters,
+                isARepeat: false, keyCode: keyCode
+            ) else { continue }
+            NSApp.postEvent(event, atStart: false)
+        }
     }
 
     private static func parseKeys(_ script: String) -> [DebugKey] {
@@ -43,8 +59,8 @@ extension EditorWindowController {
             "<Up>": .browser(.up), "<Down>": .browser(.down),
             "<Left>": .browser(.left), "<Right>": .browser(.right),
             "<C-d>": .browser(.halfPageDown), "<C-u>": .browser(.halfPageUp),
-            "<C-w>": .browser(.control("w")), "<C-l>": .browser(.control("l")),
-            "<D-1>": .toggleBrowser, "<D-S-1>": .togglePin,
+            "<D-1>": .keyboard(18, "1", [.command]), "<D-S-1>": .keyboard(18, "!", [.command, .shift]),
+            "<D-[>": .keyboard(33, "[", [.command]), "<D-]>": .keyboard(30, "]", [.command]),
         ]
         var keys: [DebugKey] = []
         var rest = Substring(script)

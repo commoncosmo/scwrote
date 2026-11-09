@@ -1,16 +1,5 @@
 import Foundation
 
-/// A message nvim sends on its own, such as `rpcnotify(channel, method, ...)`.
-public struct NvimNotification: Equatable, Sendable {
-    public let method: String
-    public let params: [MessagePackValue]
-
-    public init(method: String, params: [MessagePackValue]) {
-        self.method = method
-        self.params = params
-    }
-}
-
 /// A blocking msgpack-RPC client for a running nvim's `--listen` socket.
 /// Calls block until nvim answers, so make them off the main thread.
 public final class NvimClient: @unchecked Sendable {
@@ -29,11 +18,6 @@ public final class NvimClient: @unchecked Sendable {
     private var socket: Int32 = -1
     private var nextRequestID: Int64 = 1
     private var received = Data()
-    /// Notifications that arrived while waiting for an answer.
-    private var notifications: [NvimNotification] = []
-
-    /// The socket's receive timeout passed with nothing to read.
-    private struct ReadTimeout: Error {}
 
     /// `connectTimeout` covers nvim still starting up when the first request
     /// is made: until then the socket file may not exist yet.
@@ -62,37 +46,7 @@ public final class NvimClient: @unchecked Sendable {
         }
     }
 
-    /// Waits for nvim's next notification. Nil if `timeout` passes first;
-    /// without one, waits as long as nvim runs. Holds the connection while it
-    /// waits, so listen on a client of its own.
-    public func nextNotification(timeout: TimeInterval? = nil) throws -> NvimNotification? {
-        lock.lock()
-        defer { lock.unlock() }
-        if socket < 0 { try connect() }
-
-        let deadline = timeout.map { Date().addingTimeInterval($0) }
-        while notifications.isEmpty {
-            do {
-                keepIfNotification(try nextMessage())
-            } catch is ReadTimeout {
-                if let deadline, Date() >= deadline { return nil }
-            } catch {
-                disconnect()
-                throw error
-            }
-        }
-        return notifications.removeFirst()
-    }
-
     // MARK: - nvim commands
-
-    /// This connection's channel in nvim, for `rpcnotify` to reach it.
-    public func channelID() throws -> Int64 {
-        guard case let .array(info) = try request("nvim_get_api_info", []), case let .int(id)? = info.first else {
-            throw Failure.nvim("unexpected reply to nvim_get_api_info")
-        }
-        return id
-    }
 
     /// `:edit` the file. The path is passed as data, never spliced into a
     /// command, so names with spaces or quotes are safe.
@@ -160,7 +114,6 @@ public final class NvimClient: @unchecked Sendable {
         if socket >= 0 { Darwin.close(socket) }
         socket = -1
         received.removeAll()
-        notifications.removeAll()
     }
 
     private func send(_ data: Data) throws {
@@ -174,46 +127,23 @@ public final class NvimClient: @unchecked Sendable {
         }
     }
 
-    /// Reads messages until the response to `id` arrives. Notifications that
-    /// come first are kept for `nextNotification`; anything else is skipped.
+    /// Reads messages until the response to `id` arrives. Anything else nvim
+    /// sends meanwhile (notifications, requests to us) is skipped.
     private func response(to id: Int64) throws -> MessagePackValue {
-        while true {
-            let message: MessagePackValue
-            do {
-                message = try nextMessage()
-            } catch is ReadTimeout {
-                throw Failure.connectionLost
-            }
-            keepIfNotification(message)
-            guard case let .array(parts) = message, parts.count == 4,
-                  parts[0] == .int(1), parts[1] == .int(id)
-            else { continue }
-            if parts[2] != .nil { throw Failure.nvim(Self.describe(parts[2])) }
-            return parts[3]
-        }
-    }
-
-    /// The next whole message, reading from the socket as needed.
-    private func nextMessage() throws -> MessagePackValue {
         var chunk = [UInt8](repeating: 0, count: 64 * 1024)
         while true {
-            if let (message, length) = MessagePackValue.decode(received) {
+            while let (message, length) = MessagePackValue.decode(received) {
                 received.removeFirst(length)
-                return message
+                guard case let .array(parts) = message, parts.count == 4,
+                      parts[0] == .int(1), parts[1] == .int(id)
+                else { continue }
+                if parts[2] != .nil { throw Failure.nvim(Self.describe(parts[2])) }
+                return parts[3]
             }
             let count = Darwin.read(socket, &chunk, chunk.count)
-            if count < 0, errno == EAGAIN || errno == EWOULDBLOCK { throw ReadTimeout() }
             guard count > 0 else { throw Failure.connectionLost }
             received.append(contentsOf: chunk[..<count])
         }
-    }
-
-    /// Notifications arrive as [2, method, params].
-    private func keepIfNotification(_ message: MessagePackValue) {
-        guard case let .array(parts) = message, parts.count == 3, parts[0] == .int(2),
-              case let .string(method) = parts[1], case let .array(params) = parts[2]
-        else { return }
-        notifications.append(NvimNotification(method: method, params: params))
     }
 
     /// nvim errors arrive as [type, message].

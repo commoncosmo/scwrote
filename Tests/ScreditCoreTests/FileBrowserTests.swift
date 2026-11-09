@@ -265,33 +265,6 @@ struct FileBrowserActionTests {
         #expect(browser.handle(.escape, pageHeight: 20) == .leave)
     }
 
-    /// Ctrl-w, as between vim splits: the editor is to the right of the
-    /// browser, and next and previous in the window cycle.
-    @Test(arguments: [
-        BrowserKey.character("l"), .character("w"), .character("W"), .control("l"), .control("w"),
-    ])
-    func ctrlWTowardTheEditorLeavesTheBrowser(second: BrowserKey) throws {
-        let root = try makeTree(["README.md"])
-        var browser = FileBrowser(root: root)
-
-        #expect(browser.handle(.control("w"), pageHeight: 20) == nil)
-        #expect(browser.handle(second, pageHeight: 20) == .leave)
-    }
-
-    /// There's no window above, below or left of the browser. The key after
-    /// Ctrl-w is spent either way, as in vim: `j` doesn't also move the cursor.
-    @Test func ctrlWAnyOtherWayDoesNothing() throws {
-        let root = try makeTree(["a.md", "b.md"])
-        var browser = FileBrowser(root: root)
-
-        #expect(browser.handle(.control("w"), pageHeight: 20) == nil)
-        #expect(browser.type("j") == nil)
-        #expect(browser.selectedName == "a.md")
-
-        #expect(browser.type("j") == nil)
-        #expect(browser.selectedName == "b.md")
-    }
-
     @Test func clickingARowSelectsItAndOutOfRangeRowsAreIgnored() throws {
         let root = try makeTree(["a.md", "b.md", "c.md"])
         var browser = FileBrowser(root: root)

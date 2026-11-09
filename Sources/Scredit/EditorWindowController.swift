@@ -48,8 +48,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
 
         window.delegate = self
-        window.onToggleBrowser = { [weak self] in self?.toggleFileBrowser(nil) }
-        window.onTogglePin = { [weak self] in self?.toggleFileBrowserPin(nil) }
+        window.onShortcut = { [weak self] in self?.perform($0) }
 
         terminalView.delegate = self
         terminalView.configuration = TerminalSurfaceOptions(
@@ -67,7 +66,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window.center()
         watch(request.browserRoot)
         applyPanes()
-        listenForNvim(socketPath: nvimSocket)
     }
 
     @available(*, unavailable)
@@ -91,6 +89,25 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// Cmd+Shift+1 (View menu).
     @objc func toggleFileBrowserPin(_: Any?) {
         change { $0.togglePin() }
+    }
+
+    /// Cmd+[ (View menu): go to the browser, showing it if hidden.
+    @objc func goToFileBrowser(_: Any?) {
+        change { $0.focusBrowser() }
+    }
+
+    /// Cmd+] (View menu): go to the editor, hiding the browser unless pinned.
+    @objc func goToEditor(_: Any?) {
+        change { $0.leaveBrowser() }
+    }
+
+    private func perform(_ shortcut: WindowShortcut) {
+        switch shortcut {
+        case .toggleBrowser: toggleFileBrowser(nil)
+        case .toggleBrowserPin: toggleFileBrowserPin(nil)
+        case .goToBrowser: goToFileBrowser(nil)
+        case .goToEditor: goToEditor(nil)
+        }
     }
 
     /// Applies a layout change. A browser that just appeared opens on the file
@@ -136,30 +153,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             guard let file = try? await nvimCall({ try $0.currentFile() }) else { return }
             browserView.reveal(file)
         }
-    }
-
-    /// Adds nvim's Ctrl-w mappings and waits for them to ask for the browser,
-    /// on a connection and thread of their own, for as long as nvim runs.
-    private func listenForNvim(socketPath: String) {
-        let events = NvimClient(socketPath: socketPath, connectTimeout: 10)
-        let focusBrowser: @MainActor @Sendable () -> Void = { [weak self] in
-            self?.change { $0.focusBrowser() }
-        }
-        let thread = Thread {
-            do {
-                try events.installPaneMappings()
-                while let notification = try events.nextNotification() {
-                    guard notification == NvimPaneMappings.browserRequest else { continue }
-                    Task { @MainActor in focusBrowser() }
-                }
-            } catch NvimClient.Failure.connectionLost {
-                // nvim exited; the window closes with it.
-            } catch {
-                FileHandle.standardError.write(Data("scredit: no Ctrl-w to the file browser: \(error)\n".utf8))
-            }
-        }
-        thread.name = "scredit.nvim-events"
-        thread.start()
     }
 
     private func nvimCall<T: Sendable>(_ work: @escaping @Sendable (NvimClient) throws -> T) async throws -> T {
@@ -235,26 +228,29 @@ extension EditorWindowController: TerminalSurfaceTitleDelegate, TerminalSurfaceC
     }
 }
 
-/// Catches Cmd+1 and Cmd+Shift+1 before the terminal sees them (Ghostty binds
-/// Cmd+digit to tab switching).
+/// Catches the window's own keys (`WindowShortcut`: Cmd+1, Cmd+Shift+1,
+/// Cmd+[, Cmd+]) before the terminal sees them: Ghostty binds Cmd+digit to
+/// tabs and Cmd+[ / Cmd+] to splits, neither of which scredit has.
 @MainActor
 final class EditorWindow: NSWindow {
-    var onToggleBrowser: (() -> Void)?
-    var onTogglePin: (() -> Void)?
+    var onShortcut: ((WindowShortcut) -> Void)?
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if event.keyCode == 18 { // the 1 key
-            if flags == .command {
-                onToggleBrowser?()
-                return true
-            }
-            if flags == [.command, .shift] {
-                onTogglePin?()
-                return true
-            }
+        if let shortcut = WindowShortcut(keyCode: event.keyCode, modifiers: Self.modifiers(of: event)) {
+            onShortcut?(shortcut)
+            return true
         }
         return super.performKeyEquivalent(with: event)
+    }
+
+    private static func modifiers(of event: NSEvent) -> WindowShortcut.Modifiers {
+        let flags = event.modifierFlags
+        var modifiers: WindowShortcut.Modifiers = []
+        if flags.contains(.command) { modifiers.insert(.command) }
+        if flags.contains(.shift) { modifiers.insert(.shift) }
+        if flags.contains(.option) { modifiers.insert(.option) }
+        if flags.contains(.control) { modifiers.insert(.control) }
+        return modifiers
     }
 }
 

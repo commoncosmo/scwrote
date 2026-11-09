@@ -19,21 +19,16 @@ folder becomes nvim's working directory. The window uses your Ghostty config
 Fills the window when you start on a folder; choosing a file opens it in nvim
 and hides the browser. Pinned, it stays beside the editor.
 
-The browser sits left of nvim's windows like a vim split, so Ctrl-w moves
-between them:
+Moving between the browser and the editor works from either pane, the way
+Cmd+[ and Cmd+] move between splits in Ghostty and iTerm2:
 
 | Key | Does |
 |---|---|
-| Ctrl-w h (in nvim's leftmost window) | go to the browser, showing it if hidden |
-| Ctrl-w w / Ctrl-w W (in nvim's last / first window) | go to the browser |
-| Ctrl-w l, w or W (in the browser) | back to nvim (hides the browser unless pinned) |
-| Esc | back to the editor (hides the browser unless pinned) |
+| Cmd+[ | go to the browser, showing it if hidden |
+| Cmd+] | go to the editor (hides the browser unless pinned) |
+| Esc (in the browser) | same as Cmd+] |
 | Cmd+1 | show the browser and go to it / go to it / hide it |
 | Cmd+Shift+1 | pin / unpin |
-
-Elsewhere in nvim, Ctrl-w works as usual, and with a count it's plain vim.
-scredit adds these Ctrl-w mappings to nvim when it starts, for that session
-only; if your nvim config maps one of these keys already, yours wins.
 
 In the browser:
 
@@ -93,9 +88,9 @@ SCREDIT_DEBUG_KEYS='G<CR>' SCREDIT_DEBUG_SNAPSHOT=/tmp/shot.png scredit ./
 ```
 
 Keys go to the browser; `<CR>` `<Esc>` `<Up>` `<Down>` `<Left>` `<Right>`
-`<C-d>` `<C-u>` `<C-w>` `<C-l>` are named keys, `<D-1>` is Cmd+1 and
-`<D-S-1>` Cmd+Shift+1. To press keys in nvim instead, send them over its
-socket: `nvim --server "$TMPDIR/scredit-<pid>.sock" --remote-send '<C-w>h'`.
+`<C-d>` `<C-u>` are named keys. The window's own keys, `<D-1>` (Cmd+1),
+`<D-S-1>`, `<D-[>` and `<D-]>`, are posted as real key events, so they take
+the same path through the app as a keyboard's.
 
 ## Known quirks
 

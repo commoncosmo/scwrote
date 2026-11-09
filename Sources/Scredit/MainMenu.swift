@@ -21,6 +21,9 @@ enum MainMenu {
         viewMenu.addItem(withTitle: "Toggle File Browser", action: #selector(EditorWindowController.toggleFileBrowser(_:)), keyEquivalent: "1")
         let pin = viewMenu.addItem(withTitle: "Pin File Browser", action: #selector(EditorWindowController.toggleFileBrowserPin(_:)), keyEquivalent: "1")
         pin.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(.separator())
+        viewMenu.addItem(withTitle: "Go to File Browser", action: #selector(EditorWindowController.goToFileBrowser(_:)), keyEquivalent: "[")
+        viewMenu.addItem(withTitle: "Go to Editor", action: #selector(EditorWindowController.goToEditor(_:)), keyEquivalent: "]")
 
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
