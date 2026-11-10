@@ -2,7 +2,7 @@ import Foundation
 
 /// A key the browser's one-line prompt understands.
 public enum PromptKey: Equatable, Sendable {
-    case character(Character), backspace, left, right, start, end, deleteWord, deleteToStart, enter, escape
+    case character(Character), backspace, deleteForward, left, right, start, end, deleteWord, deleteToStart, enter, escape
 
     /// The browser's keys that mean something in the prompt; Ctrl-u
     /// (`halfPageUp`) is deleteToStart. Up, down and Ctrl-d mean nothing here.
@@ -23,12 +23,16 @@ public enum PromptKey: Equatable, Sendable {
     /// function keys (F1, Home, Page Up...) type private-use ones; none
     /// belongs in a file name.
     public init?(typed text: String) {
-        guard text.count == 1, let character = text.first else { return nil }
-        let printable = character.unicodeScalars.allSatisfy { scalar in
+        guard text.count == 1, let character = text.first, Self.isPrintable(character) else { return nil }
+        self = .character(character)
+    }
+
+    /// Whether `character` can go in a name: no control characters and no
+    /// private-use ones (the function keys').
+    static func isPrintable(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy { scalar in
             scalar.properties.generalCategory != .control && !(0xF700...0xF8FF).contains(scalar.value)
         }
-        guard printable else { return nil }
-        self = .character(character)
     }
 }
 
@@ -55,6 +59,11 @@ public struct PromptLine: Equatable, Sendable {
             cursor += 1
         case .backspace:
             remove(from: cursor - 1)
+        case .deleteForward:
+            guard cursor < text.count else { break }
+            var chars = Array(text)
+            chars.remove(at: cursor)
+            text = String(chars)
         case .left: cursor = max(0, cursor - 1)
         case .right: cursor = min(text.count, cursor + 1)
         case .start: cursor = 0
@@ -63,6 +72,22 @@ public struct PromptLine: Equatable, Sendable {
         case .deleteToStart: remove(from: 0)
         case .enter, .escape: break
         }
+    }
+
+    /// Inserts pasted or dropped text at the cursor: each printable Character,
+    /// up to the first newline. Control and private-use characters (a tab)
+    /// are left out.
+    public mutating func insert(_ pasted: String) {
+        var chars = Array(text)
+        var at = cursor
+        for character in pasted {
+            if character.isNewline { break }
+            guard PromptKey.isPrintable(character) else { continue }
+            chars.insert(character, at: at)
+            at += 1
+        }
+        text = String(chars)
+        cursor = at
     }
 
     /// Removes the Characters from `start` up to the cursor.
@@ -117,8 +142,8 @@ public struct BrowserPrompt: Equatable, Sendable {
         var relative = folder
         if folder == root {
             relative = "."
-        } else if folder.hasPrefix(root + "/") {
-            relative = String(folder.dropFirst(root.count + 1))
+        } else if folder.hasPrefix(root.hasSuffix("/") ? root : root + "/") {
+            relative = String(folder.dropFirst(root.hasSuffix("/") ? root.count : root.count + 1))
         }
         return BrowserPrompt(kind: .add(folder: folder), line: PromptLine(), addLabel: "New: \(relative)/")
     }
@@ -165,6 +190,15 @@ public struct BrowserPrompt: Equatable, Sendable {
         }
     }
 
+    /// Pasted text. Like any key it clears the error; in a delete question it
+    /// cancels, since only `y` confirms one.
+    public mutating func paste(_ text: String) -> Outcome {
+        error = nil
+        if case .delete = kind { return .cancelled }
+        line.insert(text)
+        return .editing
+    }
+
     /// A key with no meaning in the prompt (↑, Ctrl-d, a Cmd key that isn't
     /// the window's). It cancels a delete, since only `y` confirms one;
     /// anywhere else it only clears the error, like any key.
@@ -195,6 +229,8 @@ public struct DeleteQuestion: Equatable, Sendable {
     /// A long name gives up its middle down to this many Characters while
     /// the words after it still show: enough to recognize it by.
     static let shortestName = 14
+    /// While the unsaved warning is kept as ` has…`, the name may shrink to this.
+    static let warningKeepsNameAt = 6
 
     public init(before: String, name: String, after: String) {
         self.before = before
@@ -205,10 +241,20 @@ public struct DeleteQuestion: Equatable, Sendable {
     public var text: String { before + name + after + Self.answer }
 
     /// The question as it fits in `width`, as `measure` measures text. The
-    /// first of these that fits: all of it; the name losing its middle; the
-    /// sentence losing words from its end (`has unsaved` stays longest);
-    /// only the name, shortened as needed. The answer, `(y/N)`, always ends
-    /// it. Narrower than even that, all of it, for the row to clip.
+    /// first of these that fits:
+    ///
+    /// 1. all of it;
+    /// 2. the name losing its middle, down to `shortestName`;
+    /// 3. the sentence losing words from its end (`has unsaved` stays longest),
+    ///    the name at `shortestName`;
+    /// 4. when nothing leads the name (the unsaved form): the first word of the
+    ///    sentence and `…` (` has…`), the name shrinking from 13 to 6;
+    /// 5. only the name and the answer, the name shortened as needed: after
+    ///    `before`, then after a plain "Delete " (for a folder), each down to
+    ///    `shortestName`; then with nothing before it, down to one Character.
+    ///
+    /// The answer, `(y/N)`, always ends it. Narrower than even that, all of it,
+    /// for the row to clip.
     public func fitted(to width: Double, measure: (String) -> Double) -> String {
         func fits(_ candidate: String) -> Bool { measure(candidate) <= width }
         if fits(text) { return text }
@@ -217,13 +263,26 @@ public struct DeleteQuestion: Equatable, Sendable {
             if fits(candidate) { return candidate }
         }
         let shortName = Self.shortened(name, to: Self.shortestName)
-        for end in Self.wordEnds(of: after).reversed() {
+        let wordEnds = Self.wordEnds(of: after)
+        for end in wordEnds.reversed() {
             let candidate = before + shortName + after.prefix(end) + "…" + Self.answer
             if fits(candidate) { return candidate }
         }
-        for length in stride(from: name.count, through: 1, by: -1) {
-            let candidate = before + Self.shortened(name, to: length) + Self.answer
-            if fits(candidate) { return candidate }
+        if before.isEmpty, let first = wordEnds.first {
+            for length in stride(from: Self.shortestName - 1, through: Self.warningKeepsNameAt, by: -1) {
+                let candidate = Self.shortened(name, to: length) + after.prefix(first) + "…" + Self.answer
+                if fits(candidate) { return candidate }
+            }
+        }
+        var prefixes = before.isEmpty ? [] : [before]
+        if before == "Delete folder " { prefixes.append("Delete ") }
+        prefixes.append("")
+        for prefix in prefixes {
+            let shortest = prefix.isEmpty ? 1 : min(name.count, Self.shortestName)
+            for length in stride(from: name.count, through: shortest, by: -1) {
+                let candidate = prefix + Self.shortened(name, to: length) + Self.answer
+                if fits(candidate) { return candidate }
+            }
         }
         return text
     }
@@ -245,30 +304,27 @@ public struct DeleteQuestion: Equatable, Sendable {
 /// Which key repeats the browser drops around its prompt. Held keys repeat
 /// in the prompt as in vim's command line (Backspace, ← →), except:
 ///
-/// - the key that opened or closed the prompt, until it's released or
-///   another key goes down: holding `a` mustn't type "aaa" into the new
-///   name, and holding Enter or Esc mustn't carry on into the browser;
+/// - after the prompt opened or closed, until a fresh key goes down: holding
+///   `a` mustn't type "aaa" into the new name, and holding Enter, Esc or a
+///   window shortcut mustn't carry on into the browser. macOS repeats only
+///   the most recently pressed key, so every repeat until the next key-down
+///   belongs to the key that opened or closed the prompt;
 /// - any key in a delete question, where a single key answers.
 public struct PromptKeyRepeats: Equatable, Sendable {
-    private var held: UInt16?
+    private var holding = false
 
     public init() {}
 
-    /// Whether to drop this key-down. A key that isn't dropped goes down
-    /// after the held one, so it ends the hold.
-    public mutating func drops(keyCode: UInt16, isRepeat: Bool, inDeleteQuestion: Bool) -> Bool {
-        if isRepeat, keyCode == held || inDeleteQuestion { return true }
-        held = nil
+    /// Whether to drop this key-down. A key-down that isn't a repeat ends the hold.
+    public mutating func drops(isRepeat: Bool, inDeleteQuestion: Bool) -> Bool {
+        if isRepeat, holding || inDeleteQuestion { return true }
+        if !isRepeat { holding = false }
         return false
     }
 
-    /// The key just opened or closed the prompt, or asked for one (`d`
-    /// waits to hear from nvim first).
-    public mutating func openedOrClosedPrompt(keyCode: UInt16) {
-        held = keyCode
-    }
-
-    public mutating func released(keyCode: UInt16) {
-        if keyCode == held { held = nil }
+    /// The prompt just opened or closed, or was asked for (`d` waits to hear
+    /// from nvim first): the key still held is the one that did it.
+    public mutating func promptOpenedOrClosed() {
+        holding = true
     }
 }

@@ -122,7 +122,7 @@ final class FileBrowserView: NSView {
 
     override func keyDown(with event: NSEvent) {
         let inDeleteQuestion = if case .delete = prompt?.kind { true } else { false }
-        if repeats.drops(keyCode: event.keyCode, isRepeat: event.isARepeat, inDeleteQuestion: inDeleteQuestion) {
+        if repeats.drops(isRepeat: event.isARepeat, inDeleteQuestion: inDeleteQuestion) {
             return
         }
         let wasOpen = prompt != nil
@@ -138,12 +138,7 @@ final class FileBrowserView: NSView {
         } else {
             super.keyDown(with: event)
         }
-        if askedForPrompt || (prompt != nil) != wasOpen { repeats.openedOrClosedPrompt(keyCode: event.keyCode) }
-    }
-
-    override func keyUp(with event: NSEvent) {
-        repeats.released(keyCode: event.keyCode)
-        super.keyUp(with: event)
+        if askedForPrompt || (prompt != nil) != wasOpen { repeats.promptOpenedOrClosed() }
     }
 
     /// A Cmd key while the prompt has the keyboard counts as a key it has no

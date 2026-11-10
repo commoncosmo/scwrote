@@ -31,6 +31,49 @@ struct PromptLineTests {
         #expect(line("abcdef", [.left, .left, .deleteToStart]).text == "ef")
     }
 
+    @Test func deleteForwardRemovesTheCharacterUnderTheCursor() {
+        #expect(line("abc", [.start, .right, .deleteForward]).text == "ac")
+        let mid = line("abc", [.start, .right, .deleteForward])
+        #expect(mid.cursor == 1)
+        let atEnd = line("abc", [.deleteForward])
+        #expect(atEnd.text == "abc" && atEnd.cursor == 3)
+        #expect(line("abc", [.start, .deleteForward]).text == "bc")
+    }
+
+    @Test func insertTypesEachPrintableCharacterAtTheCursor() {
+        var edited = PromptLine("ac")
+        edited.edit(.left)
+        edited.insert("xyz")
+        #expect(edited.text == "axyzc" && edited.cursor == 4)
+    }
+
+    @Test func insertStopsAtTheFirstNewlineAndDropsControls() {
+        var edited = PromptLine("")
+        edited.insert("one\ntwo")
+        #expect(edited.text == "one")
+        var tabbed = PromptLine("")
+        tabbed.insert("a\tb\u{F704}c\r\nd")
+        #expect(tabbed.text == "abc")
+        var crlf = PromptLine("x")
+        crlf.insert("\r\nignored")
+        #expect(crlf.text == "x")
+    }
+
+    @Test func ctrlWInTheMiddleDeletesTheWordBeforeTheCursor() {
+        // notes/today| .md with the cursor after "today"
+        let moved = Array(repeating: PromptKey.left, count: 3)
+        #expect(line("notes/today.md", moved + [.deleteWord]).text == "notes/.md")
+        // Cursor right after the slash: one press removes the path part before it.
+        let afterSlash = Array(repeating: PromptKey.left, count: 8)
+        #expect(line("notes/today.md", afterSlash + [.deleteWord]).text == "today.md")
+    }
+
+    @Test func ctrlUInTheMiddleDeletesEverythingBeforeTheCursor() {
+        let moved = Array(repeating: PromptKey.left, count: 3)
+        let edited = line("notes/today.md", moved + [.deleteToStart])
+        #expect(edited.text == ".md" && edited.cursor == 0)
+    }
+
     @Test func charactersCountAsOne() {
         #expect(line("über", [.backspace, .start, .right, .backspace]).text == "be")
     }
@@ -45,6 +88,25 @@ struct BrowserPromptTests {
         #expect(BrowserPrompt.rename(path: "/p/a.md").label == "Rename: ")
         #expect(BrowserPrompt.rename(path: "/p/a.md").line.text == "a.md")
         #expect(BrowserPrompt.delete(path: "/p/a.md", question: deleteA).label == "Delete a.md? (y/N)")
+    }
+
+    @Test func labelsAtARootOfSlash() {
+        #expect(BrowserPrompt.add(folder: "/notes", root: "/").label == "New: notes/")
+        #expect(BrowserPrompt.add(folder: "/", root: "/").label == "New: ./")
+        #expect(BrowserPrompt.add(folder: "/p/notes/today", root: "/p").label == "New: notes/today/")
+        #expect(BrowserPrompt.add(folder: "/notes/today", root: "/").label == "New: notes/today/")
+    }
+
+    @Test func pastingInsertsAndClearsTheError() {
+        var prompt = BrowserPrompt.add(folder: "/p", root: "/p")
+        prompt.fail("nope")
+        #expect(prompt.paste("a/b\nc") == .editing)
+        #expect(prompt.line.text == "a/b" && prompt.error == nil)
+    }
+
+    @Test func pastingCancelsADeleteQuestion() {
+        var prompt = BrowserPrompt.delete(path: "/p/a.md", question: deleteA)
+        #expect(prompt.paste("y") == .cancelled)
     }
 
     @Test func enterSubmitsAndEscCancels() {
@@ -117,66 +179,51 @@ struct BrowserPromptUnmappedKeyTests {
 }
 
 /// Holding a key down: its repeats edit the prompt like vim's command line,
-/// except the key that opened or closed the prompt (holding `a` mustn't type
-/// "aaa" into the name, holding Enter mustn't carry on into the browser) and
-/// anything in a delete question, where one key answers.
+/// except after the prompt opened or closed (until a fresh key goes down:
+/// holding `a` mustn't type "aaa" into the name, holding Enter or a window
+/// shortcut mustn't carry on into the browser) and anything in a delete
+/// question, where one key answers.
 struct PromptKeyRepeatsTests {
-    let a: UInt16 = 0, backspace: UInt16 = 51, left: UInt16 = 123
-
-    @Test func repeatsOfTheKeyThatOpenedThePromptAreDropped() {
+    @Test func repeatsAfterThePromptOpenedAreDropped() {
         var repeats = PromptKeyRepeats()
-        let pressed = repeats.drops(keyCode: a, isRepeat: false, inDeleteQuestion: false)
-        repeats.openedOrClosedPrompt(keyCode: a)
-        let repeated = repeats.drops(keyCode: a, isRepeat: true, inDeleteQuestion: false)
-        let again = repeats.drops(keyCode: a, isRepeat: true, inDeleteQuestion: false)
+        let pressed = repeats.drops(isRepeat: false, inDeleteQuestion: false)
+        repeats.promptOpenedOrClosed()
+        let repeated = repeats.drops(isRepeat: true, inDeleteQuestion: false)
+        let again = repeats.drops(isRepeat: true, inDeleteQuestion: false)
         #expect(!pressed)
         #expect(repeated)
         #expect(again)
     }
 
-    @Test func otherKeysRepeatInThePrompt() {
+    @Test func aFreshKeyDownEndsTheHoldSoOtherKeysRepeat() {
         var repeats = PromptKeyRepeats()
-        repeats.openedOrClosedPrompt(keyCode: a)
-        let backspaceDown = repeats.drops(keyCode: backspace, isRepeat: false, inDeleteQuestion: false)
-        let backspaceRepeat = repeats.drops(keyCode: backspace, isRepeat: true, inDeleteQuestion: false)
-        let leftRepeat = repeats.drops(keyCode: left, isRepeat: true, inDeleteQuestion: false)
+        repeats.promptOpenedOrClosed()
+        let backspaceDown = repeats.drops(isRepeat: false, inDeleteQuestion: false)
+        let backspaceRepeat = repeats.drops(isRepeat: true, inDeleteQuestion: false)
         #expect(!backspaceDown)
         #expect(!backspaceRepeat)
-        #expect(!leftRepeat)
     }
 
-    @Test func releasingTheKeyEndsTheHold() {
+    @Test func aNewHoldStartsWhenThePromptClosesAgain() {
         var repeats = PromptKeyRepeats()
-        repeats.openedOrClosedPrompt(keyCode: a)
-        repeats.released(keyCode: backspace)
-        let stillHeld = repeats.drops(keyCode: a, isRepeat: true, inDeleteQuestion: false)
-        repeats.released(keyCode: a)
-        let pressedAgain = repeats.drops(keyCode: a, isRepeat: false, inDeleteQuestion: false)
-        let repeatedAgain = repeats.drops(keyCode: a, isRepeat: true, inDeleteQuestion: false)
-        #expect(stillHeld)
-        #expect(!pressedAgain)
-        #expect(!repeatedAgain)
-    }
-
-    @Test func anotherKeyGoingDownEndsTheHold() {
-        var repeats = PromptKeyRepeats()
-        repeats.openedOrClosedPrompt(keyCode: a)
-        _ = repeats.drops(keyCode: backspace, isRepeat: false, inDeleteQuestion: false)
-        let repeated = repeats.drops(keyCode: a, isRepeat: true, inDeleteQuestion: false)
-        #expect(!repeated)
+        repeats.promptOpenedOrClosed()
+        _ = repeats.drops(isRepeat: false, inDeleteQuestion: false)
+        repeats.promptOpenedOrClosed()
+        let repeated = repeats.drops(isRepeat: true, inDeleteQuestion: false)
+        #expect(repeated)
     }
 
     @Test func everyRepeatInADeleteQuestionIsDropped() {
         var repeats = PromptKeyRepeats()
-        let down = repeats.drops(keyCode: left, isRepeat: false, inDeleteQuestion: true)
-        let repeated = repeats.drops(keyCode: left, isRepeat: true, inDeleteQuestion: true)
+        let down = repeats.drops(isRepeat: false, inDeleteQuestion: true)
+        let repeated = repeats.drops(isRepeat: true, inDeleteQuestion: true)
         #expect(!down)
         #expect(repeated)
     }
 
     @Test func nothingIsHeldAtFirst() {
         var repeats = PromptKeyRepeats()
-        let repeated = repeats.drops(keyCode: a, isRepeat: true, inDeleteQuestion: false)
+        let repeated = repeats.drops(isRepeat: true, inDeleteQuestion: false)
         #expect(!repeated)
     }
 }
@@ -210,15 +257,35 @@ struct DeleteQuestionFittingTests {
         #expect(question.fitted(to: 45, measure: count) == "Delete folder node_modules/ and its… (y/N)")
     }
 
+    @Test func aFolderQuestionLosesItsWordsBeforeItsName() {
+        let question = DeleteQuestion(before: "Delete folder ", name: "drafts/", after: " and its 12 items?")
+        #expect(question.fitted(to: 22, measure: count) == "Delete drafts/ (y/N)")
+        #expect(question.fitted(to: 20, measure: count) == "Delete drafts/ (y/N)")
+        #expect(question.fitted(to: 19, measure: count) == "drafts/ (y/N)")
+        #expect(question.fitted(to: 13, measure: count) == "drafts/ (y/N)")
+        #expect(question.fitted(to: 12, measure: count) == "dra…s/ (y/N)")
+        #expect(question.fitted(to: 7, measure: count) == "… (y/N)")
+    }
+
+    @Test func theUnsavedWarningOutlastsTheNameDownTo24Columns() {
+        let question = DeleteQuestion(before: "", name: longName, after: " has unsaved changes. Delete anyway?")
+        let fitted = question.fitted(to: 24, measure: count)
+        #expect(fitted.hasSuffix(" has… (y/N)"), "\(fitted)")
+        #expect(fitted == "chapte…ght.md has… (y/N)")
+    }
+
     @Test func theAnswerAlwaysShows() {
         let questions = [
             DeleteQuestion(before: "Delete folder ", name: "a-folder-with-a-long-name/", after: " and its 12 items?"),
             DeleteQuestion(before: "", name: longName, after: " has unsaved changes. Delete anyway?"),
             DeleteQuestion(before: "Delete ", name: longName, after: "?"),
+            DeleteQuestion(before: "Delete folder ", name: "drafts/", after: " and its 12 items?"),
         ]
         for question in questions {
-            for width in 21...80 {
+            // "… (y/N)" is 7 columns: the least that says anything.
+            for width in 6...80 {
                 let fitted = question.fitted(to: Double(width), measure: count)
+                guard width >= 7 else { continue }
                 #expect(fitted.count <= width, "\(fitted) at \(width)")
                 #expect(fitted.hasSuffix(" (y/N)"), "\(fitted) at \(width)")
             }
