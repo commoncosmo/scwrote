@@ -57,7 +57,8 @@ the undo for deletes.
 - Editing: typing, Backspace, ← →, Ctrl-a / Ctrl-e (start / end), Ctrl-w
   (delete the word before the cursor), Ctrl-u (delete everything before the
   cursor).
-- Errors show on that row (`notes.md already exists`, `permission denied`)
+- Errors show on that row after a short label (`New: notes.md already exists`,
+  `Delete: permission denied`)
   and clear at the next key. Nothing is ever overwritten.
 - While the prompt is open, keys go to it, not to the browser; the window's
   Cmd keys still work and cancel it.
@@ -87,10 +88,13 @@ the undo for deletes.
 
 ### `d`: delete
 
-- Asks, on the prompt row:
+- First asks nvim (waiting up to 1 s) whether any buffer at or under the
+  item has unsaved changes, of any buffer type; no answer counts as unsaved.
+  Then asks, on the prompt row, shortened to fit (the name's start and
+  `(y/N)` stay visible):
   - `Delete notes.md? (y/N)`
   - `Delete folder drafts/ and its 12 items? (y/N)` (items counted
-    recursively; `1 item` singular)
+    recursively, stopping at `10,000+`; `1 item` singular)
   - When the file, or a file inside the folder, has unsaved changes in nvim:
     `notes.md has unsaved changes. Delete anyway? (y/N)` (for a folder:
     `drafts/ has unsaved changes. Delete anyway? (y/N)`)
