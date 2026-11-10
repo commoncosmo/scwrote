@@ -14,8 +14,9 @@ public protocol FileSystem: Sendable {
     /// Makes missing parent folders of the destination.
     func moveItem(at source: String, to destination: String) throws
     func trashItem(at path: String) throws
-    /// Everything inside the folder, recursively.
-    func itemCount(inFolder path: String) -> Int
+    /// Everything inside the folder, recursively, but counting no further
+    /// than `limit`.
+    func itemCount(inFolder path: String, upTo limit: Int) -> Int
 }
 
 public struct LocalFileSystem: FileSystem {
@@ -97,8 +98,11 @@ public struct LocalFileSystem: FileSystem {
         try FileManager.default.moveItem(atPath: path, toPath: target)
     }
 
-    public func itemCount(inFolder path: String) -> Int {
-        FileManager.default.enumerator(atPath: path)?.allObjects.count ?? 0
+    public func itemCount(inFolder path: String, upTo limit: Int) -> Int {
+        guard let items = FileManager.default.enumerator(atPath: path) else { return 0 }
+        var count = 0
+        while count < limit, items.nextObject() != nil { count += 1 }
+        return count
     }
 
     /// Makes the missing parent folders of `path` and returns the outermost one
@@ -144,10 +148,15 @@ public struct NewItem: Equatable, Sendable {
 public struct FileActions: Sendable {
     private let root: String
     private let fileSystem: any FileSystem
+    private let itemCountCap: Int
 
-    public init(root: String, fileSystem: any FileSystem) {
+    /// `itemCountCap`: a delete question counts a folder's items up to this
+    /// many and then says `10,000+`. Counting happens as `d` is pressed, and
+    /// a node_modules can hold hundreds of thousands.
+    public init(root: String, fileSystem: any FileSystem, itemCountCap: Int = 10_000) {
         self.root = root.count > 1 && root.hasSuffix("/") ? String(root.dropLast()) : root
         self.fileSystem = fileSystem
+        self.itemCountCap = itemCountCap
     }
 
     /// Where `a` puts a new item: the selected folder, the selected file's folder, or the root.
@@ -237,8 +246,22 @@ public struct FileActions: Sendable {
             return "\(name)\(isFolder ? "/" : "") has unsaved changes. Delete anyway? (y/N)"
         }
         guard isFolder else { return "Delete \(name)? (y/N)" }
-        let count = fileSystem.itemCount(inFolder: path)
-        return "Delete folder \(name)/ and its \(count) \(count == 1 ? "item" : "items")? (y/N)"
+        // One past the cap tells "exactly the cap" from "more".
+        let count = fileSystem.itemCount(inFolder: path, upTo: itemCountCap + 1)
+        let amount = count > itemCountCap ? Self.grouped(itemCountCap) + "+" : Self.grouped(count)
+        return "Delete folder \(name)/ and its \(amount) \(count == 1 ? "item" : "items")? (y/N)"
+    }
+
+    /// `12345` as `12,345`, the same whatever the user's locale, like the
+    /// rest of the prompt's English.
+    private static func grouped(_ number: Int) -> String {
+        var digits = String(number)
+        var groups: [String] = []
+        while digits.count > 3 {
+            groups.insert(String(digits.suffix(3)), at: 0)
+            digits.removeLast(3)
+        }
+        return ([digits] + groups).joined(separator: ",")
     }
 
     public func delete(_ path: String) -> Result<Void, FileActionError> {

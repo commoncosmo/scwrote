@@ -184,6 +184,31 @@ private func fail(_ message: String) -> Result<NewItem, FileActionError> {
         #expect(q(t.root + "/drafts", true) == "drafts/ has unsaved changes. Delete anyway? (y/N)")
     }
 
+    /// Counting stops at the cap, so a huge folder (node_modules) can't stall
+    /// the window while it's counted.
+    @Test func aHugeFolderIsCountedOnlyUpToTheCap() throws {
+        let t = try TempFolder()
+        for i in 0..<5 { try t.write("big/f\(i).md") }
+        for i in 0..<3 { try t.write("three/f\(i).md") }
+        let actions = FileActions(root: t.root, fileSystem: t.fileSystem, itemCountCap: 3)
+        #expect(actions.deleteQuestion(for: t.root + "/big", hasUnsavedChanges: false)
+            == "Delete folder big/ and its 3+ items? (y/N)")
+        #expect(actions.deleteQuestion(for: t.root + "/three", hasUnsavedChanges: false)
+            == "Delete folder three/ and its 3 items? (y/N)")
+        #expect(t.fileSystem.itemCount(inFolder: t.root + "/big", upTo: 2) == 2)
+        #expect(t.fileSystem.itemCount(inFolder: t.root + "/big", upTo: 100) == 5)
+    }
+
+    @Test func theDefaultCapIsTenThousand() throws {
+        let actions = { (count: Int) in FileActions(root: "/r", fileSystem: FolderOf(count)) }
+        #expect(actions(20_000).deleteQuestion(for: "/r/node_modules", hasUnsavedChanges: false)
+            == "Delete folder node_modules/ and its 10,000+ items? (y/N)")
+        #expect(actions(10_000).deleteQuestion(for: "/r/node_modules", hasUnsavedChanges: false)
+            == "Delete folder node_modules/ and its 10,000 items? (y/N)")
+        #expect(actions(1_234).deleteQuestion(for: "/r/node_modules", hasUnsavedChanges: false)
+            == "Delete folder node_modules/ and its 1,234 items? (y/N)")
+    }
+
     @Test func aHardLinkIsAClashNotARename() throws {
         let t = try TempFolder()
         try t.write("h1.md", "x")
@@ -261,7 +286,7 @@ private final class FailingSecondMove: FileSystem, @unchecked Sendable {
     func createFile(at path: String) throws { try inner.createFile(at: path) }
     func createFolder(at path: String) throws { try inner.createFolder(at: path) }
     func trashItem(at path: String) throws { try inner.trashItem(at: path) }
-    func itemCount(inFolder path: String) -> Int { inner.itemCount(inFolder: path) }
+    func itemCount(inFolder path: String, upTo limit: Int) -> Int { inner.itemCount(inFolder: path, upTo: limit) }
 
     func moveItem(at source: String, to destination: String) throws {
         lock.lock()
@@ -271,4 +296,19 @@ private final class FailingSecondMove: FileSystem, @unchecked Sendable {
         if n == 2 { throw CocoaError(.fileWriteUnknown) }
         try inner.moveItem(at: source, to: destination)
     }
+}
+
+/// Every path is a folder holding `count` items; nothing else is needed.
+private struct FolderOf: FileSystem {
+    let count: Int
+    init(_ count: Int) { self.count = count }
+
+    func itemExists(at path: String) -> Bool { true }
+    func isFolder(at path: String) -> Bool { true }
+    func isSameItem(_ a: String, _ b: String) -> Bool { false }
+    func createFile(at path: String) throws {}
+    func createFolder(at path: String) throws {}
+    func moveItem(at source: String, to destination: String) throws {}
+    func trashItem(at path: String) throws {}
+    func itemCount(inFolder path: String, upTo limit: Int) -> Int { min(count, limit) }
 }
