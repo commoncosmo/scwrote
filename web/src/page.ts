@@ -104,7 +104,8 @@ async function render(req: RenderRequest): Promise<void> {
     if (!built) return;
     if (!isCurrent()) { built.view.dispose?.(); return; }
     show(req.kind, built);
-    follow(req.cursor);
+    // A follow that came in while this was building is newer than req.cursor.
+    follow(lastCursor);
     post(built.error !== undefined ? { type: "error", message: built.error }
       : built.note !== undefined ? { type: "rendered", note: built.note } : { type: "rendered" });
   } catch (error) {

@@ -1,8 +1,9 @@
 import AppKit
 import ScwroteCore
 
-/// Lays out the file browser and the editor for a `PaneLayout.Mode`, with a
-/// draggable divider between them.
+/// Lays out the file browser, the editor and the preview for a `PaneLayout`
+/// (browser | editor | preview, spans from `PaneFrames`), with a draggable
+/// divider beside each side pane.
 ///
 /// In browser-only mode the browser covers the editor instead of replacing
 /// it: the terminal keeps its full size underneath, so nvim runs normally and
@@ -11,28 +12,39 @@ import ScwroteCore
 final class EditorLayoutView: NSView {
     let browserView: FileBrowserView
     let editorView: NSView
+    let previewView: PreviewPaneView
 
-    var mode: PaneLayout.Mode = .editorOnly {
+    /// Named `panes`, not `layout`, which is NSView's layout pass.
+    var panes: PaneLayout {
         didSet {
-            browserView.isHidden = mode == .editorOnly
+            // Focus alone moves no pane.
+            guard (panes.mode, panes.isPinned, panes.isPreviewShown)
+                != (oldValue.mode, oldValue.isPinned, oldValue.isPreviewShown) else { return }
             needsLayout = true
-            needsDisplay = true
-            window?.invalidateCursorRects(for: self)
         }
     }
 
+    /// After a layout in which the set of panes squeezed out for lack of room
+    /// changed: the new set.
+    var onGaveWay: ((Set<PaneLayout.Pane>) -> Void)?
+
     var dividerColor: NSColor { didSet { needsDisplay = true } }
-    private var browserWidth: CGFloat = 280
-    private var isDragging = false
+    private var browserWidth = CGFloat(PaneFrames.defaultBrowserWidth)
+    private var previewWidth = CGFloat(PaneFrames.defaultPreviewWidth)
+    private var frames: PaneFrames?
+    private var dragging: PaneLayout.Pane?
     private let grabWidth: CGFloat = 4
 
-    init(browserView: FileBrowserView, editorView: NSView, dividerColor: NSColor) {
+    init(browserView: FileBrowserView, editorView: NSView, previewView: PreviewPaneView, panes: PaneLayout, dividerColor: NSColor) {
         self.browserView = browserView
         self.editorView = editorView
+        self.previewView = previewView
+        self.panes = panes
         self.dividerColor = dividerColor
         super.init(frame: .zero)
         addSubview(editorView)
         addSubview(browserView) // on top, for browser-only mode
+        addSubview(previewView)
     }
 
     @available(*, unavailable)
@@ -40,61 +52,92 @@ final class EditorLayoutView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    /// Keeps both panes usable: at least 160 points each.
-    private var clampedBrowserWidth: CGFloat {
-        min(max(browserWidth, 160), max(bounds.width - 160, 160))
-    }
-
     override func layout() {
         super.layout()
-        switch mode {
-        case .editorOnly:
-            editorView.frame = bounds
-        case .browserOnly:
-            editorView.frame = bounds
-            browserView.frame = bounds
-        case .split:
-            let width = clampedBrowserWidth
-            browserView.frame = NSRect(x: 0, y: 0, width: width, height: bounds.height)
-            editorView.frame = NSRect(x: width + 1, y: 0, width: bounds.width - width - 1, height: bounds.height)
+        let frames = PaneFrames.compute(
+            panes, totalWidth: Double(bounds.width),
+            browserWidth: Double(browserWidth), previewWidth: Double(previewWidth)
+        )
+        let previous = self.frames
+        self.frames = frames
+
+        editorView.frame = panes.mode == .browserOnly ? bounds : rect(frames.editor)
+        browserView.isHidden = frames.browser == nil
+        if let browser = frames.browser { browserView.frame = rect(browser) }
+        previewView.isHidden = frames.preview == nil
+        if let preview = frames.preview { previewView.frame = rect(preview) }
+        if frames != previous {
+            needsDisplay = true
+            window?.invalidateCursorRects(for: self)
         }
+
+        if frames.gaveWay != (previous?.gaveWay ?? []) { onGaveWay?(frames.gaveWay) }
     }
+
+    private func rect(_ span: PaneFrames.Span) -> NSRect {
+        NSRect(x: span.x, y: 0, width: span.width, height: Double(bounds.height))
+    }
+
+    // MARK: - Dividers
+
+    /// The one-point lines between panes, each with the side pane it resizes.
+    private var dividers: [(pane: PaneLayout.Pane, rect: NSRect)] {
+        guard let frames else { return [] }
+        var dividers: [(PaneLayout.Pane, NSRect)] = []
+        if panes.mode == .split, let browser = frames.browser {
+            dividers.append((.browser, NSRect(x: browser.x + browser.width, y: 0, width: PaneFrames.divider, height: Double(bounds.height))))
+        }
+        if let preview = frames.preview {
+            dividers.append((.preview, NSRect(x: preview.x - PaneFrames.divider, y: 0, width: PaneFrames.divider, height: Double(bounds.height))))
+        }
+        return dividers
+    }
+
+    /// Where the dividers are drawn, for the debug snapshot.
+    var dividerRects: [NSRect] { dividers.map(\.rect) }
 
     override func draw(_: NSRect) {
-        guard mode == .split else { return }
         dividerColor.setFill()
-        NSRect(x: clampedBrowserWidth, y: 0, width: 1, height: bounds.height).fill()
+        for divider in dividers { divider.rect.fill() }
     }
 
-    // MARK: - Dragging the divider
+    // MARK: - Dragging the dividers
 
-    private var grabZone: NSRect {
-        NSRect(x: clampedBrowserWidth - grabWidth, y: 0, width: grabWidth * 2 + 1, height: bounds.height)
+    private func grabZone(_ divider: NSRect) -> NSRect {
+        divider.insetBy(dx: -grabWidth, dy: 0)
+    }
+
+    private func divider(at point: NSPoint) -> PaneLayout.Pane? {
+        dividers.first { grabZone($0.rect).contains(point) }?.pane
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        let local = convert(point, from: superview)
-        if mode == .split, grabZone.contains(local) { return self }
+        if divider(at: convert(point, from: superview)) != nil { return self }
         return super.hitTest(point)
     }
 
     override func resetCursorRects() {
-        if mode == .split { addCursorRect(grabZone, cursor: .resizeLeftRight) }
+        for divider in dividers { addCursorRect(grabZone(divider.rect), cursor: .resizeLeftRight) }
     }
 
     override func mouseDown(with event: NSEvent) {
-        isDragging = mode == .split
+        dragging = divider(at: convert(event.locationInWindow, from: nil))
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard isDragging else { return }
-        browserWidth = convert(event.locationInWindow, from: nil).x
+        guard let dragging else { return }
+        // Within the window; PaneFrames applies the minimums.
+        let x = min(max(convert(event.locationInWindow, from: nil).x, 0), bounds.width)
+        switch dragging {
+        case .browser: browserWidth = x
+        case .preview: previewWidth = bounds.width - x
+        case .editor: return
+        }
         needsLayout = true
         needsDisplay = true
-        window?.invalidateCursorRects(for: self)
     }
 
     override func mouseUp(with _: NSEvent) {
-        isDragging = false
+        dragging = nil
     }
 }

@@ -6,28 +6,38 @@ import ScwroteCore
 ///   SCWROTE_DEBUG_KEYS="jj<CR><D-1>"   keys to press after launch, 0.4 s apart:
 ///       plain characters go to the browser; <CR>, <Esc>, <Up>, <Down>,
 ///       <Left>, <Right>, <C-d>, <C-u> are browser keys. The window's own
-///       keys, <D-1> (Cmd+1), <D-S-1>, <D-[> and <D-]>, are posted as real
-///       key events, so they take the path a keyboard's would.
-///   SCWROTE_DEBUG_SNAPSHOT=/path.png   afterwards, save a picture of the window.
+///       keys, <D-1> (Cmd+1), <D-S-1>, <D-2>, <D-[> and <D-]>, are posted as
+///       real key events, so they take the path a keyboard's would. Text in
+///       braces goes to nvim with nvim_input, in nvim's key notation:
+///       {ohello<Esc>} opens a line, types "hello" and leaves insert mode.
+///   SCWROTE_DEBUG_SNAPSHOT=/path.png   afterwards, save a picture of the
+///       window, and log which view has the keyboard.
+///   SCWROTE_DEBUG_WIDTH=600            before the keys, set the window's
+///       content width in points (for checking which panes give way).
 extension EditorWindowController {
     func runDebugHooks() {
         let environment = ProcessInfo.processInfo.environment
         let keys = environment["SCWROTE_DEBUG_KEYS"].map(Self.parseKeys) ?? []
         let snapshot = environment["SCWROTE_DEBUG_SNAPSHOT"]
-        guard !keys.isEmpty || snapshot != nil else { return }
+        let width = environment["SCWROTE_DEBUG_WIDTH"].flatMap(Double.init)
+        guard !keys.isEmpty || snapshot != nil || width != nil else { return }
 
         Task {
+            if let width, let window {
+                window.setContentSize(NSSize(width: width, height: window.contentLayoutRect.height))
+            }
             try? await Task.sleep(for: .seconds(1)) // let nvim start
             for key in keys {
                 switch key {
                 case let .browser(browserKey): browserView.press(browserKey)
                 case let .keyboard(keyCode, characters, modifiers): post(keyCode, characters, modifiers)
+                case let .nvim(text): _ = try? await nvimCall { try $0.request("nvim_input", [.string(text)]) }
                 }
                 try? await Task.sleep(for: .milliseconds(400))
             }
             if let snapshot {
                 try? await Task.sleep(for: .milliseconds(600))
-                saveSnapshot(to: snapshot)
+                await saveSnapshot(to: snapshot)
             }
         }
     }
@@ -36,10 +46,15 @@ extension EditorWindowController {
         case browser(BrowserKey)
         /// A key event for the app to deliver as if typed.
         case keyboard(UInt16, String, NSEvent.ModifierFlags)
+        /// Keys for nvim, in its own notation.
+        case nvim(String)
     }
 
     /// Posts a key press and release to the app's event queue: they go through
     /// the same key-equivalent and first-responder handling as a keyboard's.
+    /// If the app couldn't come to the front (started from a terminal that
+    /// isn't), the queue would drop them for want of a key window, so the
+    /// press goes to the window's key-equivalent handling directly.
     private func post(_ keyCode: UInt16, _ characters: String, _ modifiers: NSEvent.ModifierFlags) {
         guard let window else { return }
         for type in [NSEvent.EventType.keyDown, .keyUp] {
@@ -49,7 +64,11 @@ extension EditorWindowController {
                 context: nil, characters: characters, charactersIgnoringModifiers: characters,
                 isARepeat: false, keyCode: keyCode
             ) else { continue }
-            NSApp.postEvent(event, atStart: false)
+            if window.isKeyWindow {
+                NSApp.postEvent(event, atStart: false)
+            } else if type == .keyDown {
+                _ = window.performKeyEquivalent(with: event)
+            }
         }
     }
 
@@ -60,12 +79,16 @@ extension EditorWindowController {
             "<Left>": .browser(.left), "<Right>": .browser(.right),
             "<C-d>": .browser(.halfPageDown), "<C-u>": .browser(.halfPageUp),
             "<D-1>": .keyboard(18, "1", [.command]), "<D-S-1>": .keyboard(18, "!", [.command, .shift]),
+            "<D-2>": .keyboard(19, "2", [.command]),
             "<D-[>": .keyboard(33, "[", [.command]), "<D-]>": .keyboard(30, "]", [.command]),
         ]
         var keys: [DebugKey] = []
         var rest = Substring(script)
         while let first = rest.first {
-            if first == "<", let end = rest.firstIndex(of: ">"), let key = named[String(rest[...end])] {
+            if first == "{", let end = rest.firstIndex(of: "}") {
+                keys.append(.nvim(String(rest[rest.index(after: rest.startIndex) ..< end])))
+                rest = rest[rest.index(after: end)...]
+            } else if first == "<", let end = rest.firstIndex(of: ">"), let key = named[String(rest[...end])] {
                 keys.append(key)
                 rest = rest[rest.index(after: end)...]
             } else {
@@ -77,8 +100,10 @@ extension EditorWindowController {
     }
 
     /// The terminal draws with Metal, so it is captured through its own
-    /// snapshot API and the browser through ordinary view caching.
-    private func saveSnapshot(to path: String) {
+    /// snapshot API, the preview through its own (for its web views) and the
+    /// browser through ordinary view caching.
+    private func saveSnapshot(to path: String) async {
+        let preview = previewView.isHidden ? nil : await previewView.snapshot()
         let size = layoutView.bounds.size
         let image = NSImage(size: size)
         image.lockFocus()
@@ -91,16 +116,18 @@ extension EditorWindowController {
             browserView.cacheDisplay(in: browserView.bounds, to: rep)
             rep.draw(in: layoutView.convert(browserView.bounds, from: browserView))
         }
-        if layoutView.mode == .split {
-            browserView.theme.divider.setFill()
-            NSRect(x: browserView.frame.maxX, y: 0, width: 1, height: size.height).fill()
+        if let preview {
+            preview.draw(in: layoutView.convert(previewView.bounds, from: previewView))
         }
+        layoutView.dividerColor.setFill()
+        for divider in layoutView.dividerRects { divider.fill() }
         image.unlockFocus()
 
         guard let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
               let png = bitmap.representation(using: .png, properties: [:])
         else { return }
         try? png.write(to: URL(fileURLWithPath: path))
-        FileHandle.standardError.write(Data("scwrote: snapshot saved to \(path)\n".utf8))
+        let keyboard = window?.firstResponder.map { String(describing: type(of: $0)) } ?? "none"
+        FileHandle.standardError.write(Data("scwrote: snapshot saved to \(path) (keyboard: \(keyboard))\n".utf8))
     }
 }

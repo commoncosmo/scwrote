@@ -26,6 +26,13 @@ public struct BufferSnapshot: Equatable, Sendable {
         self.isModified = isModified
         self.cursor = cursor
     }
+
+    /// How many lines the text has; 1 when it wasn't sent. Counts bytes, not
+    /// characters, so it stays cheap on large buffers.
+    public var lineCount: Int {
+        guard let text else { return 1 }
+        return text.utf8.reduce(1) { $1 == UInt8(ascii: "\n") ? $0 + 1 : $0 }
+    }
 }
 
 public enum PreviewLimits {

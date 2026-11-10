@@ -77,3 +77,29 @@ struct PreviewEventTests {
         #expect(PreviewEvent(method: "scwrote_preview", params: [.string("buffer")]) == nil)
     }
 }
+
+struct BufferSnapshotLineCountTests {
+    private func snapshot(_ text: String?) -> BufferSnapshot {
+        BufferSnapshot(path: "/a.html", filetype: "html", text: text, isModified: false, cursor: CursorPosition(line: 1, column: 0))
+    }
+
+    @Test func linesAreJoinedByNewlinesWithoutATrailingOne() {
+        #expect(snapshot("a\nb\nc").lineCount == 3)
+    }
+
+    @Test func anEmptyBufferHasOneLine() {
+        #expect(snapshot("").lineCount == 1)
+    }
+
+    @Test func aBlankLastLineCounts() {
+        #expect(snapshot("a\n").lineCount == 2)
+    }
+
+    @Test func crlfCountsAsOneLineBreak() {
+        #expect(snapshot("a\r\nb").lineCount == 2)
+    }
+
+    @Test func aBufferTooLargeToSendCountsAsOneLine() {
+        #expect(snapshot(nil).lineCount == 1)
+    }
+}

@@ -115,7 +115,7 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
             ])
         case let (.html, path?):
             schemeHandler.overlay = snapshot?.text.map { (path: path, text: $0) }
-            let fraction = snapshot.map { Self.fraction(of: $0.cursor, lineCount: Self.lineCount($0.text ?? "")) } ?? 0
+            let fraction = snapshot.map { Self.fraction(of: $0.cursor, lineCount: $0.lineCount) } ?? 0
             setBody(.html)
             html().show(PreviewURL.file(path), scrolledTo: fraction)
             onRendered?(nil, nil)
@@ -162,10 +162,6 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
         htmlView?.isHidden = new != .html
         imageView?.isHidden = new != .image
         pdfView?.isHidden = new != .pdf
-    }
-
-    private static func lineCount(_ text: String) -> Int {
-        text.reduce(1) { $1 == "\n" ? $0 + 1 : $0 }
     }
 
     /// How far down the cursor's line is, from 0 (first line) to 1 (last).
@@ -282,7 +278,8 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
     }
 
     /// The pane as drawn. Web views are captured through their own snapshot
-    /// API, everything else through ordinary view caching.
+    /// API and PDF pages drawn afresh (view caching misses both), everything
+    /// else through ordinary view caching.
     func snapshot() async -> NSImage? {
         guard let rep = bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
         cacheDisplay(in: bounds, to: rep)
@@ -291,12 +288,12 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
         case .html: htmlView
         case .empty, .image, .pdf: nil
         }
-        if let webView, let shot = try? await webView.takeSnapshot(configuration: nil) {
-            let frame = webView.frame
+        let shot = if let webView { try? await webView.takeSnapshot(configuration: nil) } else { NSImage?.none }
+        if shot != nil || body == .pdf {
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-            // The rep's origin is bottom-left; the pane is flipped.
-            shot.draw(in: NSRect(x: frame.minX, y: bounds.height - frame.maxY, width: frame.width, height: frame.height))
+            if let webView, let shot { shot.draw(in: unflipped(webView.frame)) }
+            if body == .pdf, let pdfView { drawPages(of: pdfView) }
             if !unsavedStripe.isHidden {
                 theme.warning.setFill()
                 NSRect(x: 0, y: 0, width: unsavedStripe.frame.width, height: bounds.height).fill()
@@ -306,6 +303,31 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
         let image = NSImage(size: bounds.size)
         image.addRepresentation(rep)
         return image
+    }
+
+    /// A rect in the pane, in the snapshot's coordinates: the pane is
+    /// flipped, the bitmap's origin is bottom-left.
+    private func unflipped(_ rect: NSRect) -> NSRect {
+        NSRect(x: rect.minX, y: bounds.height - rect.maxY, width: rect.width, height: rect.height)
+    }
+
+    /// Draws the PDF view's visible pages where it shows them, into the
+    /// current graphics context.
+    private func drawPages(of view: PDFView) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        context.clip(to: unflipped(view.frame))
+        for page in view.visiblePages {
+            let box = page.bounds(for: view.displayBox)
+            let target = unflipped(convert(view.convert(box, from: page), from: view))
+            guard box.width > 0, box.height > 0 else { continue }
+            context.saveGState()
+            context.translateBy(x: target.minX, y: target.minY)
+            context.scaleBy(x: target.width / box.width, y: target.height / box.height)
+            page.draw(with: view.displayBox, to: context)
+            context.restoreGState()
+        }
+        context.restoreGState()
     }
 
     // MARK: - Mouse and keyboard
