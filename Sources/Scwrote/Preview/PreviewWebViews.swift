@@ -8,9 +8,11 @@ import WebKit
 class PreviewWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     /// A clicked `scwrote-file` link, as a path.
     var onOpenFile: ((String) -> Void)?
-    /// Loads started by `loadExpected`, not yet let through. Anything else
-    /// (links, forms, scripts, reloads, redirects) is cancelled.
-    private var expectedLoads: [URL] = []
+    /// The newest load started by `loadExpected`, and how many times it was
+    /// started without its policy check having come back yet. A load of a
+    /// newer URL supersedes it. Anything else (links, forms, scripts,
+    /// reloads, redirects) is cancelled.
+    private var expectedLoad: (url: URL, count: Int)?
 
     init(configuration: WKWebViewConfiguration, schemeHandler: PreviewSchemeHandler, background: NSColor) {
         configuration.setURLSchemeHandler(schemeHandler, forURLScheme: PreviewURL.appScheme)
@@ -30,13 +32,21 @@ class PreviewWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     /// Keys go to the pane, which turns them into preview commands.
     override var acceptsFirstResponder: Bool { false }
 
-    func loadExpected(_ url: URL) {
-        expectedLoads.append(url)
-        load(URLRequest(url: url))
+    @discardableResult
+    func loadExpected(_ url: URL) -> WKNavigation? {
+        if expectedLoad?.url == url {
+            expectedLoad?.count += 1
+        } else {
+            expectedLoad = (url, 1)
+        }
+        return load(URLRequest(url: url))
     }
 
-    /// Called when a page scwrote loaded has finished loading.
-    func didFinishLoading() {}
+    /// Called when a navigation scwrote let through has finished loading.
+    func didFinishLoading(_: WKNavigation?) {}
+
+    /// Called when a navigation failed, a superseded one included.
+    func didFailLoading(_: WKNavigation?, error _: any Error) {}
 
     /// Called after the web content process died; the page is gone.
     func contentProcessDidTerminate() {}
@@ -53,8 +63,8 @@ class PreviewWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
     private func policy(for action: WKNavigationAction) -> WKNavigationActionPolicy {
         guard let url = action.request.url else { return .cancel }
         if action.navigationType == .other, action.targetFrame?.isMainFrame == true,
-           let index = expectedLoads.firstIndex(of: url) {
-            expectedLoads.remove(at: index)
+           let expected = expectedLoad, expected.url == url {
+            expectedLoad = expected.count > 1 ? (url, expected.count - 1) : nil
             return .allow
         }
         if action.targetFrame?.isMainFrame == true, isFragment(of: url) { return .allow }
@@ -74,14 +84,19 @@ class PreviewWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         return components?.url
     }
 
-    func webView(_: WKWebView, didFinish _: WKNavigation!) {
-        // A load that never reached the policy check was superseded.
-        expectedLoads.removeAll()
-        didFinishLoading()
+    func webView(_: WKWebView, didFinish navigation: WKNavigation!) {
+        didFinishLoading(navigation)
+    }
+
+    func webView(_: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+        didFailLoading(navigation, error: error)
+    }
+
+    func webView(_: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
+        didFailLoading(navigation, error: error)
     }
 
     func webViewWebContentProcessDidTerminate(_: WKWebView) {
-        expectedLoads.removeAll()
         contentProcessDidTerminate()
     }
 
@@ -196,7 +211,7 @@ final class PreviewDocumentWebView: PreviewWebView, WKScriptMessageHandler {
         // page's own (a theme change), whose message comes later.
     }
 
-    override func didFinishLoading() {
+    override func didFinishLoading(_: WKNavigation?) {
         guard !isLoaded else { return }
         isLoaded = true
         callAsyncJavaScript("scwrote.setTheme(theme)", arguments: ["theme": theme], in: nil, in: .page)
@@ -217,15 +232,7 @@ final class PreviewDocumentWebView: PreviewWebView, WKScriptMessageHandler {
         loadExpected(PreviewURL.appIndex)
     }
 
-    func webView(_: WKWebView, didFailProvisionalNavigation _: WKNavigation!, withError error: any Error) {
-        pageFailed(error)
-    }
-
-    func webView(_: WKWebView, didFail _: WKNavigation!, withError error: any Error) {
-        pageFailed(error)
-    }
-
-    private func pageFailed(_ error: any Error) {
+    override func didFailLoading(_: WKNavigation?, error: any Error) {
         guard !isLoaded, pending != nil else { return }
         pending = nil
         onRendered?("preview page failed to load: \(error.localizedDescription)", nil)
@@ -257,7 +264,9 @@ final class PreviewHTMLWebView: PreviewWebView {
     /// Where to scroll, as a fraction of the scrollable height, once the
     /// document being loaded is in.
     private var pendingFraction: Double?
-    private var isAwaitingLoad = false
+    /// The newest `show`'s load, until it finishes or fails. Only it ends the
+    /// wait: an older load's end says nothing about the newer document.
+    private var awaitedLoad: WKNavigation?
 
     init(schemeHandler: PreviewSchemeHandler, background: NSColor) {
         let configuration = WKWebViewConfiguration()
@@ -267,12 +276,11 @@ final class PreviewHTMLWebView: PreviewWebView {
 
     func show(_ url: URL, scrolledTo fraction: Double) {
         pendingFraction = fraction
-        isAwaitingLoad = true
-        loadExpected(url)
+        awaitedLoad = loadExpected(url)
     }
 
     func scroll(toFraction fraction: Double) {
-        if isAwaitingLoad {
+        if awaitedLoad != nil {
             pendingFraction = fraction
         } else {
             evaluateJavaScript("""
@@ -295,12 +303,24 @@ final class PreviewHTMLWebView: PreviewWebView {
         if !script.isEmpty { evaluateJavaScript(script) }
     }
 
-    override func didFinishLoading() {
-        isAwaitingLoad = false
+    override func didFinishLoading(_ navigation: WKNavigation?) {
+        guard let navigation, navigation === awaitedLoad else { return }
+        awaitedLoad = nil
         if let pendingFraction {
             self.pendingFraction = nil
             scroll(toFraction: pendingFraction)
         }
+    }
+
+    override func didFailLoading(_ navigation: WKNavigation?, error _: any Error) {
+        guard let navigation, navigation === awaitedLoad else { return }
+        awaitedLoad = nil
+        pendingFraction = nil
+    }
+
+    override func contentProcessDidTerminate() {
+        awaitedLoad = nil
+        pendingFraction = nil
     }
 }
 
