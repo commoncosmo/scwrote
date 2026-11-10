@@ -53,10 +53,7 @@ public struct PromptLine: Equatable, Sendable {
     public mutating func edit(_ key: PromptKey) {
         switch key {
         case .character(let c):
-            var chars = Array(text)
-            chars.insert(c, at: cursor)
-            text = String(chars)
-            cursor += 1
+            place(String(c))
         case .backspace:
             remove(from: cursor - 1)
         case .deleteForward:
@@ -78,16 +75,23 @@ public struct PromptLine: Equatable, Sendable {
     /// up to the first newline. Control and private-use characters (a tab)
     /// are left out.
     public mutating func insert(_ pasted: String) {
-        var chars = Array(text)
-        var at = cursor
+        var inserted = ""
         for character in pasted {
             if character.isNewline { break }
-            guard PromptKey.isPrintable(character) else { continue }
-            chars.insert(character, at: at)
-            at += 1
+            if PromptKey.isPrintable(character) { inserted.append(character) }
         }
-        text = String(chars)
-        cursor = at
+        place(inserted)
+    }
+
+    /// Puts `inserted` at the cursor and the cursor after it. Counted from the
+    /// joined text: a combining mark, a joiner or half a flag merges with the
+    /// Character before it, so the text can grow by fewer Characters than were
+    /// inserted.
+    private mutating func place(_ inserted: String) {
+        let chars = Array(text)
+        let before = String(chars[..<cursor]) + inserted
+        text = before + String(chars[cursor...])
+        cursor = min(before.count, text.count)
     }
 
     /// Removes the Characters from `start` up to the cursor.

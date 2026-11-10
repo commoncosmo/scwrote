@@ -118,7 +118,7 @@ public struct FileBrowser {
     public mutating func reveal(_ path: String) {
         let realRoot = Self.realPath(root)
         let realTarget = Self.nvimPath(of: path)
-        guard realTarget.hasPrefix(realRoot + "/") else { return }
+        guard realTarget.hasPrefix(realRoot == "/" ? "/" : realRoot + "/"), realTarget != realRoot else { return }
         let target = root + realTarget.dropFirst(realRoot.count)
         var folder = (target as NSString).deletingLastPathComponent
         while folder.count > root.count {

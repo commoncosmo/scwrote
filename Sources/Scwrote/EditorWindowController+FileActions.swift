@@ -4,6 +4,15 @@ import ScwroteCore
 extension EditorWindowController {
     // MARK: - File actions
 
+    /// A window shortcut or a move to another folder: the prompt closes, and a
+    /// delete question still waiting on nvim won't open. The shortcuts reach
+    /// the window before the browser, so the browser can't see them itself.
+    func closePrompt() {
+        browserView.prompt = nil
+        pendingDelete = nil
+        browserView.isWaitingForPrompt = false
+    }
+
     /// Opens the delete question once nvim has said whether the item, or
     /// anything inside it, has unsaved changes. nvim is asked rather than the
     /// browser's dots, which only follow plain file buffers: a plugin's

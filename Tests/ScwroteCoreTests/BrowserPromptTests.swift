@@ -13,6 +13,18 @@ struct PromptLineTests {
         #expect(edited.text == "abc" && edited.cursor == 2)
     }
 
+    /// A combining accent joins the letter before it: one Character, so the
+    /// cursor mustn't count two (the next key would index past the end).
+    @Test func aCharacterThatMergesWithTheOneBeforeKeepsTheCursorInTheText() {
+        let typed = line("e", [.character("\u{301}"), .character("x")])
+        #expect(typed.text == "e\u{301}x" && typed.cursor == 2)
+
+        var pasted = PromptLine("e")
+        pasted.insert("\u{301}\u{301}")
+        pasted.edit(.backspace)
+        #expect(pasted.text.isEmpty && pasted.cursor == 0)
+    }
+
     @Test func backspaceAndMoves() {
         #expect(line("abc", [.backspace]).text == "ab")
         #expect(line("abc", [.start, .backspace]).text == "abc")

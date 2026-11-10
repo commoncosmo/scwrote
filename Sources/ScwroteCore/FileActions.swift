@@ -87,8 +87,10 @@ public struct LocalFileSystem: FileSystem {
             // made in between can be overwritten.
             if renamex_np(source, destination, UInt32(RENAME_EXCL)) != 0 {
                 let code = errno
-                guard code == EXDEV else { throw Self.posixError(code) }
-                // Another volume (reachable through a symlink): copy and remove.
+                // Another volume (reachable through a symlink) can't take a
+                // rename, and FAT/exFAT can't do an exclusive one: check,
+                // then move.
+                guard [EXDEV, ENOTSUP, EINVAL].contains(code) else { throw Self.posixError(code) }
                 if itemExists(at: destination) { throw CocoaError(.fileWriteFileExists) }
                 try FileManager.default.moveItem(atPath: source, toPath: destination)
             }

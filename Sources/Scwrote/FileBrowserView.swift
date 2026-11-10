@@ -182,7 +182,9 @@ final class FileBrowserView: NSView {
                 // There's no Edit menu (Cmd+V is the terminal's), so paste is
                 // handled here.
                 let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-                if flags == .command, event.charactersIgnoringModifiers == "v" {
+                // Caps Lock and the like don't count, only the keys held down.
+                if flags.intersection([.command, .shift, .option, .control]) == .command,
+                   event.charactersIgnoringModifiers?.lowercased() == "v" {
                     pasteIntoPrompt()
                     return true
                 }

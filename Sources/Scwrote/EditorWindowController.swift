@@ -113,33 +113,33 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
     /// Cmd+1 (View menu): show the browser and go to it, go to it, or hide it.
     @objc func toggleFileBrowser(_: Any?) {
-        browserView.prompt = nil
+        closePrompt()
         change { $0.toggleBrowser() }
     }
 
     /// Cmd+Shift+1 (View menu).
     @objc func toggleFileBrowserPin(_: Any?) {
-        browserView.prompt = nil
+        closePrompt()
         change { $0.togglePin() }
     }
 
     /// Cmd+2 (View menu): show the preview and go to it, go to it, or hide it
     /// (also when the window has no room to show it).
     @objc func togglePreview(_: Any?) {
-        browserView.prompt = nil
+        closePrompt()
         let squeezedOut = layoutView.gaveWay(for: panes).contains(.preview)
         change { $0.togglePreview(squeezedOut: squeezedOut) }
     }
 
     /// Cmd+[ (View menu): one pane to the left.
     @objc func moveToLeftPane(_: Any?) {
-        browserView.prompt = nil
+        closePrompt()
         change { $0.moveLeft() }
     }
 
     /// Cmd+] (View menu): one pane to the right.
     @objc func moveToRightPane(_: Any?) {
-        browserView.prompt = nil
+        closePrompt()
         change { $0.moveRight() }
     }
 
@@ -254,7 +254,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// `-` moved the browser: actions follow the new root, and a prompt
     /// opened for the old one closes.
     private func browserRootChanged(_ root: String) {
-        browserView.prompt = nil
+        closePrompt()
         fileActions = FileActions(root: root, fileSystem: LocalFileSystem())
         watch(root)
     }

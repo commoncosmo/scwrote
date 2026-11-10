@@ -47,6 +47,12 @@ struct FileBrowserListingTests {
         #expect(browser.outline == ["a/", "Z/", ".env", "b.md", "file2.txt", "file10.txt"])
     }
 
+    @Test func revealWorksAtTheFilesystemRoot() {
+        var browser = FileBrowser(root: "/")
+        browser.reveal("/usr/bin")
+        #expect(browser.selectedPath == "/usr/bin")
+    }
+
     @Test func gitFolderAndFinderJunkAreAlwaysHidden() throws {
         let root = try makeTree([".git/", ".DS_Store", "README.md"])
 
