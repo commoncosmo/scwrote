@@ -42,3 +42,8 @@ test("YAML empty values are null scalars", () => {
   expect(error).toBeUndefined();
   expect(root!.children[0]).toMatchObject({ key: "a", value: "null", start: 1 });
 });
+test("YAML uses only the first document", () => {
+  const { root, error } = buildYamlTree("a: 1\n---\nb: 2\n");
+  expect(error).toBeUndefined();
+  expect(root!.children.map(c => c.key)).toEqual(["a"]);
+});

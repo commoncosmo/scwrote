@@ -1,5 +1,5 @@
 import { parseTree, printParseErrorCode, type Node as JsonNode, type ParseError } from "jsonc-parser";
-import { isAlias, isMap, isScalar, isSeq, parseDocument } from "yaml";
+import { isAlias, isMap, isScalar, isSeq, parseAllDocuments } from "yaml";
 
 export interface TreeNode {
   /** Stable id: "$", "$.a", "$.a[2]", "$['odd key']". */
@@ -97,7 +97,7 @@ export function buildJsonTree(text: string): TreeResult {
 export function buildYamlTree(text: string): TreeResult {
   if (text.trim() === "") return { root: null };
   const lineAt = lineFinder(text);
-  const doc = parseDocument(text);
+  const doc = parseAllDocuments(text)[0];
   if (doc.errors.length > 0) {
     const e = doc.errors[0];
     return { root: null, error: `line ${lineAt(e.pos[0])}: ${e.message.split("\n")[0]}` };
