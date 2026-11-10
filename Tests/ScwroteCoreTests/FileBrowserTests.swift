@@ -47,6 +47,12 @@ struct FileBrowserListingTests {
         #expect(browser.outline == ["a/", "Z/", ".env", "b.md", "file2.txt", "file10.txt"])
     }
 
+    @Test func revealWorksAtTheFilesystemRoot() {
+        var browser = FileBrowser(root: "/")
+        browser.reveal("/usr/bin")
+        #expect(browser.selectedPath == "/usr/bin")
+    }
+
     @Test func gitFolderAndFinderJunkAreAlwaysHidden() throws {
         let root = try makeTree([".git/", ".DS_Store", "README.md"])
 
@@ -237,6 +243,18 @@ struct FileBrowserFolderTests {
 
     /// nvim reports real paths (/private/var/...), while the browser's root may
     /// be reached through a symlink (/var/... and /tmp are symlinks on macOS).
+    /// A symlink to a file is its own row, not the row of the file it points to.
+    @Test func revealKeepsASymlinkItemsOwnRow() throws {
+        let root = try makeTree(["a.md"])
+        try FileManager.default.createSymbolicLink(atPath: "\(root)/l.md", withDestinationPath: "\(root)/a.md")
+        var browser = FileBrowser(root: root)
+
+        browser.reveal("\(root)/l.md")
+
+        #expect(browser.selectedName == "l.md")
+        #expect(browser.selectedPath == "\(root)/l.md")
+    }
+
     @Test func revealMatchesAFileReachedThroughASymlinkedFolder() throws {
         let root = try makeTree(["docs/guide.md"])
         #expect(root.hasPrefix("/var/"), "the temp folder should be under the /var symlink")
@@ -282,21 +300,82 @@ struct FileBrowserActionTests {
 
         #expect(browser.type("j") == nil)
     }
+
+    @Test func aAsksToAdd() throws {
+        let root = try makeTree(["a.md"])
+        var browser = FileBrowser(root: root)
+
+        #expect(browser.type("a") == .add)
+        #expect(browser.type("3a") == .add)
+    }
+
+    @Test func aAsksToAddInAnEmptyFolder() throws {
+        let root = try makeTree([])
+        var browser = FileBrowser(root: root)
+
+        #expect(browser.type("a") == .add)
+    }
+
+    @Test func rAndDActOnTheSelection() throws {
+        let root = try makeTree(["a.md", "b.md"])
+        var browser = FileBrowser(root: root)
+        _ = browser.type("j")
+
+        #expect(browser.selectedEntry == FileEntry(name: "b.md", path: "\(root)/b.md", isDirectory: false))
+        #expect(browser.type("r") == .rename("\(root)/b.md"))
+        #expect(browser.type("d") == .delete("\(root)/b.md"))
+        // A count before them means nothing and doesn't move the selection.
+        #expect(browser.type("2d") == .delete("\(root)/b.md"))
+    }
+
+    @Test func rAndDDoNothingInAnEmptyFolder() throws {
+        let root = try makeTree([])
+        var browser = FileBrowser(root: root)
+
+        #expect(browser.selectedEntry == nil)
+        #expect(browser.type("r") == nil)
+        #expect(browser.type("d") == nil)
+    }
 }
 
 struct FileBrowserNvimPathTests {
-    @Test func swapsTheRootForItsRealPath() {
-        let browser = FileBrowser(root: "/var/x")
-        #expect(browser.nvimPath(of: "/var/x/a/b.md", realRoot: "/private/var/x") == "/private/var/x/a/b.md")
+    @Test func resolvesTheFoldersAboveTheItem() throws {
+        let root = try makeTree(["a.md"])
+        #expect(root.hasPrefix("/var/"), "the temp folder should be under the /var symlink")
+
+        #expect(FileBrowser.nvimPath(of: "\(root)/a.md") == "/private\(root)/a.md")
     }
 
-    @Test func leavesPathsAloneWhenTheRootIsReal() {
-        let browser = FileBrowser(root: "/p")
-        #expect(browser.nvimPath(of: "/p/a.md", realRoot: "/p") == "/p/a.md")
+    @Test func followsASymlinkedFolderInsideTheRoot() throws {
+        let root = try makeTree(["elsewhere/x.md"])
+        try FileManager.default.createSymbolicLink(atPath: "\(root)/linkdir", withDestinationPath: "\(root)/elsewhere")
+
+        #expect(FileBrowser.nvimPath(of: "\(root)/linkdir/x.md") == "/private\(root)/elsewhere/x.md")
     }
 
-    @Test func onlySwapsAWholeFolderName() {
-        let browser = FileBrowser(root: "/var/x")
-        #expect(browser.nvimPath(of: "/var/xy/a.md", realRoot: "/private/var/x") == "/var/xy/a.md")
+    @Test func keepsASymlinkItemsOwnName() throws {
+        let root = try makeTree(["x.md"])
+        try FileManager.default.createSymbolicLink(atPath: "\(root)/link.md", withDestinationPath: "\(root)/x.md")
+
+        #expect(FileBrowser.nvimPath(of: "\(root)/link.md") == "/private\(root)/link.md")
+    }
+
+    @Test func aSymlinkedFolderRowIsNamedByItsTargetSoFilesInsideAreSeen() throws {
+        let root = try makeTree(["elsewhere/x.md"])
+        try FileManager.default.createSymbolicLink(atPath: "\(root)/linkdir", withDestinationPath: "\(root)/elsewhere")
+
+        let row = FileBrowser.nvimPath(of: "\(root)/linkdir", isDirectory: true)
+        #expect(row == "/private\(root)/elsewhere")
+        #expect(FileBrowser.nvimPath(of: "\(root)/x.md", isDirectory: false) == "/private\(root)/x.md")
+        #expect(FileBrowser.nvimPath(of: "\(root)/linkdir", isDirectory: false) == "/private\(root)/linkdir")
+        var unsaved = UnsavedFiles()
+        unsaved.apply(.modified(path: "/private\(root)/elsewhere/x.md", isModified: true))
+        #expect(unsaved.marks(row, isDirectory: true))
+    }
+
+    @Test func worksForAnItemThatIsGone() throws {
+        let root = try makeTree([])
+
+        #expect(FileBrowser.nvimPath(of: "\(root)/gone.md") == "/private\(root)/gone.md")
     }
 }

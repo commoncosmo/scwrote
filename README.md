@@ -49,9 +49,42 @@ In the browser:
 | Ctrl-d Ctrl-u | half a page down / up |
 | `-` | go up a folder |
 | `gh` | show / hide dotfiles |
+| `a` | add a file or folder |
+| `r` | rename the selected item |
+| `d` | delete the selected item, after a confirmation |
 
 Files open through nvim's RPC socket (scwrote starts nvim with `--listen`),
 using `:edit`. The tree follows changes on disk.
+
+**Empty folders.** An empty folder's row reads `(empty) · a: new file`. Esc
+and Cmd+] still go to the editor, where nvim's empty buffer works (`:e
+name.md`).
+
+**Add, rename, delete.** `a`, `r` and `d` ask on the browser's bottom row,
+like vim's command line. Enter confirms and Esc cancels; while it's open,
+keys go to it, and the window's Cmd keys still work (and cancel it). Editing:
+typing, Backspace (or Ctrl-h), Forward Delete, ← →, Ctrl-a / Ctrl-e or Home /
+End (start / end), Ctrl-w (delete the word, or path part, before the cursor),
+Ctrl-u (delete everything before the cursor), Cmd+V (paste the first line).
+
+- `a` reads `New: notes/`: the selected folder, the selected file's folder,
+  or the root (`New: ./`). `notes/today.md` makes `notes/` along the way; a
+  trailing `/` makes a folder. A new file opens in nvim at once; a new folder
+  is selected.
+- `r` starts with the current name. A `/` in the new name moves the item,
+  but only within the browser's folder (a symlink you made inside the folder
+  is followed, though, wherever it leads). If the file is open in nvim, its
+  buffer takes the new name and keeps unsaved changes; renaming a folder does
+  the same for every open file inside it. `:w` then writes to the new name
+  (a buffer that a plugin writes, such as an encrypted file, needs `:w!`
+  once).
+- `d` asks first: `Delete notes.md? (y/N)`, `Delete folder drafts/ and its
+  12 items? (y/N)`, or `notes.md has unsaved changes. Delete anyway? (y/N)`.
+  Only `y` deletes; any other key cancels. The item goes to the Trash, and
+  nvim closes its buffers, unsaved changes and all.
+
+Nothing is ever overwritten: an existing name shows `notes.md already exists`
+on that row, as do other errors (`permission denied`), until the next key.
 
 ## Preview
 

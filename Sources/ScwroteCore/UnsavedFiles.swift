@@ -2,7 +2,7 @@
 /// nvim's events, and which file browser rows get the unsaved dot.
 ///
 /// Paths are nvim's: absolute and with symlinks resolved. Callers compare
-/// browser rows in that same form (see `FileBrowser.nvimPath(of:realRoot:)`).
+/// browser rows in that same form (see `FileBrowser.nvimPath(of:)`).
 public struct UnsavedFiles: Equatable, Sendable {
     public private(set) var paths: Set<String> = []
 

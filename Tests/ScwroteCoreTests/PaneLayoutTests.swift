@@ -93,15 +93,6 @@ struct PaneLayoutOpenAndLeaveTests {
         #expect(layout.mode == .split)
         #expect(layout.focus == .editor)
     }
-
-    @Test func escapeDoesNothingBeforeAnyFileIsOpen() {
-        var layout = PaneLayout(startsInBrowser: true)
-
-        layout.leaveBrowser()
-
-        #expect(layout.mode == .browserOnly)
-        #expect(layout.focus == .browser)
-    }
 }
 
 struct PaneLayoutPinTests {
@@ -265,10 +256,8 @@ struct PaneLayoutPreviewTests {
         var layout = PaneLayout(startsInBrowser: true)
         layout.openedViewOnlyFile()
         #expect(layout.mode == .browserOnly && layout.isPreviewShown && layout.focus == .browser)
-        layout.moveRight()                    // Cmd+] still does nothing until a file is open
-        #expect(layout.focus == .browser)
-        layout.leaveBrowser()
-        #expect(layout.focus == .browser)
+        layout.moveRight()
+        #expect(layout.focus == .editor)
     }
 
     @Test func aPaneThatGivesWayHandsFocusToTheEditor() {
@@ -290,5 +279,34 @@ struct PaneLayoutPreviewTests {
         layout.togglePreview()
         layout.openedFile()
         #expect(layout.isPreviewShown && layout.focus == .editor)
+    }
+}
+
+struct PaneLayoutEmptyFolderTests {
+    @Test func escReachesTheEditorBeforeAnyFileIsOpen() {
+        var layout = PaneLayout(startsInBrowser: true)
+        layout.leaveBrowser()
+        #expect(layout.focus == .editor && layout.mode == .editorOnly && layout.editorHasFile)
+    }
+
+    @Test func cmdRightBracketDoesTheSame() {
+        var layout = PaneLayout(startsInBrowser: true)
+        layout.moveRight()
+        #expect(layout.focus == .editor && layout.mode == .editorOnly && layout.editorHasFile)
+    }
+
+    @Test func aPinnedBrowserStaysWhenLeftEarly() {
+        var layout = PaneLayout(startsInBrowser: true)
+        layout.togglePin()
+        layout.leaveBrowser()
+        #expect(layout.focus == .editor && layout.mode == .split)
+    }
+
+    @Test func afterLeavingEarlyCmd1CanHideTheBrowser() {
+        var layout = PaneLayout(startsInBrowser: true)
+        layout.leaveBrowser()
+        layout.toggleBrowser()
+        layout.toggleBrowser()
+        #expect(layout.mode == .editorOnly && layout.focus == .editor)
     }
 }

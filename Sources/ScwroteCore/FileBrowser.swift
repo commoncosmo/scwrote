@@ -18,6 +18,12 @@ public enum BrowserKey: Equatable, Sendable {
 public enum BrowserAction: Equatable, Sendable {
     case open(String)
     case leave
+    /// `a`: ask for a name and create a file or folder.
+    case add
+    /// `r`: ask for a new name for the item at this path.
+    case rename(String)
+    /// `d`: ask before moving the item at this path to the Trash.
+    case delete(String)
 }
 
 /// A netrw-style tree of one folder, driven by vim keys. Pure state: it lists
@@ -52,9 +58,11 @@ public struct FileBrowser {
         rebuildRows()
     }
 
-    public var selectedPath: String? {
-        rows.indices.contains(cursor) ? rows[cursor].entry.path : nil
+    public var selectedEntry: FileEntry? {
+        rows.indices.contains(cursor) ? rows[cursor].entry : nil
     }
+
+    public var selectedPath: String? { selectedEntry?.path }
 
     public mutating func handle(_ key: BrowserKey, pageHeight: Int) -> BrowserAction? {
         if pendingG {
@@ -93,6 +101,10 @@ public struct FileBrowser {
         case .halfPageDown: move(by: halfPage)
         case .halfPageUp: move(by: -halfPage)
         case .escape: return .leave
+        // A count before these means nothing; it is dropped like any other.
+        case .character("a"): return .add
+        case .character("r"): return selectedPath.map(BrowserAction.rename)
+        case .character("d"): return selectedPath.map(BrowserAction.delete)
         default: break
         }
         return nil
@@ -100,11 +112,13 @@ public struct FileBrowser {
 
     /// Opens the folders down to `path` and selects it. Paths outside the
     /// root are ignored. Compares real paths, since nvim reports /private/var/...
-    /// for a root reached through the /var symlink (and the like).
+    /// for a root reached through the /var symlink (and the like). Only the
+    /// folders above the item are resolved, so a symlink to a file selects
+    /// its own row, not its target's.
     public mutating func reveal(_ path: String) {
         let realRoot = Self.realPath(root)
-        let realTarget = Self.realPath(path)
-        guard realTarget.hasPrefix(realRoot + "/") else { return }
+        let realTarget = Self.nvimPath(of: path)
+        guard realTarget.hasPrefix(realRoot == "/" ? "/" : realRoot + "/"), realTarget != realRoot else { return }
         let target = root + realTarget.dropFirst(realRoot.count)
         var folder = (target as NSString).deletingLastPathComponent
         while folder.count > root.count {
@@ -114,12 +128,22 @@ public struct FileBrowser {
         rebuildRows(keeping: target)
     }
 
-    /// A row's path the way nvim reports it: the root's part swapped for
-    /// `realRoot` (the root with symlinks resolved, from `realPath(_:)`).
-    /// Cheap enough to call for every row drawn.
-    public func nvimPath(of path: String, realRoot: String) -> String {
-        guard root != realRoot, path.hasPrefix(root + "/") else { return path }
-        return realRoot + path.dropFirst(root.count)
+    /// A path the way nvim names its buffer: the folders above it with every
+    /// symlink resolved, since `:edit root/linkdir/x.md` names the buffer
+    /// after the folder the link points to (and `/var/...` is
+    /// `/private/var/...`). The item itself keeps its own name, so a symlink
+    /// to a file, renamed or deleted, never stands for the file it points to.
+    /// Works for an item that's gone, as long as its folder is there.
+    public static func nvimPath(of path: String) -> String {
+        let folder = (path as NSString).deletingLastPathComponent
+        return (realPath(folder) as NSString).appendingPathComponent((path as NSString).lastPathComponent)
+    }
+
+    /// A row's path as nvim names the buffers under it: a folder fully
+    /// resolved (a symlink to a folder stands for its target, where the files
+    /// inside are named), a file as `nvimPath(of:)`.
+    public static func nvimPath(of path: String, isDirectory: Bool) -> String {
+        isDirectory ? realPath(path) : nvimPath(of: path)
     }
 
     /// The path with every symlink resolved (realpath(3)), or as given if it

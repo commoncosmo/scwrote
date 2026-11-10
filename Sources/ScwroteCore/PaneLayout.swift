@@ -10,8 +10,8 @@ public struct PaneLayout: Equatable, Sendable {
     public private(set) var isPinned = false
     /// Whether the preview pane shows, to the right of the editor.
     public private(set) var isPreviewShown = false
-    /// False until a file is open: before that there is no editor worth
-    /// showing, so the full-window browser stays put.
+    /// False until a file is open or the editor is first entered: before that
+    /// there is no editor worth showing, so the full-window browser stays put.
     public private(set) var editorHasFile: Bool
 
     public init(startsInBrowser: Bool) {
@@ -101,9 +101,13 @@ public struct PaneLayout: Equatable, Sendable {
         }
     }
 
-    /// Esc in the browser: back to the editor, hiding the browser unless pinned.
+    /// Esc in the browser: on to the editor, hiding the browser unless pinned.
+    /// Works before any file is open too (an empty folder has nothing to open,
+    /// yet the editor is where you'd start typing); the editor then counts as
+    /// in use, so Cmd+1 can hide the browser afterwards.
     public mutating func leaveBrowser() {
-        guard focus == .browser, editorHasFile else { return }
+        guard focus == .browser else { return }
+        editorHasFile = true
         focus = .editor
         mode = isPinned ? .split : .editorOnly
     }

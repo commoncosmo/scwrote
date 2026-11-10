@@ -35,6 +35,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// A second connection that only listens, for the preview.
     let previewEvents: NvimEventListener
     private var watcher: FolderWatcher?
+    /// Add, rename and delete for the browser's folder; follows its root.
+    var fileActions: FileActions
+    /// Set while a `d` waits to hear from nvim about unsaved changes.
+    var pendingDelete: UUID?
 
     /// `controller` carries the nvim command in its config (see
     /// `GhosttyConfig.editorConfig` for why it isn't a surface option).
@@ -65,6 +69,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         )
         nvim = NvimClient(socketPath: nvimSocket)
         previewEvents = NvimEventListener(socketPath: nvimSocket)
+        fileActions = FileActions(root: request.browserRoot, fileSystem: LocalFileSystem())
         super.init(window: window)
 
         window.delegate = self
@@ -80,7 +85,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
         browserView.onClick = { [weak self] in self?.change { $0.clicked(.browser) } }
         browserView.onAction = { [weak self] in self?.handle($0) }
-        browserView.onRootChange = { [weak self] in self?.watch($0) }
+        browserView.onRootChange = { [weak self] in self?.browserRootChanged($0) }
+        browserView.onPrompt = { [weak self] in self?.finishPrompt($0) }
+        browserView.onWaitCancelled = { [weak self] in self?.pendingDelete = nil }
 
         layoutView.onGaveWay = { [weak self] in self?.panesGaveWay($0) }
         connectPreview()
@@ -106,28 +113,33 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
     /// Cmd+1 (View menu): show the browser and go to it, go to it, or hide it.
     @objc func toggleFileBrowser(_: Any?) {
+        closePrompt()
         change { $0.toggleBrowser() }
     }
 
     /// Cmd+Shift+1 (View menu).
     @objc func toggleFileBrowserPin(_: Any?) {
+        closePrompt()
         change { $0.togglePin() }
     }
 
     /// Cmd+2 (View menu): show the preview and go to it, go to it, or hide it
     /// (also when the window has no room to show it).
     @objc func togglePreview(_: Any?) {
+        closePrompt()
         let squeezedOut = layoutView.gaveWay(for: panes).contains(.preview)
         change { $0.togglePreview(squeezedOut: squeezedOut) }
     }
 
     /// Cmd+[ (View menu): one pane to the left.
     @objc func moveToLeftPane(_: Any?) {
+        closePrompt()
         change { $0.moveLeft() }
     }
 
     /// Cmd+] (View menu): one pane to the right.
     @objc func moveToRightPane(_: Any?) {
+        closePrompt()
         change { $0.moveRight() }
     }
 
@@ -187,6 +199,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         switch action {
         case .leave: change { $0.leaveBrowser() }
         case let .open(path): choose(path)
+        case .add:
+            let browser = browserView.browser
+            let folder = fileActions.folderForNewItem(selected: browser.selectedEntry)
+            browserView.prompt = .add(folder: folder, root: browser.root)
+        case let .rename(path):
+            browserView.prompt = .rename(path: path)
+        case let .delete(path):
+            askToDelete(path)
         }
     }
 
@@ -230,6 +250,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     // MARK: - Files on disk
+
+    /// `-` moved the browser: actions follow the new root, and a prompt
+    /// opened for the old one closes.
+    private func browserRootChanged(_ root: String) {
+        closePrompt()
+        fileActions = FileActions(root: root, fileSystem: LocalFileSystem())
+        watch(root)
+    }
 
     private func watch(_ root: String) {
         watcher?.stop()
