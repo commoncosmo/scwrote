@@ -155,6 +155,15 @@ public struct BrowserPrompt: Equatable, Sendable {
         }
     }
 
+    /// A key with no meaning in the prompt (↑, Ctrl-d, a Cmd key that isn't
+    /// the window's). It cancels a delete, since only `y` confirms one;
+    /// anywhere else it only clears the error, like any key.
+    public mutating func handleUnmapped() -> Outcome {
+        error = nil
+        if case .delete = kind { return .cancelled }
+        return .editing
+    }
+
     /// Shows `message` until the next key; the prompt stays open.
     public mutating func fail(_ message: String) {
         error = message

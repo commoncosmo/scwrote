@@ -89,3 +89,19 @@ struct BrowserPromptTests {
         #expect(PromptKey(typed: "") == nil)
     }
 }
+
+struct BrowserPromptUnmappedKeyTests {
+    @Test func cancelsADelete() {
+        var prompt = BrowserPrompt.delete(path: "/p/a.md", question: "Delete a.md? (y/N)")
+        #expect(prompt.handleUnmapped() == .cancelled)
+    }
+
+    @Test func onlyClearsTheErrorElsewhere() {
+        var prompt = BrowserPrompt.rename(path: "/p/a.md")
+        prompt.fail("b.md already exists")
+
+        #expect(prompt.handleUnmapped() == .editing)
+        #expect(prompt.error == nil)
+        #expect(prompt.line.text == "a.md")
+    }
+}

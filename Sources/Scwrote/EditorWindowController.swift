@@ -213,8 +213,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     private func hasUnsavedChanges(at path: String) -> Bool {
         let browser = browserView.browser
         let isDirectory = browser.rows.first { $0.entry.path == path }?.entry.isDirectory ?? false
-        let nvimPath = browser.nvimPath(of: path, realRoot: FileBrowser.realPath(browser.root))
-        return browserView.unsaved.marks(nvimPath, isDirectory: isDirectory)
+        return browserView.unsaved.marks(FileBrowser.nvimPath(of: path), isDirectory: isDirectory)
     }
 
     // MARK: - File actions
@@ -233,14 +232,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             }
         case let (.rename(path), .submitted(name)):
             // Resolved now: once the item has moved there's nothing to resolve.
-            let oldNvimPath = Self.nvimPath(of: path)
+            let oldNvimPath = FileBrowser.nvimPath(of: path)
             switch fileActions.rename(path, to: name) {
             case let .failure(error): browserView.prompt?.fail(error.message)
             case .success(nil): browserView.prompt = nil
             case let .success(newPath?): renamed(from: oldNvimPath, to: newPath)
             }
         case let (.delete(path, _), .confirmed):
-            let nvimPath = Self.nvimPath(of: path)
+            let nvimPath = FileBrowser.nvimPath(of: path)
             switch fileActions.delete(path) {
             case let .failure(error): browserView.prompt?.fail(error.message)
             case .success: deleted(nvimPath: nvimPath)
@@ -263,7 +262,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         browserView.prompt = nil
         browserView.reload()
         browserView.reveal(newPath)
-        let newNvimPath = Self.nvimPath(of: newPath)
+        let newNvimPath = FileBrowser.nvimPath(of: newPath)
         syncNvim("follow the rename of \(oldNvimPath)") { try $0.renameBuffers(from: oldNvimPath, to: newNvimPath) }
     }
 
@@ -272,15 +271,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         browserView.prompt = nil
         browserView.reload()
         syncNvim("close the buffers of \(nvimPath)") { try $0.closeBuffers(at: nvimPath) }
-    }
-
-    /// An item's path the way nvim names its buffers: the folders above it
-    /// with symlinks resolved (`/var` is `/private/var`). The item itself is
-    /// left alone, so deleting or renaming a symlink never touches the buffer
-    /// of the file it points to, which is still there.
-    private static func nvimPath(of path: String) -> String {
-        let folder = (path as NSString).deletingLastPathComponent
-        return (FileBrowser.realPath(folder) as NSString).appendingPathComponent((path as NSString).lastPathComponent)
     }
 
     /// The disk change stands even if nvim can't follow it, so a failure is

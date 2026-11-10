@@ -321,18 +321,30 @@ struct FileBrowserActionTests {
 }
 
 struct FileBrowserNvimPathTests {
-    @Test func swapsTheRootForItsRealPath() {
-        let browser = FileBrowser(root: "/var/x")
-        #expect(browser.nvimPath(of: "/var/x/a/b.md", realRoot: "/private/var/x") == "/private/var/x/a/b.md")
+    @Test func resolvesTheFoldersAboveTheItem() throws {
+        let root = try makeTree(["a.md"])
+        #expect(root.hasPrefix("/var/"), "the temp folder should be under the /var symlink")
+
+        #expect(FileBrowser.nvimPath(of: "\(root)/a.md") == "/private\(root)/a.md")
     }
 
-    @Test func leavesPathsAloneWhenTheRootIsReal() {
-        let browser = FileBrowser(root: "/p")
-        #expect(browser.nvimPath(of: "/p/a.md", realRoot: "/p") == "/p/a.md")
+    @Test func followsASymlinkedFolderInsideTheRoot() throws {
+        let root = try makeTree(["elsewhere/x.md"])
+        try FileManager.default.createSymbolicLink(atPath: "\(root)/linkdir", withDestinationPath: "\(root)/elsewhere")
+
+        #expect(FileBrowser.nvimPath(of: "\(root)/linkdir/x.md") == "/private\(root)/elsewhere/x.md")
     }
 
-    @Test func onlySwapsAWholeFolderName() {
-        let browser = FileBrowser(root: "/var/x")
-        #expect(browser.nvimPath(of: "/var/xy/a.md", realRoot: "/private/var/x") == "/var/xy/a.md")
+    @Test func keepsASymlinkItemsOwnName() throws {
+        let root = try makeTree(["x.md"])
+        try FileManager.default.createSymbolicLink(atPath: "\(root)/link.md", withDestinationPath: "\(root)/x.md")
+
+        #expect(FileBrowser.nvimPath(of: "\(root)/link.md") == "/private\(root)/link.md")
+    }
+
+    @Test func worksForAnItemThatIsGone() throws {
+        let root = try makeTree([])
+
+        #expect(FileBrowser.nvimPath(of: "\(root)/gone.md") == "/private\(root)/gone.md")
     }
 }

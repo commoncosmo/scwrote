@@ -35,9 +35,13 @@ final class FileBrowserView: NSView {
     /// Files with unsaved changes in nvim. Their rows, and the folders above
     /// them, get a dot; the header counts them.
     var unsaved = UnsavedFiles() { didSet { needsDisplay = true } }
-    /// The root with symlinks resolved, the form nvim reports paths in; kept
-    /// for the root it was resolved from.
-    private var realRoot: (root: String, real: String)?
+    /// Rows' paths in nvim's form (`FileBrowser.nvimPath(of:)`), resolved
+    /// once until the next reload rather than at every draw.
+    private var nvimPaths: [String: String] = [:]
+    /// The key being held down went to the prompt: its repeats are dropped,
+    /// even once the prompt has closed, so holding `d` or Enter can't carry
+    /// on into the browser.
+    private var isHoldingPromptKey = false
 
     /// First row drawn; scrolls to keep the cursor in view.
     private var topRow = 0
@@ -79,13 +83,14 @@ final class FileBrowserView: NSView {
     }
 
     func reload() {
+        nvimPaths.removeAll()
         browser.reload()
         scrollToCursor()
     }
 
     func press(_ key: BrowserKey) {
         if prompt != nil {
-            if let promptKey = PromptKey(key) { press(promptKey) } else { ignoredByPrompt() }
+            if let promptKey = PromptKey(key) { press(promptKey) } else { pressUnmapped() }
             return
         }
         let previousRoot = browser.root
@@ -102,23 +107,40 @@ final class FileBrowserView: NSView {
         if outcome != .editing { onPrompt?(outcome) }
     }
 
-    /// A key the prompt has no use for (↑, Ctrl-d). Only `y` confirms a
-    /// delete, so there it cancels like any other key; elsewhere it does
-    /// nothing.
-    private func ignoredByPrompt() {
-        if case .delete = prompt?.kind { onPrompt?(.cancelled) }
+    /// A key the prompt has no use for (↑, Ctrl-d, a Cmd key): the prompt
+    /// decides what that means (see `BrowserPrompt.handleUnmapped()`).
+    private func pressUnmapped() {
+        guard var prompt else { return }
+        let outcome = prompt.handleUnmapped()
+        self.prompt = prompt
+        if outcome != .editing { onPrompt?(outcome) }
     }
 
     // MARK: - Keyboard
 
     override func keyDown(with event: NSEvent) {
+        if event.isARepeat, prompt != nil || isHoldingPromptKey { return }
+        isHoldingPromptKey = prompt != nil
+        // Cmd keys reached the prompt through performKeyEquivalent already.
         if prompt != nil, !event.modifierFlags.contains(.command) {
-            if let key = Self.promptKey(for: event) { press(key) } else { ignoredByPrompt() }
+            if let key = Self.promptKey(for: event) { press(key) } else { pressUnmapped() }
         } else if let key = Self.browserKey(for: event) {
             press(key)
         } else {
             super.keyDown(with: event)
         }
+    }
+
+    /// A Cmd key while the prompt has the keyboard counts as a key it has no
+    /// use for (a delete is cancelled), then does what it always does. The
+    /// window's own shortcuts never get here: the window takes them first,
+    /// and they close the prompt themselves.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if prompt != nil, window?.firstResponder === self, event.type == .keyDown,
+           event.modifierFlags.contains(.command), !event.isARepeat {
+            pressUnmapped()
+        }
+        return super.performKeyEquivalent(with: event)
     }
 
     /// Cmd combinations are left to the menu and window. The preview pane
@@ -335,10 +357,10 @@ final class FileBrowserView: NSView {
 
     /// A row's path in nvim's form, to compare with `unsaved`.
     private func nvimPath(of path: String) -> String {
-        if realRoot?.root != browser.root {
-            realRoot = (browser.root, FileBrowser.realPath(browser.root))
-        }
-        return browser.nvimPath(of: path, realRoot: realRoot!.real)
+        if let known = nvimPaths[path] { return known }
+        let resolved = FileBrowser.nvimPath(of: path)
+        nvimPaths[path] = resolved
+        return resolved
     }
 
     /// A row followed by the unsaved dot. A long name is cut, never the dot.

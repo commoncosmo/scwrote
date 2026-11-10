@@ -126,12 +126,15 @@ public struct FileBrowser {
         rebuildRows(keeping: target)
     }
 
-    /// A row's path the way nvim reports it: the root's part swapped for
-    /// `realRoot` (the root with symlinks resolved, from `realPath(_:)`).
-    /// Cheap enough to call for every row drawn.
-    public func nvimPath(of path: String, realRoot: String) -> String {
-        guard root != realRoot, path.hasPrefix(root + "/") else { return path }
-        return realRoot + path.dropFirst(root.count)
+    /// A path the way nvim names its buffer: the folders above it with every
+    /// symlink resolved, since `:edit root/linkdir/x.md` names the buffer
+    /// after the folder the link points to (and `/var/...` is
+    /// `/private/var/...`). The item itself keeps its own name, so a symlink
+    /// to a file, renamed or deleted, never stands for the file it points to.
+    /// Works for an item that's gone, as long as its folder is there.
+    public static func nvimPath(of path: String) -> String {
+        let folder = (path as NSString).deletingLastPathComponent
+        return (realPath(folder) as NSString).appendingPathComponent((path as NSString).lastPathComponent)
     }
 
     /// The path with every symlink resolved (realpath(3)), or as given if it
