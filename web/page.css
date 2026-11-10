@@ -1,0 +1,115 @@
+/* Colors and font come from the app's theme (scwrote.setTheme); these are fallbacks. */
+:root {
+  --bg: #1e1e1e;
+  --fg: #d4d4d4;
+  --dim: #808080;
+  --selection: #3a3d41;
+  --accent: #569cd6;
+  --warning: #d7ba7d;
+  --divider: #3c3c3c;
+  --font: ui-monospace, monospace;
+  --font-size: 13px;
+  color-scheme: dark;
+}
+
+html {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: var(--font-size);
+  line-height: 1.5;
+}
+body { margin: 0; }
+::selection { background: var(--selection); }
+
+/* The cursor's block in markdown: a faint bar in the left margin. */
+#cursor-bar {
+  position: absolute;
+  left: 0.5em;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* MARK: Markdown */
+
+.markdown { padding: 0.75em 1.5em 2em; overflow-wrap: break-word; }
+.markdown > :first-child { margin-top: 0; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4, .markdown h5, .markdown h6 {
+  margin: 1.2em 0 0.5em;
+  line-height: 1.25;
+}
+.markdown h1 { font-size: 1.6em; padding-bottom: 0.2em; border-bottom: 1px solid var(--divider); }
+.markdown h2 { font-size: 1.35em; padding-bottom: 0.2em; border-bottom: 1px solid var(--divider); }
+.markdown h3 { font-size: 1.15em; }
+.markdown h4, .markdown h5, .markdown h6 { font-size: 1em; }
+.markdown h6 { color: var(--dim); }
+.markdown p, .markdown ul, .markdown ol, .markdown blockquote, .markdown pre, .markdown table { margin: 0 0 0.9em; }
+.markdown ul, .markdown ol { padding-left: 1.8em; }
+.markdown li > ul, .markdown li > ol { margin-bottom: 0; }
+.markdown a { color: var(--accent); }
+.markdown code {
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+  background: var(--divider);
+}
+.markdown pre {
+  padding: 0.6em 0.8em;
+  border-radius: 4px;
+  background: var(--divider);
+  overflow-x: auto;
+}
+.markdown pre code { padding: 0; background: none; }
+.markdown blockquote {
+  margin-left: 0;
+  padding-left: 1em;
+  border-left: 3px solid var(--divider);
+  color: var(--dim);
+}
+.markdown hr { border: none; border-top: 1px solid var(--divider); margin: 1.5em 0; }
+.markdown img { max-width: 100%; }
+.markdown table { border-collapse: collapse; display: block; overflow-x: auto; }
+.markdown th, .markdown td { padding: 0.25em 0.7em; border: 1px solid var(--divider); }
+.markdown .mermaid { margin: 0 0 0.9em; }
+.markdown .mermaid.failed pre { border-left: 3px solid var(--warning); }
+
+/* MARK: Diagrams and images */
+
+.diagram, .image { padding: 1em; }
+.diagram svg, .image img, .markdown .mermaid svg { max-width: 100%; height: auto; }
+
+/* MARK: CSV and TSV */
+
+.records { border-collapse: separate; border-spacing: 0; }
+.records th, .records td {
+  padding: 0.15em 0.7em;
+  border-right: 1px solid var(--divider);
+  white-space: pre;
+  text-align: left;
+  vertical-align: top;
+}
+.records th {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--divider);
+}
+.records tr.cursor-row > * { background: var(--selection); }
+.records .cursor-cell { box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* MARK: JSON and YAML */
+
+.tree { padding: 0.5em 0; white-space: pre; }
+.tree .row { padding: 0 1em 0 0.5em; cursor: default; }
+.tree .children { padding-left: 1.2em; }
+.tree .node.container:not(.open) > .children { display: none; }
+.tree .node.selected > .row { background: var(--selection); }
+.tree .twisty { display: inline-block; width: 1.2em; color: var(--dim); }
+.tree .container > .row > .twisty::before { content: "\25B8"; }
+.tree .container.open > .row > .twisty::before { content: "\25BE"; }
+.tree .key::after { content: ": "; color: var(--dim); }
+.tree .summary { color: var(--dim); }
+.tree .value { color: var(--accent); }
+.tree .value.string { color: var(--fg); }

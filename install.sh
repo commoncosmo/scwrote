@@ -13,6 +13,9 @@ prefix="${PREFIX:-$HOME/.local}"
 bindir="$prefix/bin"
 appdir="$prefix/share/scwrote"
 
+# The preview's renderer page, which the app bundles as a resource.
+(cd web && bun install --frozen-lockfile && bun test && bun run build)
+
 swift test
 swift build -c release
 
