@@ -2,34 +2,6 @@ import Foundation
 import Testing
 @testable import ScwroteCore
 
-private let nvimPath = ExecutableLocator.find("nvim", searchPath: ProcessInfo.processInfo.environment["PATH"] ?? "")
-
-/// A real headless nvim listening on a fresh socket, stopped when the test ends.
-private final class HeadlessNvim {
-    let socketPath: String
-    private let process = Process()
-
-    init() throws {
-        // Unix socket paths are limited to ~104 bytes, so keep this short.
-        socketPath = NSTemporaryDirectory() + "sn-\(UUID().uuidString.prefix(8)).sock"
-        process.executableURL = URL(fileURLWithPath: nvimPath!)
-        process.arguments = ["--headless", "--clean", "--listen", socketPath]
-        try process.run()
-    }
-
-    deinit {
-        process.terminate()
-        process.waitUntilExit()
-        try? FileManager.default.removeItem(atPath: socketPath)
-    }
-}
-
-private func realpath(_ path: String) -> String {
-    guard let resolved = Darwin.realpath(path, nil) else { return path }
-    defer { free(resolved) }
-    return String(cString: resolved)
-}
-
 @Suite(.enabled(if: nvimPath != nil, "needs nvim on PATH"))
 struct NvimClientTests {
     @Test func editOpensTheFileInNvim() throws {
