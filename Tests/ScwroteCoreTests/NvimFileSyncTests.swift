@@ -250,6 +250,34 @@ final class NvimFileSyncTests {
         #expect(names.contains(neighbour))
     }
 
+    /// Asked before a delete, whatever the buffer's 'buftype': a plugin's
+    /// `acwrite` buffer (vim-gnupg's `.gpg`) holds unsaved edits too.
+    @Test func modifiedBuffersAtOrUnderAPath() throws {
+        try command("set hidden")
+        let plain = try file("d/plain.md", "")
+        let secret = try file("d/secret.gpg", "")
+        let neighbour = try file("d2/x.md", "")
+        try client.edit(plain)
+        try client.edit(secret)
+        try command("setlocal buftype=acwrite")
+        try client.edit(neighbour)
+        try command("normal! ox")
+        let before = try client.hasModifiedBuffers(at: path("d"))
+        #expect(!before)
+
+        try command("buffer \(try bufferNumber(secret))")
+        try command("normal! ox")
+
+        let folder = try client.hasModifiedBuffers(at: path("d"))
+        let folderWithSlash = try client.hasModifiedBuffers(at: path("d") + "/")
+        let file = try client.hasModifiedBuffers(at: secret)
+        let unmodifiedFile = try client.hasModifiedBuffers(at: plain)
+        #expect(folder)
+        #expect(folderWithSlash)
+        #expect(file)
+        #expect(!unmodifiedFile)
+    }
+
     // MARK: - Helpers
 
     private func path(_ relative: String) -> String {

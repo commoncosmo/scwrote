@@ -37,6 +37,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     private var watcher: FolderWatcher?
     /// Add, rename and delete for the browser's folder; follows its root.
     private var fileActions: FileActions
+    /// Set while a `d` waits to hear from nvim about unsaved changes.
+    private var pendingDelete: UUID?
 
     /// `controller` carries the nvim command in its config (see
     /// `GhosttyConfig.editorConfig` for why it isn't a surface option).
@@ -203,17 +205,43 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         case let .rename(path):
             browserView.prompt = .rename(path: path)
         case let .delete(path):
-            let question = fileActions.deleteQuestion(for: path, hasUnsavedChanges: hasUnsavedChanges(at: path))
-            browserView.prompt = .delete(path: path, question: question)
+            askToDelete(path)
         }
     }
 
-    /// Whether the item at a browser path, or anything inside it, has
-    /// unsaved changes in nvim.
-    private func hasUnsavedChanges(at path: String) -> Bool {
+    /// Opens the delete question once nvim has said whether the item, or
+    /// anything inside it, has unsaved changes. nvim is asked rather than the
+    /// browser's dots, which only follow plain file buffers: a plugin's
+    /// buffer (an encrypted file) holds edits too, and deleting discards
+    /// them. No answer within a second counts as unsaved, so the question is
+    /// the stronger one rather than a wait.
+    private func askToDelete(_ path: String) {
+        let token = UUID()
+        pendingDelete = token
+        let nvimPath = FileBrowser.nvimPath(of: path)
+        let root = browserView.browser.root
+        Task {
+            let modified = (try? await nvimCall { try $0.hasModifiedBuffers(at: nvimPath) }) ?? true
+            openDeleteQuestion(token, path: path, root: root, hasUnsavedChanges: modified)
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(1))
+            openDeleteQuestion(token, path: path, root: root, hasUnsavedChanges: true)
+        }
+    }
+
+    /// The first of nvim's answer and the deadline opens the question, unless
+    /// the browser moved on while it waited: another `d`, another prompt,
+    /// folder or row, or the keyboard elsewhere.
+    private func openDeleteQuestion(_ token: UUID, path: String, root: String, hasUnsavedChanges: Bool) {
+        guard pendingDelete == token else { return }
+        pendingDelete = nil
         let browser = browserView.browser
-        let isDirectory = browser.rows.first { $0.entry.path == path }?.entry.isDirectory ?? false
-        return browserView.unsaved.marks(FileBrowser.nvimPath(of: path), isDirectory: isDirectory)
+        guard browserView.prompt == nil, browser.root == root, browser.selectedEntry?.path == path,
+              window?.firstResponder === browserView
+        else { return }
+        let question = fileActions.deleteQuestion(for: path, hasUnsavedChanges: hasUnsavedChanges)
+        browserView.prompt = .delete(path: path, question: question)
     }
 
     // MARK: - File actions

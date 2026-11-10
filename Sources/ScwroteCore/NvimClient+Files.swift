@@ -24,6 +24,17 @@ extension NvimClient {
         ])
     }
 
+    /// Whether any loaded buffer at `path` or under it has unsaved changes,
+    /// whatever its 'buftype': a plugin's `acwrite` buffer (an encrypted
+    /// file, say) holds edits `closeBuffers` would discard as surely as a
+    /// plain file's.
+    public func hasModifiedBuffers(at path: String) throws -> Bool {
+        try request("nvim_exec_lua", [
+            .string(Self.hasModifiedBuffersLua),
+            .array([.string(Self.trimmingSlash(path))]),
+        ]) == .bool(true)
+    }
+
     /// `/a/b/` and `/a/b` name the same folder; matching wants the latter.
     private static func trimmingSlash(_ path: String) -> String {
         path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
@@ -152,6 +163,15 @@ extension NvimClient {
           return false
         end
         """#
+
+    private static let hasModifiedBuffersLua = buffersUnderLua + """
+
+        local path = ...
+        for _, found in ipairs(buffers_under(path)) do
+          if vim.api.nvim_buf_is_loaded(found.buf) and vim.bo[found.buf].modified then return true end
+        end
+        return false
+        """
 
     /// Wiped, not just deleted, so no buffer keeps the name of a file that's
     /// gone. A window showing one moves to another buffer, or an empty one.
