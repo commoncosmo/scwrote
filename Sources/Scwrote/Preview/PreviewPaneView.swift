@@ -110,6 +110,7 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
             setBody(.document)
             documentView.render([
                 "kind": kind.rawValue,
+                "path": path,
                 "text": text,
                 "baseURL": PreviewURL.folder(of: path).absoluteString,
                 "cursor": ["line": snapshot.cursor.line, "column": snapshot.cursor.column],

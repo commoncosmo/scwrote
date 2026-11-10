@@ -9,7 +9,8 @@ import { buildJsonTree, buildYamlTree, pathToLine, startsOpen, type TreeNode } f
 type Kind = "markdown" | "csv" | "tsv" | "mermaid" | "svg" | "json" | "yaml";
 /** 1-based line, 0-based character column. */
 interface Cursor { line: number; column: number }
-interface RenderRequest { kind: Kind; text: string; baseURL: string; cursor: Cursor }
+/** `path` is the file's, for telling a new file from the one on screen. */
+interface RenderRequest { kind: Kind; path: string; text: string; baseURL: string; cursor: Cursor }
 type Command = "lineDown" | "lineUp" | "halfPageDown" | "halfPageUp" | "top" | "bottom" | "open" | "close" | "toggle";
 /** Colors are CSS colors (`#rrggbb`); `fontFamily` is one family name; `fontSize` is in CSS pixels. */
 interface Theme {
@@ -67,8 +68,10 @@ let view: View = {};
 let generation = 0;
 let lastRequest: RenderRequest | null = null;
 let lastCursor: Cursor = { line: 1, column: 0 };
-/** Open/closed state of JSON/YAML nodes by path, kept across re-renders. */
-const treeOpen = new Map<string, boolean>();
+/** The file on screen: the last one rendered, or that failed on first show. */
+let shownPath: string | null = null;
+/** Open/closed state of the shown file's JSON/YAML nodes by node path, kept across its re-renders. */
+let treeOpen = new Map<string, boolean>();
 
 function post(message: Message): void {
   window.webkit?.messageHandlers?.scwrote?.postMessage(message);
@@ -99,30 +102,42 @@ async function render(req: RenderRequest): Promise<void> {
   const isCurrent = () => current === generation;
   lastRequest = req;
   lastCursor = req.cursor;
+  // Tree nodes opened in another file mean nothing in this one.
+  const open = req.path === shownPath ? treeOpen : new Map<string, boolean>();
   try {
-    const built = await build(req, isCurrent);
+    const built = await build(req, open, isCurrent);
     if (!built) return;
     if (!isCurrent()) { built.view.dispose?.(); return; }
     show(req.kind, built);
+    shownPath = req.path;
+    treeOpen = open;
     // A follow that came in while this was building is newer than req.cursor.
     follow(lastCursor);
     post(built.error !== undefined ? { type: "error", message: built.error }
       : built.note !== undefined ? { type: "rendered", note: built.note } : { type: "rendered" });
   } catch (error) {
-    if (isCurrent()) post({ type: "error", message: messageOf(error) });
+    if (!isCurrent()) return;
+    // Broken input keeps the last good render, but only of the same file:
+    // another file's content must not stand in under this one's name.
+    if (req.path !== shownPath) {
+      show(req.kind, { root: document.createDocumentFragment(), view: {} });
+      shownPath = req.path;
+      treeOpen = open;
+    }
+    post({ type: "error", message: messageOf(error) });
   }
 }
 
 /** Throws to keep what is shown; returns null when superseded. */
-async function build(req: RenderRequest, isCurrent: () => boolean): Promise<Built | null> {
+async function build(req: RenderRequest, open: Map<string, boolean>, isCurrent: () => boolean): Promise<Built | null> {
   switch (req.kind) {
     case "markdown": return buildMarkdown(req, isCurrent);
     case "csv": return buildTable(req.text, ",");
     case "tsv": return buildTable(req.text, "\t");
     case "mermaid": return buildMermaidFile(req.text, isCurrent);
     case "svg": return buildSVG(req.text);
-    case "json": return buildTree(buildJsonTree(req.text));
-    case "yaml": return buildTree(buildYamlTree(req.text));
+    case "json": return buildTree(buildJsonTree(req.text), open);
+    case "yaml": return buildTree(buildYamlTree(req.text), open);
     default: throw new Error(`cannot render ${String((req as { kind: unknown }).kind)}`);
   }
 }
@@ -315,9 +330,9 @@ function buildTable(text: string, delimiter: "," | "\t"): Built {
 
 // MARK: JSON and YAML
 
-function buildTree(result: { root: TreeNode | null; error?: string }): Built {
+function buildTree(result: { root: TreeNode | null; error?: string }, open: Map<string, boolean>): Built {
   if (result.error !== undefined) throw new Error(result.error);
-  const tree = new TreeView(result.root);
+  const tree = new TreeView(result.root, open);
   return { root: tree.element, view: tree };
 }
 
@@ -327,13 +342,14 @@ class TreeView implements View {
   private readonly nodes = new Map<string, { node: TreeNode; depth: number; el: HTMLElement }>();
   private selected: string | null = null;
 
-  constructor(private readonly root: TreeNode | null) {
+  /** `open` holds which nodes are open, by path; the view keeps it up to date. */
+  constructor(private readonly root: TreeNode | null, private readonly open: Map<string, boolean>) {
     if (root) this.element.append(this.build(root, 0));
     this.element.addEventListener("click", event => {
       const path = (event.target as Element).closest(".row")?.parentElement?.dataset.path;
       if (path === undefined) return;
       this.select(path);
-      this.setOpen(path, !treeOpen.get(path));
+      this.setOpen(path, !this.open.get(path));
     });
   }
 
@@ -358,7 +374,7 @@ class TreeView implements View {
       case "bottom": moveTo(rows.length - 1); break;
       case "open": if (this.selected !== null) this.setOpen(this.selected, true); break;
       case "close": if (this.selected !== null) this.setOpen(this.selected, false); break;
-      case "toggle": if (this.selected !== null) this.setOpen(this.selected, !treeOpen.get(this.selected)); break;
+      case "toggle": if (this.selected !== null) this.setOpen(this.selected, !this.open.get(this.selected)); break;
     }
     return true;
   }
@@ -379,7 +395,7 @@ class TreeView implements View {
     el.append(row);
     this.nodes.set(node.path, { node, depth, el });
     if (node.kind !== "scalar") {
-      const open = treeOpen.get(node.path) ?? startsOpen(node, depth);
+      const open = this.open.get(node.path) ?? startsOpen(node, depth);
       this.setOpen(node.path, open);
     }
     return el;
@@ -388,7 +404,7 @@ class TreeView implements View {
   private setOpen(path: string, open: boolean): void {
     const entry = this.nodes.get(path);
     if (!entry || entry.node.kind === "scalar") return;
-    treeOpen.set(path, open);
+    this.open.set(path, open);
     entry.el.classList.toggle("open", open);
     if (open && !entry.el.querySelector(":scope > .children")) {
       const children = element("div", "children");
@@ -411,7 +427,7 @@ class TreeView implements View {
     const paths: string[] = [];
     const walk = (node: TreeNode) => {
       paths.push(node.path);
-      if (node.kind !== "scalar" && treeOpen.get(node.path)) node.children.forEach(walk);
+      if (node.kind !== "scalar" && this.open.get(node.path)) node.children.forEach(walk);
     };
     if (this.root) walk(this.root);
     return paths;
