@@ -202,6 +202,11 @@ they are.
 - Static HTML and CSS only: the user's scripts don't run.
 - Relative CSS, images, and fonts load from the HTML file's folder.
 - Same base-folder rule for relative images in markdown.
+- Remote content (images, CSS, fonts, media) is blocked until the user
+  presses `R` in the preview, clicks the header's "remote content blocked ·
+  R to load" note, or chooses View > Load Remote Content; that allows it for
+  that file until the window closes. The note shows only when the page
+  references remote content.
 
 ### Links
 

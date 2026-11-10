@@ -99,9 +99,12 @@ can step through with `j` and Enter. The preview goes back to nvim's buffer
 when you return to the editor.
 
 **HTML is static.** Its scripts never run. Relative CSS, images and fonts load
-from the file's folder (so do relative images in markdown), and the page may
-load remote images or CSS it references. scwrote's own renderers need no
-network.
+from the file's folder (so do relative images in markdown). Remote images,
+CSS, fonts and media don't load: when the page references any, the header
+says "remote content blocked · R to load". Press `R` in the preview, click
+that note, or choose View > Load Remote Content to load them for that file
+until the window closes; other files stay blocked. Markdown never loads remote
+images. scwrote's own renderers need no network.
 
 **Links.** A link to a local file opens it in nvim, as the browser would; a
 web link opens your default browser.
@@ -115,6 +118,7 @@ In the preview:
 | `gg` `G` | top / bottom |
 | `l`, → / `h`, ← | open / close a tree node |
 | Enter, `o` | open / close a tree node |
+| `R` | load the HTML file's remote content |
 | Esc | back to the editor |
 
 While the preview has focus it stops following nvim's cursor; it picks up

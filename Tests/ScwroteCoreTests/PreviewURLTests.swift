@@ -16,4 +16,12 @@ struct PreviewURLTests {
     @Test func otherSchemesAreNotFiles() {
         #expect(PreviewURL.path(from: URL(string: "https://example.com/a.md")!) == nil)
     }
+
+    /// `//cdn.example.com/a.css` in a document resolves to a `scwrote-file`
+    /// URL with a host: a remote reference, never a file on disk.
+    @Test func aFileURLWithAHostIsNotAFile() {
+        #expect(PreviewURL.path(from: URL(string: "scwrote-file://cdn.example.com/a.css")!) == nil)
+        let base = PreviewURL.folder(of: "/n/page.html")
+        #expect(PreviewURL.path(from: URL(string: "//cdn.example.com/a.css", relativeTo: base)!) == nil)
+    }
 }

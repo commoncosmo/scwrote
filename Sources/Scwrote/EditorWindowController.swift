@@ -131,6 +131,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         change { $0.moveRight() }
     }
 
+    /// View menu: let the shown HTML file's remote content load (also `R` in
+    /// the preview, or a click on the header's note).
+    @objc func loadRemoteContent(_: Any?) {
+        previewView.loadRemoteContent()
+    }
+
     private func perform(_ shortcut: WindowShortcut) {
         switch shortcut {
         case .toggleBrowser: toggleFileBrowser(nil)
@@ -265,6 +271,9 @@ extension EditorWindowController: NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(toggleFileBrowserPin(_:)) {
             item.title = panes.isPinned ? "Unpin File Browser" : "Pin File Browser"
+        }
+        if item.action == #selector(loadRemoteContent(_:)) {
+            return panes.isPreviewShown && previewView.hasBlockedRemoteContent
         }
         return true
     }

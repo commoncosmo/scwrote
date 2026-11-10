@@ -22,6 +22,9 @@ enum MainMenu {
         let pin = viewMenu.addItem(withTitle: "Pin File Browser", action: #selector(EditorWindowController.toggleFileBrowserPin(_:)), keyEquivalent: "1")
         pin.keyEquivalentModifierMask = [.command, .shift]
         viewMenu.addItem(withTitle: "Toggle Preview", action: #selector(EditorWindowController.togglePreview(_:)), keyEquivalent: "2")
+        // Enabled while the shown HTML has remote content blocked; `R` in the
+        // preview does the same.
+        viewMenu.addItem(withTitle: "Load Remote Content", action: #selector(EditorWindowController.loadRemoteContent(_:)), keyEquivalent: "")
         viewMenu.addItem(.separator())
         viewMenu.addItem(withTitle: "Move to Left Pane", action: #selector(EditorWindowController.moveToLeftPane(_:)), keyEquivalent: "[")
         viewMenu.addItem(withTitle: "Move to Right Pane", action: #selector(EditorWindowController.moveToRightPane(_:)), keyEquivalent: "]")

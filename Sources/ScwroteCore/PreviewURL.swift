@@ -19,10 +19,15 @@ public enum PreviewURL {
         return url(path: folder)
     }
 
-    /// The file path a `scwrote-file` URL points at; nil for other schemes.
+    /// The file path a `scwrote-file` URL points at; nil for other schemes,
+    /// and for one with a host: a protocol-relative `//host/x` in a document
+    /// resolves to that, and it names something on the network, not a file.
     public static func path(from url: URL) -> String? {
-        guard url.scheme == fileScheme else { return nil }
-        return URLComponents(url: url, resolvingAgainstBaseURL: true)?.path
+        guard url.scheme == fileScheme,
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
+              components.host?.isEmpty ?? true
+        else { return nil }
+        return components.path
     }
 
     public static let appIndex = URL(string: "\(appScheme):///index.html")!

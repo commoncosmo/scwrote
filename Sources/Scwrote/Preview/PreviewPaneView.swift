@@ -7,6 +7,8 @@ import WebKit
 /// its kind needs. Markdown, tables, diagrams and trees render in scwrote's
 /// own page, HTML in a web view with its scripts off, images and PDFs in
 /// AppKit views. The pane takes the keyboard itself and reads vim keys.
+/// HTML loads nothing from the network until the user says so for that file
+/// (`R`, or a click on the header's note), which holds until the window closes.
 @MainActor
 final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
     /// Esc: back to the editor.
@@ -37,6 +39,13 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
     /// The paths whose contents the image and PDF views hold.
     private var imagePath: String?
     private var pdfPath: String?
+    /// The header as last given, before the pane adds its remote-content note.
+    private var header = PreviewHeader(label: "No file", isUnsaved: false, message: nil, isError: false)
+    /// The HTML files whose remote content may load, for this window's life.
+    private var consent = RemoteContentConsent()
+    /// The HTML file shown, and whether remote content it references was kept out.
+    private var htmlPath: String?
+    private var isRemoteContentBlocked = false
 
     init(theme: Theme) {
         self.theme = theme
@@ -54,6 +63,7 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
         documentView.onOpenFile = { [weak self] in self?.onOpenLink?($0) }
         documentView.onRendered = { [weak self] in self?.onRendered?($0, $1) }
         unsavedStripe.isHidden = true
+        headerView.onLoadRemoteContent = { [weak self] in self?.loadRemoteContent() }
         addSubview(headerView)
         addSubview(documentView)
         addSubview(unsavedStripe)
@@ -118,8 +128,12 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
         case let (.html, path?):
             schemeHandler.overlay = snapshot?.text.map { (path: path, text: $0) }
             let fraction = snapshot.map { Self.fraction(of: $0.cursor, lineCount: $0.lineCount) } ?? 0
+            let allows = consent.isAllowed(path)
             setBody(.html)
-            html().show(PreviewURL.file(path), scrolledTo: fraction)
+            // Showing the same file again keeps its note until its new scan.
+            if htmlPath != path || allows { setRemoteContentBlocked(false) }
+            htmlPath = path
+            html().show(PreviewURL.file(path), scrolledTo: fraction, allowingRemoteContent: allows)
             onRendered?(nil, nil)
         case let (.image, path?):
             setBody(.image)
@@ -133,8 +147,31 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
     }
 
     func showHeader(_ header: PreviewHeader) {
-        headerView.header = header
+        self.header = header
+        var shown = header
+        shown.remoteContentBlocked = isRemoteContentBlocked
+        headerView.header = shown
         unsavedStripe.isHidden = !header.isUnsaved
+    }
+
+    // MARK: - Remote content
+
+    /// The shown HTML references remote content that was kept out.
+    var hasBlockedRemoteContent: Bool { body == .html && isRemoteContentBlocked }
+
+    /// Lets the shown HTML file's remote content load, from now until the
+    /// window closes, and loads the file again with it.
+    func loadRemoteContent() {
+        guard hasBlockedRemoteContent, let htmlPath, let htmlView else { return }
+        consent.allow(htmlPath)
+        setRemoteContentBlocked(false)
+        htmlView.reloadAllowingRemoteContent()
+    }
+
+    private func setRemoteContentBlocked(_ blocked: Bool) {
+        guard blocked != isRemoteContentBlocked else { return }
+        isRemoteContentBlocked = blocked
+        showHeader(header)
     }
 
     /// Scrolls to the editor's cursor: the renderer maps it to a block, HTML
@@ -159,6 +196,10 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
 
     private func setBody(_ new: Body) {
         if body == .document, new != .document { documentView.deactivate() }
+        if new != .html {
+            htmlPath = nil
+            setRemoteContentBlocked(false)
+        }
         body = new
         documentView.isHidden = new != .document
         htmlView?.isHidden = new != .html
@@ -230,6 +271,15 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
         if let htmlView { return htmlView }
         let view = PreviewHTMLWebView(schemeHandler: schemeHandler, background: theme.background)
         view.onOpenFile = { [weak self] in self?.onOpenLink?($0) }
+        view.onRemoteContent = { [weak self] found in
+            // A scan that was under way when the user allowed the file says nothing.
+            guard let self, body == .html, let htmlPath, !consent.isAllowed(htmlPath) else { return }
+            setRemoteContentBlocked(found)
+        }
+        view.onError = { [weak self] error in
+            guard let self, body == .html else { return }
+            onRendered?(error, nil)
+        }
         addBody(view)
         htmlView = view
         return view
@@ -355,6 +405,10 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
             onLeave?()
             return
         }
+        if command == .loadRemoteContent {
+            loadRemoteContent()
+            return
+        }
         switch body {
         case .document: documentView.command(Self.pageName(of: command))
         case .html: htmlView?.command(command)
@@ -380,6 +434,7 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
         case .close: "close"
         case .toggle: "toggle"
         case .leave: "leave"
+        case .loadRemoteContent: "loadRemoteContent"
         }
     }
 
@@ -471,7 +526,7 @@ extension NSScrollView {
         case .halfPageUp: target = offset - visible.height / 2
         case .top: target = 0
         case .bottom: target = range
-        case .open, .close, .toggle, .leave: return
+        case .open, .close, .toggle, .leave, .loadRemoteContent: return
         }
         let clamped = min(max(target, 0), range)
         let y = document.isFlipped ? frame.minY + clamped : frame.maxY - visible.height - clamped

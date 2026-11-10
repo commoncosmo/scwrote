@@ -6,12 +6,16 @@ public struct PreviewHeader: Equatable, Sendable {
     /// An error or note, without the warning sign.
     public var message: String?
     public var isError: Bool
+    /// The shown HTML references remote content that was kept from loading.
+    /// The pane sets it; `PreviewState` doesn't know.
+    public var remoteContentBlocked: Bool
 
-    public init(label: String, isUnsaved: Bool, message: String?, isError: Bool) {
+    public init(label: String, isUnsaved: Bool, message: String?, isError: Bool, remoteContentBlocked: Bool = false) {
         self.label = label
         self.isUnsaved = isUnsaved
         self.message = message
         self.isError = isError
+        self.remoteContentBlocked = remoteContentBlocked
     }
 }
 

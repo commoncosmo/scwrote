@@ -12,6 +12,8 @@ struct PreviewKeysTests {
         #expect(reader.read(.left) == .close)
         #expect(reader.read(.enter) == .toggle)
         #expect(reader.read(.escape) == .leave)
+        #expect(reader.read(.character("R")) == .loadRemoteContent)
+        #expect(reader.read(.character("r")) == nil)
     }
 
     @Test func ggNeedsBothKeys() {

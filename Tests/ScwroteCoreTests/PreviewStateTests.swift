@@ -15,6 +15,16 @@ struct PreviewStateTests {
         #expect(PreviewState().header == PreviewHeader(label: "No file", isUnsaved: false, message: nil, isError: false))
     }
 
+    /// Whether remote content is blocked is the pane's to say, not the state's.
+    @Test func theStateNeverSaysRemoteContentIsBlocked() {
+        var state = PreviewState()
+        _ = state.apply(.buffer(snap("/n/page.html")))
+        #expect(!state.header.remoteContentBlocked)
+        var header = state.header
+        header.remoteContentBlocked = true
+        #expect(header != state.header)
+    }
+
     @Test func showsTheBufferAndItsUnsavedState() {
         var state = PreviewState()
         #expect(state.apply(.buffer(snap("/n/README.md"))) == .render)

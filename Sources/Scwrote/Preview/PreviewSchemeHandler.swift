@@ -59,7 +59,8 @@ final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     /// The file a URL names: under the app's resources for `scwrote-app`
-    /// (never outside them), or the path itself for `scwrote-file`.
+    /// (never outside them), or the path itself for `scwrote-file` (never
+    /// one with a host, which names something on the network).
     private func file(for url: URL) -> URL? {
         switch url.scheme {
         case PreviewURL.appScheme:

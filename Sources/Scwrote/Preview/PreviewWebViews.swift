@@ -258,29 +258,109 @@ final class PreviewDocumentWebView: PreviewWebView, WKScriptMessageHandler {
 }
 
 /// User HTML, shown static: its scripts never run. scwrote's own evaluated
-/// JavaScript still does, for scrolling.
+/// JavaScript still does, for scrolling and for finding remote references.
+/// Nothing from outside scwrote's own schemes loads into it (see
+/// `RemoteContentRules`) unless the show allows remote content.
 @MainActor
 final class PreviewHTMLWebView: PreviewWebView {
+    /// After a document loaded with remote content blocked: whether it
+    /// references any, which is then what was kept from it.
+    var onRemoteContent: ((Bool) -> Void)?
+    /// After each show, if the blocking rules couldn't be compiled: no user
+    /// HTML will load.
+    var onError: ((String) -> Void)?
+
     /// Where to scroll, as a fraction of the scrollable height, once the
     /// document being loaded is in.
     private var pendingFraction: Double?
     /// The newest `show`'s load, until it finishes or fails. Only it ends the
     /// wait: an older load's end says nothing about the newer document.
     private var awaitedLoad: WKNavigation?
+    private let contentController: WKUserContentController
+    /// The blocking rules, once compiled. Until then nothing loads: the
+    /// newest show waits in `queued`.
+    private var rules: WKContentRuleList?
+    private var queued: (url: URL, allowsRemoteContent: Bool)?
+    /// Why the rules couldn't be compiled.
+    private var rulesFailure: String?
+    /// The rules are in the content controller: the newest load blocks
+    /// remote content.
+    private var isBlocking = false
+    /// The newest show's URL.
+    private var shownURL: URL?
+    /// Counts shows; a scan of an older document is dropped.
+    private var showCount = 0
 
     init(schemeHandler: PreviewSchemeHandler, background: NSColor) {
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+        contentController = configuration.userContentController
         super.init(configuration: configuration, schemeHandler: schemeHandler, background: background)
+        RemoteContentRules.whenCompiled { [weak self] in self?.rulesCompiled($0) }
     }
 
-    func show(_ url: URL, scrolledTo fraction: Double) {
+    /// Loads the file at `url`, with its remote content only if allowed.
+    func show(_ url: URL, scrolledTo fraction: Double, allowingRemoteContent allows: Bool) {
         pendingFraction = fraction
+        showCount += 1
+        guard rules != nil else {
+            if let rulesFailure {
+                // After the caller's own report of this show, so this one stays.
+                Task { [weak self] in self?.onError?(rulesFailure) }
+            } else {
+                queued = (url, allows)
+            }
+            return
+        }
+        load(url, allowingRemoteContent: allows)
+    }
+
+    /// Loads the shown document again, its remote content included, scrolled
+    /// to where it is now.
+    func reloadAllowingRemoteContent() {
+        guard let url = shownURL else { return }
+        if awaitedLoad != nil || queued != nil {
+            show(url, scrolledTo: pendingFraction ?? 0, allowingRemoteContent: true)
+            return
+        }
+        let count = showCount
+        evaluateJavaScript(Self.scrolledFraction) { [weak self] result, _ in
+            guard let self, count == showCount else { return }
+            show(url, scrolledTo: result as? Double ?? 0, allowingRemoteContent: true)
+        }
+    }
+
+    private func load(_ url: URL, allowingRemoteContent allows: Bool) {
+        guard let rules else { return }
+        if allows, isBlocking {
+            contentController.remove(rules)
+        } else if !allows, !isBlocking {
+            contentController.add(rules)
+        }
+        isBlocking = !allows
+        shownURL = url
         awaitedLoad = loadExpected(url)
     }
 
+    private func rulesCompiled(_ result: Result<WKContentRuleList, any Error>) {
+        switch result {
+        case let .success(list):
+            rules = list
+            if let queued {
+                self.queued = nil
+                load(queued.url, allowingRemoteContent: queued.allowsRemoteContent)
+            }
+        case let .failure(error):
+            rulesFailure = "cannot block remote content, so the page isn't shown: \(error.localizedDescription)"
+            if queued != nil {
+                queued = nil
+                onError?(rulesFailure!)
+            }
+        }
+    }
+
     func scroll(toFraction fraction: Double) {
-        if awaitedLoad != nil {
+        if awaitedLoad != nil || queued != nil {
             pendingFraction = fraction
         } else {
             evaluateJavaScript("""
@@ -298,7 +378,7 @@ final class PreviewHTMLWebView: PreviewWebView {
         case .halfPageUp: "window.scrollBy(0, -window.innerHeight / 2)"
         case .top: "window.scrollTo(0, 0)"
         case .bottom: "window.scrollTo(0, document.documentElement.scrollHeight)"
-        case .open, .close, .toggle, .leave: ""
+        case .open, .close, .toggle, .leave, .loadRemoteContent: ""
         }
         if !script.isEmpty { evaluateJavaScript(script) }
     }
@@ -309,6 +389,12 @@ final class PreviewHTMLWebView: PreviewWebView {
         if let pendingFraction {
             self.pendingFraction = nil
             scroll(toFraction: pendingFraction)
+        }
+        guard isBlocking else { return }
+        let count = showCount
+        evaluateJavaScript(Self.remoteReferenceScan) { [weak self] result, _ in
+            guard let self, count == showCount else { return }
+            onRemoteContent?(result as? Bool ?? false)
         }
     }
 
@@ -321,6 +407,126 @@ final class PreviewHTMLWebView: PreviewWebView {
     override func contentProcessDidTerminate() {
         awaitedLoad = nil
         pendingFraction = nil
+    }
+
+    /// How far down the document is scrolled, from 0 to 1.
+    private static let scrolledFraction = """
+        (() => {
+          const range = document.documentElement.scrollHeight - window.innerHeight;
+          return range > 0 ? Math.min(Math.max(window.scrollY / range, 0), 1) : 0;
+        })()
+        """
+
+    /// Whether the document references anything that would load from outside
+    /// scwrote's own schemes: images (`srcset` too), media, embeds, frames,
+    /// stylesheets, and `url(...)` / `@import` in its `<style>` elements,
+    /// `style` attributes and the local stylesheets it links. Links don't
+    /// count: they aren't loads.
+    private static let remoteReferenceScan = #"""
+        (() => {
+          const local = new Set(["scwrote-file:", "scwrote-app:", "data:", "blob:", "about:"]);
+          const isRemote = (value, base) => {
+            if (!value || !value.trim()) return false;
+            try { return !local.has(new URL(value.trim(), base || document.baseURI).protocol); }
+            catch { return false; }
+          };
+          const cssReference = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)|@import\s+(?:"([^"]*)"|'([^']*)')/gi;
+          const inCSS = (text, base) => {
+            for (const m of (text || "").matchAll(cssReference)) {
+              if (isRemote(m[1] ?? m[2] ?? m[3] ?? m[4] ?? m[5], base)) return true;
+            }
+            return false;
+          };
+          const attributes = [
+            ["img[src], source[src], video[src], audio[src], embed[src], iframe[src], input[type=image][src]", "src"],
+            ["video[poster]", "poster"],
+            ["object[data]", "data"],
+            ["link[rel~=stylesheet][href]", "href"],
+          ];
+          for (const [selector, name] of attributes) {
+            for (const el of document.querySelectorAll(selector)) {
+              if (isRemote(el.getAttribute(name))) return true;
+            }
+          }
+          for (const el of document.querySelectorAll("img[srcset], source[srcset]")) {
+            for (const candidate of el.getAttribute("srcset").split(",")) {
+              if (isRemote(candidate.trim().split(/\s+/)[0])) return true;
+            }
+          }
+          for (const el of document.querySelectorAll("style")) {
+            if (inCSS(el.textContent)) return true;
+          }
+          for (const el of document.querySelectorAll("[style]")) {
+            if (inCSS(el.getAttribute("style"))) return true;
+          }
+          for (const sheet of document.styleSheets) {
+            if (!sheet.href) continue;
+            try {
+              for (const rule of sheet.cssRules) if (inCSS(rule.cssText, sheet.href)) return true;
+            } catch {}
+          }
+          return false;
+        })()
+        """#
+}
+
+/// The content rules that keep remote content out of the HTML preview: every
+/// load outside scwrote's own schemes and `data:`, `blob:` and `about:` is
+/// blocked, except the top frame's navigations, which `PreviewWebView`'s
+/// policy already governs (so clicked web links still open in the browser).
+/// Compiled once and kept for the app's lifetime.
+@MainActor
+enum RemoteContentRules {
+    private static let identifier = "scwrote-block-remote-content"
+    /// Block everything, then let scwrote's own schemes through, one rule
+    /// each: `url-filter` has no `|`.
+    private static let encoded = """
+        [
+          {"trigger": {"url-filter": ".*", "resource-type": ["image", "style-sheet", "script", "font", "raw",
+             "svg-document", "media", "ping", "fetch", "websocket", "other"]},
+           "action": {"type": "block"}},
+          {"trigger": {"url-filter": ".*", "resource-type": ["document"], "load-context": ["child-frame"]},
+           "action": {"type": "block"}},
+          {"trigger": {"url-filter": "^scwrote-file:"}, "action": {"type": "ignore-previous-rules"}},
+          {"trigger": {"url-filter": "^scwrote-app:"}, "action": {"type": "ignore-previous-rules"}},
+          {"trigger": {"url-filter": "^data:"}, "action": {"type": "ignore-previous-rules"}},
+          {"trigger": {"url-filter": "^blob:"}, "action": {"type": "ignore-previous-rules"}},
+          {"trigger": {"url-filter": "^about:"}, "action": {"type": "ignore-previous-rules"}}
+        ]
+        """
+    private static var compiled: Result<WKContentRuleList, any Error>?
+    /// Who asked while the rules were being compiled.
+    private static var waiting: [(Result<WKContentRuleList, any Error>) -> Void]?
+
+    /// Calls `done` with the compiled rules, at once if they are ready.
+    static func whenCompiled(_ done: @escaping (Result<WKContentRuleList, any Error>) -> Void) {
+        if let compiled {
+            done(compiled)
+            return
+        }
+        if waiting != nil {
+            waiting?.append(done)
+            return
+        }
+        waiting = [done]
+        Task {
+            let result: Result<WKContentRuleList, any Error>
+            do {
+                if let list = try await WKContentRuleListStore.default()
+                    .compileContentRuleList(forIdentifier: identifier, encodedContentRuleList: encoded)
+                {
+                    result = .success(list)
+                } else {
+                    result = .failure(CocoaError(.featureUnsupported))
+                }
+            } catch {
+                result = .failure(error)
+            }
+            compiled = result
+            let callers = waiting ?? []
+            waiting = nil
+            for caller in callers { caller(result) }
+        }
     }
 }
 

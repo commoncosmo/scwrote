@@ -7,7 +7,8 @@ import ScwroteCore
 ///       plain characters go to the browser; <CR>, <Esc>, <Up>, <Down>,
 ///       <Left>, <Right>, <C-d>, <C-u> are browser keys. The window's own
 ///       keys, <D-1> (Cmd+1), <D-S-1>, <D-2>, <D-[> and <D-]>, are posted as
-///       real key events, so they take the path a keyboard's would. Text in
+///       real key events, so they take the path a keyboard's would; so is
+///       <S-R> (Shift+R), for the preview's `R` when it has the keyboard. Text in
 ///       braces goes to nvim with nvim_input, in nvim's key notation:
 ///       {ohello<Esc>} opens a line, types "hello" and leaves insert mode.
 ///   SCWROTE_DEBUG_SNAPSHOT=/path.png   afterwards, save a picture of the
@@ -81,6 +82,7 @@ extension EditorWindowController {
             "<D-1>": .keyboard(18, "1", [.command]), "<D-S-1>": .keyboard(18, "!", [.command, .shift]),
             "<D-2>": .keyboard(19, "2", [.command]),
             "<D-[>": .keyboard(33, "[", [.command]), "<D-]>": .keyboard(30, "]", [.command]),
+            "<S-R>": .keyboard(15, "R", [.shift]),
         ]
         var keys: [DebugKey] = []
         var rest = Substring(script)

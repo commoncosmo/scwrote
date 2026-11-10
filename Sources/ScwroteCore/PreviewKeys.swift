@@ -7,6 +7,8 @@ public enum PreviewCommand: Equatable, Sendable {
     case close
     case toggle
     case leave
+    /// Load the remote content the shown HTML file references (`R`).
+    case loadRemoteContent
 }
 
 /// Turns keys into preview commands, holding the first `g` of `gg`.
@@ -33,6 +35,7 @@ public struct PreviewKeyReader: Sendable {
         case .character("h"), .left: return .close
         case .enter, .character("o"): return .toggle
         case .escape: return .leave
+        case .character("R"): return .loadRemoteContent
         case .character: return nil
         }
     }
