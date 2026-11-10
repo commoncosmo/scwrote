@@ -20,13 +20,14 @@ Fills the window when you start on a folder; choosing a file opens it in nvim
 and hides the browser. Pinned, it stays beside the editor.
 
 Moving between the browser and the editor works from either pane, the way
-Cmd+[ and Cmd+] move between splits in Ghostty and iTerm2:
+Cmd+[ and Cmd+] move between splits in Ghostty and iTerm2. With the preview
+shown they move one pane at a time across all three (see Preview below):
 
 | Key | Does |
 |---|---|
-| Cmd+[ | go to the browser, showing it if hidden |
-| Cmd+] | go to the editor (hides the browser unless pinned) |
-| Esc (in the browser) | same as Cmd+] |
+| Cmd+[ | one pane left; from the editor, the browser, showing it if hidden |
+| Cmd+] | one pane right; from the browser, the editor (hides the browser unless pinned) |
+| Esc (in the browser) | go to the editor (hides the browser unless pinned) |
 | Cmd+1 | show the browser and go to it / go to it / hide it |
 | Cmd+Shift+1 | pin / unpin |
 
@@ -62,7 +63,9 @@ for it, and stays until you hide it.
 The window's menu has these too, as Toggle Preview, Move to Left Pane and Move
 to Right Pane. The preview has no pin: leaving it doesn't hide it. In a narrow
 window the unpinned browser gives way first, then the preview; they come back
-when there's room.
+when there's room. The pane you're in never gives way, nor does the preview
+while you're in the browser: the editor narrows instead, so you can step
+through images. Cmd+2 on a preview with no room hides it.
 
 What it shows, by file extension (or nvim's `filetype` when the extension says
 nothing):
