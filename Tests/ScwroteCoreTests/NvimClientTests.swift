@@ -35,6 +35,23 @@ struct NvimClientTests {
         }
     }
 
+    /// nvim sends `rpcnotify(0, ...)` to every channel. The app's own client
+    /// never asks for notifications, so it must not keep them.
+    @Test func notificationsAreDroppedUnlessQueued() throws {
+        let nvim = try HeadlessNvim()
+        let client = NvimClient(socketPath: nvim.socketPath)
+        let listening = NvimClient(socketPath: nvim.socketPath, queuesNotifications: true)
+        _ = try listening.channelID()
+
+        _ = try client.request("nvim_exec_lua", [.string("vim.rpcnotify(0, 'broadcast', 1)"), .array([])])
+        // Sent after the notification, so answered after it arrives.
+        _ = try client.channelID()
+        _ = try listening.channelID()
+
+        #expect(client.queuedNotificationCount == 0)
+        #expect(listening.queuedNotificationCount == 1)
+    }
+
     @Test func connectingToASocketThatNeverAppearsGivesUp() {
         let client = NvimClient(socketPath: NSTemporaryDirectory() + "sn-missing.sock", connectTimeout: 0.2)
 

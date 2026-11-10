@@ -214,6 +214,27 @@ struct NvimEventListenerTests {
         #expect(session.log.endCount == 1)
     }
 
+    /// nvim takes the connection at once but answers nothing until its
+    /// startup is done, which a plugin manager's first run can stretch past
+    /// the 5 s read timeout.
+    @Test func aSlowStartupIsWaitedOut() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("scwrote events \(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("notes.md")
+        try Data("# hi\n".utf8).write(to: file)
+        let nvim = try HeadlessNvim(arguments: ["--cmd", "lua vim.uv.sleep(6000)", file.path])
+        let log = EventLog()
+        let listener = NvimEventListener(socketPath: nvim.socketPath)
+        defer { listener.stop() }
+
+        listener.start(onEvent: { log.record($0) }, onEnd: { log.recordEnd() })
+
+        #expect(log.waitFor(timeout: 12) { !$0.buffers.isEmpty })
+        #expect(log.buffers.first?.path == realpath(file.path))
+        #expect(log.endCount == 0)
+    }
+
     @Test func aSocketThatNeverAppearsEndsTheListener() throws {
         let log = EventLog()
         let listener = NvimEventListener(socketPath: NSTemporaryDirectory() + "sn-missing.sock", connectTimeout: 0.2)

@@ -7,7 +7,11 @@ public final class NvimEventListener: @unchecked Sendable {
     private let client: NvimClient
 
     public init(socketPath: String, connectTimeout: TimeInterval = 2) {
-        client = NvimClient(socketPath: socketPath, connectTimeout: connectTimeout)
+        // Waits out a slow nvim startup: until it's done, nvim takes the
+        // connection but answers nothing.
+        client = NvimClient(
+            socketPath: socketPath, connectTimeout: connectTimeout, queuesNotifications: true, waitsOutTimeouts: true
+        )
     }
 
     /// Connects, installs the autocommands, then calls `onEvent` on a

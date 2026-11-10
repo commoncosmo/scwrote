@@ -9,6 +9,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     var onClose: (() -> Void)?
     /// True until nvim exits. Closing the window while it runs hangs up on it.
     private(set) var isNvimRunning = true
+    /// Set as the window closes, when its connections to nvim are let go.
+    private(set) var isClosing = false
 
     let terminalView = EditorTerminalView(frame: .zero)
     let browserView: FileBrowserView
@@ -244,6 +246,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_: Notification) {
+        isClosing = true
         watcher?.stop()
         previewEvents.stop()
         onClose?()

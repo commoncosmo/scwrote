@@ -19,8 +19,17 @@ extension EditorWindowController {
             onEvent: { [weak self] event in
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.receive(event) } }
             },
-            onEnd: {}
+            onEnd: { [weak self] in
+                DispatchQueue.main.async { MainActor.assumeIsolated { self?.previewEventsEnded() } }
+            }
         )
+    }
+
+    /// The listener stops for good when nvim goes away; while the window is
+    /// still open that means the preview no longer follows nvim, so say why.
+    private func previewEventsEnded() {
+        guard !isClosing else { return }
+        FileHandle.standardError.write(Data("scwrote: lost nvim's events; the preview no longer follows nvim\n".utf8))
     }
 
     private func receive(_ event: PreviewEvent) {

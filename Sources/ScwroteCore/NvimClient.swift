@@ -3,8 +3,10 @@ import Foundation
 /// A blocking msgpack-RPC client for a running nvim's `--listen` socket.
 /// Calls block until nvim answers, so make them off the main thread.
 ///
-/// Notifications nvim sends are queued for `nextNotification()`. Since that
-/// waits for the next one, a client that listens is used for nothing else.
+/// A client made to listen (see `NvimEventListener`) queues the notifications
+/// nvim sends for `nextNotification()`; since that waits for the next one, it
+/// is used for nothing else. Other clients drop them: nvim broadcasts some to
+/// every channel, and nobody would ever take them.
 public final class NvimClient: @unchecked Sendable {
     public enum Failure: Error, Equatable {
         /// The socket couldn't be reached before `connectTimeout`.
@@ -28,13 +30,30 @@ public final class NvimClient: @unchecked Sendable {
     private var nextRequestID: Int64 = 1
     private var received = MessagePackBuffer()
     private var notifications: [(method: String, params: [MessagePackValue])] = []
+    private let queuesNotifications: Bool
+    /// Whether a call waits as long as nvim takes to answer, rather than
+    /// giving up after the socket's 5 s read timeout.
+    private let waitsOutTimeouts: Bool
 
     /// `connectTimeout` covers nvim still starting up when the first request
     /// is made: until then the socket file may not exist yet.
-    public init(socketPath: String, connectTimeout: TimeInterval = 2) {
+    public convenience init(socketPath: String, connectTimeout: TimeInterval = 2) {
+        self.init(socketPath: socketPath, connectTimeout: connectTimeout, queuesNotifications: false)
+    }
+
+    /// `queuesNotifications` keeps notifications for `nextNotification()`.
+    /// `waitsOutTimeouts` makes calls wait however long nvim takes: it answers
+    /// nothing until its startup is done, which plugins can stretch past 5 s.
+    /// Either way a closed connection ends a call at once.
+    init(socketPath: String, connectTimeout: TimeInterval = 2, queuesNotifications: Bool, waitsOutTimeouts: Bool = false) {
         self.socketPath = socketPath
         self.connectTimeout = connectTimeout
+        self.queuesNotifications = queuesNotifications
+        self.waitsOutTimeouts = waitsOutTimeouts
     }
+
+    /// How many notifications wait for `nextNotification()`, for tests.
+    var queuedNotificationCount: Int { lock.withLock { notifications.count } }
 
     deinit {
         if socket >= 0 { Darwin.close(socket) }
@@ -57,8 +76,10 @@ public final class NvimClient: @unchecked Sendable {
     }
 
     /// The next notification nvim sent, waiting as long as it takes. Throws
-    /// `.connectionLost` when nvim goes away or the client is closed.
+    /// `.connectionLost` when nvim goes away or the client is closed. Only for
+    /// a client that queues notifications.
     public func nextNotification() throws -> (method: String, params: [MessagePackValue]) {
+        precondition(queuesNotifications, "this client drops notifications")
         lock.lock()
         defer { lock.unlock() }
         if socket < 0 { try connect() }
@@ -186,19 +207,20 @@ public final class NvimClient: @unchecked Sendable {
     }
 
     /// Reads messages until the response to `id` arrives. Notifications that
-    /// come meanwhile are queued; anything else (requests to us, responses to
-    /// calls that failed) is skipped.
+    /// come meanwhile are queued or dropped; anything else (requests to us,
+    /// responses to calls that failed) is skipped.
     private func response(to id: Int64) throws -> MessagePackValue {
         while true {
             if let parts = receiveBuffered(until: { $0.count == 4 && $0[0] == .int(1) && $0[1] == .int(id) }) {
                 if parts[2] != .nil { throw Failure.nvim(Self.describe(parts[2])) }
                 return parts[3]
             }
-            try readMore(waitingOutTimeouts: false)
+            try readMore(waitingOutTimeouts: waitsOutTimeouts)
         }
     }
 
-    /// Decodes the messages already read, queueing notifications, until
+    /// Decodes the messages already read, queueing notifications (or dropping
+    /// them, unless `queuesNotifications`), until
     /// `isWanted` accepts one of the others, which it returns. nil when the
     /// buffer runs out first.
     private func receiveBuffered(until isWanted: ([MessagePackValue]) -> Bool) -> [MessagePackValue]? {
@@ -206,7 +228,7 @@ public final class NvimClient: @unchecked Sendable {
             guard case let .array(parts) = message else { continue }
             if parts.count == 3, parts[0] == .int(2),
                case let .string(method) = parts[1], case let .array(params) = parts[2] {
-                notifications.append((method, params))
+                if queuesNotifications { notifications.append((method, params)) }
                 continue
             }
             if isWanted(parts) { return parts }
