@@ -32,6 +32,16 @@ struct UnsavedFilesTests {
         #expect(!changed(&unsaved, .cursor(path: "/p/a.md", CursorPosition(line: 2, column: 0))))
     }
 
+    @Test func theWholeSetReplacesWhatDrifted() {
+        var unsaved = UnsavedFiles()
+        unsaved.apply(.modified(path: "/p/old-name.md", isModified: true))
+        #expect(changed(&unsaved, .unsaved(["/p/new-name.md"])))
+        #expect(unsaved.paths == ["/p/new-name.md"])
+        #expect(!changed(&unsaved, .unsaved(["/p/new-name.md"])))
+        #expect(changed(&unsaved, .unsaved([])))
+        #expect(unsaved.count == 0)
+    }
+
     @Test func marksTheFileAndEveryFolderAboveIt() {
         var unsaved = UnsavedFiles()
         unsaved.apply(.modified(path: "/p/notes/deep/a.md", isModified: true))

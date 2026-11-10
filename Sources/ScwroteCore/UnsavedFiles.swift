@@ -2,7 +2,7 @@
 /// nvim's events, and which file browser rows get the unsaved dot.
 ///
 /// Paths are nvim's: absolute and with symlinks resolved. Callers compare
-/// browser rows in that same form (see `FileBrowser.realPath(of:realRoot:)`).
+/// browser rows in that same form (see `FileBrowser.nvimPath(of:realRoot:)`).
 public struct UnsavedFiles: Equatable, Sendable {
     public private(set) var paths: Set<String> = []
 
@@ -15,9 +15,17 @@ public struct UnsavedFiles: Equatable, Sendable {
     @discardableResult
     public mutating func apply(_ event: PreviewEvent) -> Bool {
         switch event {
-        case let .buffer(snapshot): set(snapshot.path, isModified: snapshot.isModified)
-        case let .modified(path, isModified): set(path, isModified: isModified)
-        case .cursor: false
+        case let .buffer(snapshot):
+            return set(snapshot.path, isModified: snapshot.isModified)
+        case let .modified(path, isModified):
+            return set(path, isModified: isModified)
+        case let .unsaved(paths):
+            // The whole set, from nvim: it replaces whatever drifted.
+            guard paths != self.paths else { return false }
+            self.paths = paths
+            return true
+        case .cursor:
+            return false
         }
     }
 

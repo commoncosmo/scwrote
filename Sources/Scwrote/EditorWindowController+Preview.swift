@@ -44,7 +44,7 @@ extension EditorWindowController {
         switch event {
         case let .buffer(snapshot): latestCursor = (snapshot.path, snapshot.cursor)
         case let .cursor(path, position): latestCursor = (path, position)
-        case .modified: break
+        case .modified, .unsaved: break
         }
         var unsaved = browserView.unsaved
         if unsaved.apply(event) { browserView.unsaved = unsaved }

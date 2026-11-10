@@ -11,6 +11,11 @@ private final class EventLog: @unchecked Sendable {
     var events: [PreviewEvent] { lock.withLock { _events } }
     var endCount: Int { lock.withLock { _endCount } }
 
+    /// The unsaved files the browser would show, from every event so far.
+    var unsaved: UnsavedFiles {
+        events.reduce(into: UnsavedFiles()) { $0.apply($1) }
+    }
+
     var buffers: [BufferSnapshot] {
         events.compactMap { if case let .buffer(snapshot) = $0 { snapshot } else { nil } }
     }
@@ -67,6 +72,18 @@ private final class Session {
 
     func lua(_ code: String, _ args: [MessagePackValue] = []) throws -> MessagePackValue {
         try client.request("nvim_exec_lua", [.string(code), .array(args)])
+    }
+
+    /// Changes the file, then opens another one, leaving the change unsaved
+    /// in a hidden buffer. Returns the other file's path.
+    func leaveChangedFile() throws -> String {
+        let other = folder.appendingPathComponent("other.md").path
+        try Data("x\n".utf8).write(to: URL(fileURLWithPath: other))
+        try input("ox<Esc>:set hidden<CR>")
+        #expect(log.waitFor { $0.unsaved.paths == [self.file] })
+        _ = try lua("vim.cmd.edit(vim.fn.fnameescape(...))", [.string(other)])
+        #expect(log.waitFor { $0.buffers.contains { $0.path == realpath(other) } })
+        return other
     }
 
     /// Waits for the buffer event sent when the listener installs itself.
@@ -128,40 +145,51 @@ struct NvimEventListenerTests {
     @Test func installingReportsUnsavedFilesThatArentOnScreen() throws {
         let session = try Session(contents: "# hi\n")
         #expect(session.waitUntilListening())
-        let other = session.folder.appendingPathComponent("other.md").path
-        try Data("x\n".utf8).write(to: URL(fileURLWithPath: other))
-
-        // Change notes.md, then leave it (unsaved) for another file.
-        try session.input("ox<Esc>:set hidden<CR>")
-        #expect(session.log.waitFor { $0.events.contains(.modified(path: session.file, isModified: true)) })
-        _ = try session.lua("vim.cmd.edit(vim.fn.fnameescape(...))", [.string(other)])
-        #expect(session.log.waitFor { $0.buffers.contains { $0.path == realpath(other) } })
+        let other = try session.leaveChangedFile()
         let before = session.log.events.count
 
         // Reinstalling (as Cmd+2 does) reports every unsaved file again.
         session.listener.setSendsText(false)
 
-        #expect(session.log.waitFor {
-            $0.events.dropFirst(before).contains(.modified(path: session.file, isModified: true))
-        })
+        #expect(session.log.waitFor { $0.events.dropFirst(before).contains(.unsaved([session.file])) })
+        #expect(session.log.unsaved.paths == [session.file])
+        #expect(!session.log.unsaved.paths.contains(realpath(other)))
     }
 
     @Test func throwingChangesAwayReportsTheFileAsSaved() throws {
         let session = try Session(contents: "# hi\n")
         #expect(session.waitUntilListening())
-        let other = session.folder.appendingPathComponent("other.md").path
-        try Data("x\n".utf8).write(to: URL(fileURLWithPath: other))
-
-        try session.input("ox<Esc>:set hidden<CR>")
-        #expect(session.log.waitFor { $0.events.contains(.modified(path: session.file, isModified: true)) })
-        _ = try session.lua("vim.cmd.edit(vim.fn.fnameescape(...))", [.string(other)])
-        #expect(session.log.waitFor { $0.events.contains(.modified(path: session.file, isModified: true)) })
+        _ = try session.leaveChangedFile()
         // The temp folder's name has spaces, so name the buffer as "#" (the alternate file).
         try session.input(":bd! #<CR>")
 
-        #expect(session.log.waitFor { $0.events.last(where: {
-            if case .modified(session.file, _) = $0 { true } else { false }
-        }) == .modified(path: session.file, isModified: false) })
+        #expect(session.log.waitFor { $0.unsaved.paths.isEmpty })
+    }
+
+    @Test func savingUnderAnotherNameClearsTheOldOne() throws {
+        let session = try Session(contents: "# hi\n")
+        #expect(session.waitUntilListening())
+        try session.input("ox<Esc>")
+        #expect(session.log.waitFor { $0.unsaved.paths == [session.file] })
+
+        let renamed = session.folder.appendingPathComponent("renamed.md").path
+        _ = try session.lua("vim.cmd.saveas(vim.fn.fnameescape(...))", [.string(renamed)])
+
+        #expect(session.log.waitFor { $0.unsaved.paths.isEmpty })
+    }
+
+    @Test func renamingMovesTheDotToTheNewName() throws {
+        let session = try Session(contents: "# hi\n")
+        #expect(session.waitUntilListening())
+        try session.input("ox<Esc>")
+        #expect(session.log.waitFor { $0.unsaved.paths == [session.file] })
+
+        let renamed = session.folder.appendingPathComponent("renamed.md").path
+        _ = try session.lua("vim.cmd.file(vim.fn.fnameescape(...))", [.string(renamed)])
+
+        let name = try session.lua("return vim.api.nvim_buf_get_name(0)")
+        #expect(session.log.waitFor { $0.unsaved.paths.count == 1 && $0.unsaved.paths.first.map(MessagePackValue.string) == name })
+        #expect(session.log.unsaved.paths.first?.hasSuffix("/renamed.md") == true)
     }
 
     @Test func cursorMovesAreSent() throws {
@@ -215,7 +243,7 @@ struct NvimEventListenerTests {
             switch event {
             case let .buffer(snapshot): snapshot.path != session.file
             case let .cursor(path, _): path != session.file
-            case .modified: false
+            case .modified, .unsaved: false
             }
         }
         #expect(strays.isEmpty)

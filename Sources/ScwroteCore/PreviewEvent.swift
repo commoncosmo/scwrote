@@ -66,15 +66,35 @@ public enum PreviewEvent: Equatable, Sendable {
     /// The file's modified flag changed, which happens on the first keystroke.
     case modified(path: String, isModified: Bool)
     case cursor(path: String, CursorPosition)
+    /// Every file with unsaved changes, sent whole (on install, renames and
+    /// unloads) so a set built from `modified` events can't drift.
+    case unsaved(Set<String>)
 
     static let method = "scwrote_preview"
 
     /// nil for other notifications and for params that don't fit the contract.
     public init?(method: String, params: [MessagePackValue]) {
         guard method == Self.method, params.count == 1, case let .map(fields) = params[0],
-              case let .string(type)? = fields[.string("type")],
-              case let .string(path)? = fields[.string("path")]
+              case let .string(type)? = fields[.string("type")]
         else { return nil }
+        if type == "unsaved" {
+            // An empty Lua table arrives as an empty array or an empty map.
+            switch fields[.string("paths")] {
+            case let .array(values)?:
+                var paths: Set<String> = []
+                for value in values {
+                    guard case let .string(path) = value else { return nil }
+                    paths.insert(path)
+                }
+                self = .unsaved(paths)
+            case let .map(pairs)? where pairs.isEmpty:
+                self = .unsaved([])
+            default:
+                return nil
+            }
+            return
+        }
+        guard case let .string(path)? = fields[.string("path")] else { return nil }
 
         func bool(_ key: String) -> Bool? {
             if case let .bool(value)? = fields[.string(key)] { value } else { nil }
