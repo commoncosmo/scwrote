@@ -33,6 +33,35 @@ Issues already fixed during the review rounds are left out.
   (`EditorWindowController`, `NvimClient` 5 s `SO_RCVTIMEO`). The listener
   already waits this out.
 
+## Remote content in HTML previews
+
+Added in a1b0e78 (blocked until you press R, per file). Review found no
+leaks; these are hardening and UX gaps.
+
+- [ ] **Header click can grant consent when the note is cut off.** In a
+  narrow pane the clickable area clamps to the status start, so a click on
+  "● unsaved" or a message can count as "load". Put the note first, or make
+  it clickable only when drawn in full (`PreviewHeaderView.swift`).
+- [ ] **Force-click link preview** bypasses the lockdown (`allowsLinkPreview`
+  is on by default). Set it to false on the HTML view.
+- [ ] **DNS prefetch unverified.** Add `X-DNS-Prefetch-Control: off` to
+  `scwrote-file` HTML responses as cheap insurance.
+- [ ] **Scan gaps leave content blocked with no note:** `background=`
+  attributes, SVG `<image href>` / `xlink:href`, `<use href>`,
+  `<link rel=preload>`, `<track src>`, `image-set()` with bare strings, and
+  `@import` nested inside a local imported sheet.
+- [ ] **The note can promise loads that never happen:** iframes, `<embed>`,
+  `<object>` (child frames are always cancelled) and protocol-relative
+  `//host/x` (404s by design) set the note, but R changes nothing for them.
+  Drop them from the scan or say so in the README. `javascript:`/`mailto:`
+  in `src` also count as remote.
+- [ ] Header text says "R to load" though a click and the View menu work
+  too.
+- [ ] The content rule list is recompiled on every launch;
+  `lookUpContentRuleList` first would skip that.
+- [ ] Markdown never loads remote images (the page's CSP). Decide whether it
+  should get the same gate.
+
 ## Narrow windows
 
 - [ ] A preview that is shown but squeezed out still asks nvim for text on
