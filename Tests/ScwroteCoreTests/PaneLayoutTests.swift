@@ -212,6 +212,18 @@ struct PaneLayoutPreviewTests {
         #expect(!layout.isPreviewShown && layout.focus == .editor)
     }
 
+    /// In a window too narrow for it, a shown preview is squeezed out while
+    /// the editor has the keyboard; Cmd+2 then hides it rather than going to it.
+    @Test func cmd2OnASqueezedOutPreviewHidesIt() {
+        var layout = PaneLayout(startsInBrowser: false)
+        layout.togglePreview()
+        layout.leavePreview()
+        layout.togglePreview(squeezedOut: true)
+        #expect(!layout.isPreviewShown && layout.focus == .editor)
+        layout.togglePreview(squeezedOut: false)
+        #expect(layout.isPreviewShown && layout.focus == .preview)
+    }
+
     @Test func bracketsMoveOnePaneAtATime() {
         var layout = PaneLayout(startsInBrowser: false)
         layout.togglePreview()               // in the preview

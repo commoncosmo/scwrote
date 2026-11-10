@@ -1,5 +1,12 @@
 /// Horizontal spans of the panes for a given window width: browser | editor | preview.
 /// Pure and stateless, so widening the window brings squeezed panes back.
+///
+/// When the window is too narrow, the unpinned browser gives way first, then
+/// the preview; a pinned browser never does. The pane with the keyboard never
+/// gives way, and while the browser has it neither does a shown preview (so
+/// you can step through images): the editor yields its width instead, down to
+/// nothing. Only below the two side panes' minimums together does one of
+/// them go after all: the one without the keyboard.
 public struct PaneFrames: Equatable, Sendable {
     public struct Span: Equatable, Sendable {
         public var x: Double
@@ -45,20 +52,32 @@ public struct PaneFrames: Equatable, Sendable {
         func needed(browser: Bool, preview: Bool) -> Double {
             minEditor + (browser ? minBrowser + divider : 0) + (preview ? minPreview + divider : 0)
         }
-        if wantsBrowser && !layout.isPinned && totalWidth < needed(browser: true, preview: wantsPreview) {
+        let browserStays = layout.isPinned || layout.focus == .browser
+        let previewStays = layout.focus == .preview || layout.focus == .browser
+        if wantsBrowser && !browserStays && totalWidth < needed(browser: true, preview: wantsPreview) {
             wantsBrowser = false
             gaveWay.insert(.browser)
         }
-        if wantsPreview && totalWidth < needed(browser: wantsBrowser, preview: true) {
+        if wantsPreview && !previewStays && totalWidth < needed(browser: wantsBrowser, preview: true) {
             wantsPreview = false
             gaveWay.insert(.preview)
+        }
+        if wantsBrowser && wantsPreview && totalWidth < minBrowser + divider + minPreview + divider {
+            // No room for both even with no editor.
+            if layout.focus == .preview {
+                wantsBrowser = false
+                gaveWay.insert(.browser)
+            } else {
+                wantsPreview = false
+                gaveWay.insert(.preview)
+            }
         }
 
         var x = 0.0
         var browser: Span?
         if wantsBrowser {
             let room = totalWidth - needed(browser: false, preview: wantsPreview) - divider
-            // A pinned browser keeps its minimum even when the editor then gets less than its own.
+            // A browser that stays keeps its minimum even when the editor then gets less than its own.
             let width = min(max(browserWidth, minBrowser), max(room, minBrowser))
             browser = Span(x: 0, width: width)
             x = width + divider

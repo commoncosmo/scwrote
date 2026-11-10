@@ -114,9 +114,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         change { $0.togglePin() }
     }
 
-    /// Cmd+2 (View menu): show the preview and go to it, go to it, or hide it.
+    /// Cmd+2 (View menu): show the preview and go to it, go to it, or hide it
+    /// (also when the window has no room to show it).
     @objc func togglePreview(_: Any?) {
-        change { $0.togglePreview() }
+        let squeezedOut = layoutView.gaveWay(for: panes).contains(.preview)
+        change { $0.togglePreview(squeezedOut: squeezedOut) }
     }
 
     /// Cmd+[ (View menu): one pane to the left.
@@ -142,16 +144,18 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// Applies a layout change. The keyboard never goes to a pane the window
     /// has no room for. A browser that just appeared opens on the file being
     /// edited; a preview that just appeared catches up with nvim; coming back
-    /// to the editor points the preview back at nvim's buffer and cursor.
+    /// to the editor points the preview back at nvim's buffer and cursor
+    /// (being sent there because a pane gave way doesn't count).
     func change(_ update: (inout PaneLayout) -> Void) {
         let old = panes
         update(&panes)
+        let returnsToEditor = old.focus != .editor && panes.focus == .editor
         if layoutView.gaveWay(for: panes).contains(panes.focus) { panes.paneGaveWay(panes.focus) }
         applyPanes()
         if old.mode == .editorOnly, panes.mode != .editorOnly { revealCurrentFile() }
         if !old.isPreviewShown, panes.isPreviewShown { previewAppeared() }
         if old.isPreviewShown, !panes.isPreviewShown { previewDisappeared() }
-        if old.focus != .editor, panes.focus == .editor { previewReturnedToEditor() }
+        if returnsToEditor { previewReturnedToEditor() }
     }
 
     private func applyPanes() {
@@ -165,9 +169,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         if window?.firstResponder !== focused { window?.makeFirstResponder(focused) }
     }
 
-    /// Panes squeezed out for lack of room give up the keyboard.
-    private func panesGaveWay(_ panes: Set<PaneLayout.Pane>) {
-        for pane in panes { change { $0.paneGaveWay(pane) } }
+    /// Panes squeezed out for lack of room give up the keyboard. That isn't
+    /// the user returning to the editor, so the preview stays as it is.
+    private func panesGaveWay(_ gone: Set<PaneLayout.Pane>) {
+        let old = panes
+        for pane in gone { panes.paneGaveWay(pane) }
+        if panes != old { applyPanes() }
     }
 
     private func handle(_ action: BrowserAction) {

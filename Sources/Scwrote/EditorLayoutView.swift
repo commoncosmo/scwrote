@@ -16,12 +16,8 @@ final class EditorLayoutView: NSView {
 
     /// Named `panes`, not `layout`, which is NSView's layout pass.
     var panes: PaneLayout {
-        didSet {
-            // Focus alone moves no pane.
-            guard (panes.mode, panes.isPinned, panes.isPreviewShown)
-                != (oldValue.mode, oldValue.isPinned, oldValue.isPreviewShown) else { return }
-            needsLayout = true
-        }
+        // Focus counts too: the pane with the keyboard never gives way.
+        didSet { if panes != oldValue { needsLayout = true } }
     }
 
     /// After a layout in which the set of panes squeezed out for lack of room

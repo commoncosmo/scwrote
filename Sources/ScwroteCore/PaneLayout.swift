@@ -42,16 +42,17 @@ public struct PaneLayout: Equatable, Sendable {
     }
 
     /// Cmd+2: show the preview and go to it; go to it if it's showing; hide it
-    /// if you're in it.
-    public mutating func togglePreview() {
+    /// if you're in it, or if it's shown but `squeezedOut` for lack of room
+    /// (so you don't see it).
+    public mutating func togglePreview(squeezedOut: Bool = false) {
         if !isPreviewShown {
             isPreviewShown = true
             focus = .preview
-        } else if focus != .preview {
+        } else if focus != .preview && !squeezedOut {
             focus = .preview
         } else {
             isPreviewShown = false
-            focus = editorHasFile ? .editor : .browser
+            if focus == .preview { focus = editorHasFile ? .editor : .browser }
         }
     }
 
