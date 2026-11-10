@@ -281,11 +281,17 @@ private final class FailingSecondMove: FileSystem, @unchecked Sendable {
     private let inner: any FileSystem
     private let lock = NSLock()
     private var moves = 0
+    /// Also fail every move after the second, so the rollback fails too.
+    private let failsEveryMoveAfterTheFirst: Bool
 
-    init(wrapping inner: any FileSystem) { self.inner = inner }
+    init(wrapping inner: any FileSystem, failsEveryMoveAfterTheFirst: Bool = false) {
+        self.inner = inner
+        self.failsEveryMoveAfterTheFirst = failsEveryMoveAfterTheFirst
+    }
 
     func itemExists(at path: String) -> Bool { inner.itemExists(at: path) }
     func isFolder(at path: String) -> Bool { inner.isFolder(at: path) }
+    func isSymbolicLink(at path: String) -> Bool { inner.isSymbolicLink(at: path) }
     func isSameItem(_ a: String, _ b: String) -> Bool { inner.isSameItem(a, b) }
     func createFile(at path: String) throws { try inner.createFile(at: path) }
     func createFolder(at path: String) throws { try inner.createFolder(at: path) }
@@ -297,7 +303,7 @@ private final class FailingSecondMove: FileSystem, @unchecked Sendable {
         moves += 1
         let n = moves
         lock.unlock()
-        if n == 2 { throw CocoaError(.fileWriteUnknown) }
+        if n == 2 || (failsEveryMoveAfterTheFirst && n > 2) { throw CocoaError(.fileWriteNoPermission) }
         try inner.moveItem(at: source, to: destination)
     }
 }
@@ -309,10 +315,127 @@ private struct FolderOf: FileSystem {
 
     func itemExists(at path: String) -> Bool { true }
     func isFolder(at path: String) -> Bool { true }
+    func isSymbolicLink(at path: String) -> Bool { false }
     func isSameItem(_ a: String, _ b: String) -> Bool { false }
     func createFile(at path: String) throws {}
     func createFolder(at path: String) throws {}
     func moveItem(at source: String, to destination: String) throws {}
     func trashItem(at path: String) throws {}
     func itemCount(inFolder path: String, upTo limit: Int) -> Int { min(count, limit) }
+}
+
+/// Every operation fails with `error`; only `/r/a.md` exists, as a file.
+private struct Failing: FileSystem {
+    let error: any Error
+
+    func itemExists(at path: String) -> Bool { path == "/r/a.md" }
+    func isFolder(at path: String) -> Bool { false }
+    func isSymbolicLink(at path: String) -> Bool { false }
+    func isSameItem(_ a: String, _ b: String) -> Bool { false }
+    func createFile(at path: String) throws { throw error }
+    func createFolder(at path: String) throws { throw error }
+    func moveItem(at source: String, to destination: String) throws { throw error }
+    func trashItem(at path: String) throws { throw error }
+    func itemCount(inFolder path: String, upTo limit: Int) -> Int { 0 }
+}
+
+@Suite struct FileActionsEdgeTests {
+    @Test func permissionErrorsAreSaidPlainly() {
+        let underlying = NSError(
+            domain: NSCocoaErrorDomain, code: CocoaError.fileWriteUnknown.rawValue,
+            userInfo: [NSUnderlyingErrorKey: NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES))])
+        let errors: [any Error] = [
+            CocoaError(.fileWriteNoPermission), CocoaError(.fileReadNoPermission),
+            POSIXError(.EACCES), POSIXError(.EPERM), underlying,
+        ]
+        for error in errors {
+            let actions = FileActions(root: "/r", fileSystem: Failing(error: error))
+            #expect(actions.delete("/r/a.md").failureMessage == "permission denied", "\(error)")
+            #expect(actions.rename("/r/a.md", to: "b.md").failureMessage == "permission denied", "\(error)")
+        }
+    }
+
+    @Test func aSymlinkToAFolderIsAskedAboutLikeAFile() throws {
+        let t = try TempFolder()
+        try t.write("target/a.md")
+        try t.write("target/b.md")
+        try FileManager.default.createSymbolicLink(atPath: t.root + "/drafts", withDestinationPath: t.root + "/target")
+        let q = { (unsaved: Bool) in t.actions.deleteQuestion(for: t.root + "/drafts", hasUnsavedChanges: unsaved) }
+        #expect(q(false).text == "Delete drafts? (y/N)")
+        #expect(q(true).text == "drafts has unsaved changes. Delete anyway? (y/N)")
+        #expect(t.fileSystem.isSymbolicLink(at: t.root + "/drafts"))
+        #expect(!t.fileSystem.isSymbolicLink(at: t.root + "/target"))
+        #expect(t.actions.deleteQuestion(for: t.root + "/target", hasUnsavedChanges: false).text
+            == "Delete folder target/ and its 2 items? (y/N)")
+    }
+
+    @Test func movingNeverReplacesAnExistingItem() throws {
+        let t = try TempFolder()
+        try t.write("a.md", "a")
+        try t.write("b.md", "b")
+        #expect((try? t.fileSystem.moveItem(at: t.root + "/a.md", to: t.root + "/b.md")) == nil)
+        #expect(try String(contentsOfFile: t.root + "/b.md", encoding: .utf8) == "b")
+        #expect(t.exists("a.md"))
+    }
+
+    @Test func aFailedMoveRemovesOnlyTheFoldersItMade() throws {
+        let t = try TempFolder()
+        try t.write("a.md")
+        // Fails (the source is missing) after making p/q; p/q is empty, so both go.
+        #expect((try? t.fileSystem.moveItem(at: t.root + "/missing", to: t.root + "/p/q/r")) == nil)
+        #expect(!t.exists("p"))
+        // A folder that was already there stays, with what's in it.
+        try FileManager.default.createDirectory(atPath: t.root + "/keep", withIntermediateDirectories: true)
+        try t.write("keep/x.md")
+        #expect((try? t.fileSystem.moveItem(at: t.root + "/missing", to: t.root + "/keep/s/r")) == nil)
+        #expect(t.listing("keep") == ["x.md"])
+    }
+
+    @Test func aStrandedCaseRenameNamesTheHiddenItem() throws {
+        let t = try TempFolder()
+        try t.write("Notes.md", "x")
+        let stub = FailingSecondMove(wrapping: t.fileSystem, failsEveryMoveAfterTheFirst: true)
+        let message = FileActions(root: t.root, fileSystem: stub).rename(t.root + "/Notes.md", to: "notes.md").failureMessage
+        let hidden = t.listing().first { $0.hasPrefix(".scwrote-rename-") }
+        #expect(hidden != nil)
+        #expect(message == "permission denied; it's now \(hidden ?? "?")")
+    }
+
+    @Test func aFileOrASymlinkCannotBeRenamedWithATrailingSlash() throws {
+        let t = try TempFolder()
+        try t.write("a.md")
+        try t.write("dir/x.md")
+        try FileManager.default.createSymbolicLink(atPath: t.root + "/link", withDestinationPath: t.root + "/dir")
+        #expect(t.actions.rename(t.root + "/a.md", to: "b/").failureMessage == "a file name can't end in /")
+        #expect(t.actions.rename(t.root + "/link", to: "l2/").failureMessage == "a file name can't end in /")
+        #expect(t.listing() == ["a.md", "dir", "link"])
+        // A folder's name may end in a slash; it is dropped.
+        #expect(t.actions.rename(t.root + "/dir", to: "moved/") == .success(t.root + "/moved"))
+        #expect(t.exists("moved/x.md"))
+    }
+
+    @Test func theRootIsNormalized() throws {
+        let t = try TempFolder()
+        try t.write("a.md")
+        let spellings = [
+            t.root + "/", t.root + "//", t.root + "/./", t.base + "/proj/sub/..", t.base + "/other/../proj/",
+        ]
+        for spelling in spellings {
+            let actions = FileActions(root: spelling, fileSystem: t.fileSystem)
+            #expect(actions.folderForNewItem(selected: nil) == t.root, "\(spelling)")
+            #expect(actions.create("../x", in: t.root).failureMessage == "can't leave proj/", "\(spelling)")
+            #expect(actions.delete(t.root).failureMessage == "can't leave proj/", "\(spelling)")
+            #expect(actions.rename(t.root + "/a.md", to: "b.md") == .success(t.root + "/b.md"), "\(spelling)")
+            #expect(actions.rename(t.root + "/b.md", to: "a.md") == .success(t.root + "/a.md"), "\(spelling)")
+        }
+    }
+
+    @Test func aRootOfSlashSaysCantLeaveSlash() {
+        let actions = FileActions(root: "/", fileSystem: FolderOf(0))
+        #expect(actions.delete("/").failureMessage == "can't leave /")
+        #expect(actions.create("../x", in: "/").failureMessage == "../x already exists")
+        #expect(actions.create("/x", in: "/").failureMessage == "can't leave /")
+        #expect(actions.rename("/", to: "x").failureMessage == "can't leave /")
+        #expect(actions.folderForNewItem(selected: nil) == "/")
+    }
 }

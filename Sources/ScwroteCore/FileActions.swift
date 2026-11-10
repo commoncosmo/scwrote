@@ -5,13 +5,16 @@ import Foundation
 public protocol FileSystem: Sendable {
     func itemExists(at path: String) -> Bool
     func isFolder(at path: String) -> Bool
+    /// The item itself is a symlink (lstat), whatever it points to.
+    func isSymbolicLink(at path: String) -> Bool
     /// Same item (e.g. a case-only rename on a case-insensitive volume).
     func isSameItem(_ a: String, _ b: String) -> Bool
     /// Makes missing parent folders; fails if the file exists.
     func createFile(at path: String) throws
     /// Makes missing parents; fails if the folder exists.
     func createFolder(at path: String) throws
-    /// Makes missing parent folders of the destination.
+    /// Makes missing parent folders of the destination. Fails rather than
+    /// replace an item already there.
     func moveItem(at source: String, to destination: String) throws
     func trashItem(at path: String) throws
     /// Everything inside the folder, recursively, but counting no further
@@ -39,6 +42,10 @@ public struct LocalFileSystem: FileSystem {
         return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
     }
 
+    public func isSymbolicLink(at path: String) -> Bool {
+        (try? FileManager.default.attributesOfItem(atPath: path))?[.type] as? FileAttributeType == .typeSymbolicLink
+    }
+
     public func isSameItem(_ a: String, _ b: String) -> Bool {
         let keys: Set<URLResourceKey> = [.fileResourceIdentifierKey]
         guard
@@ -60,6 +67,7 @@ public struct LocalFileSystem: FileSystem {
     }
 
     public func createFolder(at path: String) throws {
+        // An early, friendly check; mkdir below is the real guard against a race.
         if itemExists(at: path) { throw CocoaError(.fileWriteFileExists) }
         // The folder itself is made last, so a failure here leaves nothing behind
         // worth undoing beyond what `makeParents` made.
@@ -75,11 +83,23 @@ public struct LocalFileSystem: FileSystem {
     public func moveItem(at source: String, to destination: String) throws {
         let created = try makeParents(of: destination)
         do {
-            try FileManager.default.moveItem(atPath: source, toPath: destination)
+            // One atomic step that fails if the destination exists, so nothing
+            // made in between can be overwritten.
+            if renamex_np(source, destination, UInt32(RENAME_EXCL)) != 0 {
+                let code = errno
+                guard code == EXDEV else { throw Self.posixError(code) }
+                // Another volume (reachable through a symlink): copy and remove.
+                if itemExists(at: destination) { throw CocoaError(.fileWriteFileExists) }
+                try FileManager.default.moveItem(atPath: source, toPath: destination)
+            }
         } catch {
             undo(created)
             throw error
         }
+    }
+
+    private static func posixError(_ code: Int32) -> Error {
+        POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
     }
 
     public func trashItem(at path: String) throws {
@@ -105,24 +125,24 @@ public struct LocalFileSystem: FileSystem {
         return count
     }
 
-    /// Makes the missing parent folders of `path` and returns the outermost one
-    /// it made (nil if none were missing), so a failed operation can remove them.
-    private func makeParents(of path: String) throws -> String? {
+    /// Makes the missing parent folders of `path` and returns every one it
+    /// made, outermost first, so a failed operation can remove them.
+    private func makeParents(of path: String) throws -> [String] {
         let parent = (path as NSString).deletingLastPathComponent
-        var outermost: String?
+        var created: [String] = []
         var probe = parent
         while probe != "/" && !probe.isEmpty && !itemExists(at: probe) {
-            outermost = probe
+            created.insert(probe, at: 0)
             probe = (probe as NSString).deletingLastPathComponent
         }
         try FileManager.default.createDirectory(atPath: parent, withIntermediateDirectories: true)
-        return outermost
+        return created
     }
 
-    /// Removes folders `makeParents` made. They hold nothing else, so a
-    /// plain recursive remove is safe.
-    private func undo(_ created: String?) {
-        if let created { try? FileManager.default.removeItem(atPath: created) }
+    /// Removes folders `makeParents` made, innermost first, only if empty:
+    /// one that gained an item in the meantime stays.
+    private func undo(_ created: [String]) {
+        for folder in created.reversed() { _ = Darwin.rmdir(folder) }
     }
 }
 
@@ -154,7 +174,7 @@ public struct FileActions: Sendable {
     /// many and then says `10,000+`. Counting happens as `d` is pressed, and
     /// a node_modules can hold hundreds of thousands.
     public init(root: String, fileSystem: any FileSystem, itemCountCap: Int = 10_000) {
-        self.root = root.count > 1 && root.hasSuffix("/") ? String(root.dropLast()) : root
+        self.root = Self.normalize(root, in: "/")
         self.fileSystem = fileSystem
         self.itemCountCap = itemCountCap
     }
@@ -202,6 +222,13 @@ public struct FileActions: Sendable {
         case .failure(let error): return .failure(error)
         case .success(let resolved): target = resolved
         }
+        // A file (or a symlink) can't be named like a folder; dropping the
+        // slash silently would be a surprise.
+        if name.hasSuffix("/"), fileSystem.itemExists(at: source),
+            !fileSystem.isFolder(at: source) || fileSystem.isSymbolicLink(at: source)
+        {
+            return .failure(FileActionError(message: "a file name can't end in /"))
+        }
         if target == source { return .success(nil) }
         guard fileSystem.itemExists(at: source) else { return .failure(Self.missing(source)) }
         if target.hasPrefix(source + "/") {
@@ -220,19 +247,26 @@ public struct FileActions: Sendable {
             if caseOnly {
                 // The volume sees the destination as the source itself, so go
                 // through a name that can't collide.
-                let temporary = folder + "/.scwrote-rename-" + UUID().uuidString
+                let hidden = ".scwrote-rename-" + UUID().uuidString
+                let temporary = folder + "/" + hidden
                 try fileSystem.moveItem(at: source, to: temporary)
                 do {
                     try fileSystem.moveItem(at: temporary, to: target)
-                } catch {
-                    // Put it back rather than strand it under the hidden name.
-                    try? fileSystem.moveItem(at: temporary, to: source)
-                    throw error
+                } catch let moveError {
+                    // Put it back rather than strand it under the hidden name; if
+                    // that fails too, say where it is.
+                    do {
+                        try fileSystem.moveItem(at: temporary, to: source)
+                    } catch {
+                        throw FileActionError(message: "\(Self.describe(moveError).message); it's now \(hidden)")
+                    }
+                    throw moveError
                 }
             } else {
                 try fileSystem.moveItem(at: source, to: target)
             }
         } catch {
+            if let known = error as? FileActionError { return .failure(known) }
             return .failure(Self.describe(error))
         }
         return .success(target)
@@ -241,7 +275,8 @@ public struct FileActions: Sendable {
     /// `hasUnsavedChanges`: the item, or anything inside it, has unsaved changes in nvim.
     public func deleteQuestion(for path: String, hasUnsavedChanges: Bool) -> DeleteQuestion {
         let name = (path as NSString).lastPathComponent
-        let isFolder = fileSystem.isFolder(at: path)
+        // Only the link goes to the Trash, so a symlink is asked about like a file.
+        let isFolder = fileSystem.isFolder(at: path) && !fileSystem.isSymbolicLink(at: path)
         if hasUnsavedChanges {
             return DeleteQuestion(before: "", name: name + (isFolder ? "/" : ""), after: " has unsaved changes. Delete anyway?")
         }
@@ -287,7 +322,7 @@ public struct FileActions: Sendable {
     private func resolve(_ name: String, in folder: String) -> Result<String, FileActionError> {
         let trimmed = Self.trimmingSlashes(name)
         if trimmed.isEmpty { return .failure(FileActionError(message: "name can't be empty")) }
-        let outside = FileActionError(message: "can't leave \((root as NSString).lastPathComponent)/")
+        let outside = outsideRoot
         if name.hasPrefix("/") { return .failure(outside) }
 
         let resolved = Self.normalize(trimmed, in: folder)
@@ -298,9 +333,13 @@ public struct FileActions: Sendable {
     private func normalizedInsideRoot(_ path: String) -> Result<String, FileActionError> {
         let resolved = Self.normalize(path, in: "/")
         guard isStrictlyInsideRoot(resolved) else {
-            return .failure(FileActionError(message: "can't leave \((root as NSString).lastPathComponent)/"))
+            return .failure(outsideRoot)
         }
         return .success(resolved)
+    }
+
+    private var outsideRoot: FileActionError {
+        FileActionError(message: "can't leave \(root == "/" ? "" : (root as NSString).lastPathComponent)/")
     }
 
     private func isStrictlyInsideRoot(_ path: String) -> Bool {
