@@ -183,4 +183,92 @@ private func fail(_ message: String) -> Result<NewItem, FileActionError> {
         #expect(q(t.root + "/notes.md", true) == "notes.md has unsaved changes. Delete anyway? (y/N)")
         #expect(q(t.root + "/drafts", true) == "drafts/ has unsaved changes. Delete anyway? (y/N)")
     }
+
+    @Test func aHardLinkIsAClashNotARename() throws {
+        let t = try TempFolder()
+        try t.write("h1.md", "x")
+        try FileManager.default.linkItem(atPath: t.root + "/h1.md", toPath: t.root + "/h2.md")
+        #expect(t.actions.rename(t.root + "/h1.md", to: "h2.md") == .failure(FileActionError(message: "h2.md already exists")))
+        #expect(t.listing() == ["h1.md", "h2.md"])
+    }
+
+    @Test func aFailedCaseRenamePutsTheItemBack() throws {
+        let t = try TempFolder()
+        try t.write("Notes.md", "x")
+        let stub = FailingSecondMove(wrapping: t.fileSystem)
+        let actions = FileActions(root: t.root, fileSystem: stub)
+        let result = actions.rename(t.root + "/Notes.md", to: "notes.md")
+        #expect(result.failureMessage != nil)
+        #expect(t.listing() == ["Notes.md"])
+    }
+
+    @Test func theRootAndItsAliasesCannotBeDeleted() throws {
+        let t = try TempFolder()
+        try t.write("sub/a.md")
+        for path in [t.root, t.root + "/", t.root + "/.", t.root + "/sub/.."] {
+            #expect(t.actions.delete(path).failureMessage == "can't leave proj/")
+        }
+        #expect(t.exists("sub/a.md"))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: t.trash) == [])
+        #expect(t.actions.rename(t.root, to: "x").failureMessage == "can't leave proj/")
+    }
+
+    @Test func aFolderCannotMoveIntoItself() throws {
+        let t = try TempFolder()
+        try t.write("a/f.md")
+        for name in ["a/b", "a/x/b"] {
+            #expect(t.actions.rename(t.root + "/a", to: name).failureMessage == "can't move a folder into itself")
+        }
+        #expect(t.listing("a") == ["f.md"])
+    }
+
+    @Test func aFailedMoveLeavesNoStrayFolders() throws {
+        let t = try TempFolder()
+        try t.write("a.md")
+        try t.write("blocker", "file")
+        // The parent "blocker" is a file, so making x/y under it must fail cleanly.
+        _ = t.actions.rename(t.root + "/a.md", to: "blocker/x/b.md")
+        #expect(t.listing() == ["a.md", "blocker"])
+        // A move that fails after parents were made: destination folder exists as a file elsewhere.
+        let fs = t.fileSystem
+        #expect((try? fs.moveItem(at: t.root + "/missing", to: t.root + "/p/q/r")) == nil)
+        #expect(!t.exists("p"))
+    }
+
+    @Test func aSymlinkInsideTheRootIsFollowed() throws {
+        let t = try TempFolder()
+        let outside = t.base + "/outside"
+        try FileManager.default.createDirectory(atPath: outside, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: t.root + "/link", withDestinationPath: outside)
+        let result = t.actions.create("link/x.md", in: t.root)
+        #expect(result == .success(NewItem(path: t.root + "/link/x.md", isFolder: false)))
+        #expect(FileManager.default.fileExists(atPath: outside + "/x.md"))
+    }
+}
+
+/// Wraps a real file system but fails the second `moveItem`, to exercise the
+/// rollback of a case-only rename.
+private final class FailingSecondMove: FileSystem, @unchecked Sendable {
+    private let inner: any FileSystem
+    private let lock = NSLock()
+    private var moves = 0
+
+    init(wrapping inner: any FileSystem) { self.inner = inner }
+
+    func itemExists(at path: String) -> Bool { inner.itemExists(at: path) }
+    func isFolder(at path: String) -> Bool { inner.isFolder(at: path) }
+    func isSameItem(_ a: String, _ b: String) -> Bool { inner.isSameItem(a, b) }
+    func createFile(at path: String) throws { try inner.createFile(at: path) }
+    func createFolder(at path: String) throws { try inner.createFolder(at: path) }
+    func trashItem(at path: String) throws { try inner.trashItem(at: path) }
+    func itemCount(inFolder path: String) -> Int { inner.itemCount(inFolder: path) }
+
+    func moveItem(at source: String, to destination: String) throws {
+        lock.lock()
+        moves += 1
+        let n = moves
+        lock.unlock()
+        if n == 2 { throw CocoaError(.fileWriteUnknown) }
+        try inner.moveItem(at: source, to: destination)
+    }
 }
