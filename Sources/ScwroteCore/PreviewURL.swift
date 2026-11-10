@@ -3,7 +3,8 @@ import Foundation
 /// The URLs the preview's web view loads. `scwrote-file` serves files from
 /// disk and `scwrote-app` serves the renderer shipped in the app bundle.
 public enum PreviewURL {
-    static let fileScheme = "scwrote-file"
+    public static let fileScheme = "scwrote-file"
+    public static let appScheme = "scwrote-app"
 
     /// `scwrote-file:///abs/path`, percent-encoded.
     public static func file(_ path: String) -> URL {
@@ -24,7 +25,7 @@ public enum PreviewURL {
         return URLComponents(url: url, resolvingAgainstBaseURL: true)?.path
     }
 
-    public static let appIndex = URL(string: "scwrote-app:///index.html")!
+    public static let appIndex = URL(string: "\(appScheme):///index.html")!
 
     private static func url(path: String) -> URL {
         var components = URLComponents()

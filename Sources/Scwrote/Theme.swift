@@ -2,8 +2,9 @@ import AppKit
 import GhosttyKit
 import ScwroteCore
 
-/// Colors and font for what scwrote draws itself (the file browser), taken
-/// from the same Ghostty config the terminal uses so both panes match.
+/// Colors and font for what scwrote draws itself (the file browser and the
+/// preview pane), taken from the same Ghostty config the terminal uses so all
+/// panes match.
 struct Theme {
     var background: NSColor
     var foreground: NSColor
@@ -14,6 +15,8 @@ struct Theme {
     /// The cursor row while the editor has the keyboard.
     var selectionInactive: NSColor
     var folder: NSColor
+    /// Unsaved changes and errors in the preview's header.
+    var warning: NSColor
     var divider: NSColor
     var font: NSFont
     /// Space above the terminal's first line (`window-padding-y`), so the
@@ -37,9 +40,12 @@ struct Theme {
         let foreground = color(config, "foreground") ?? NSColor(white: 0.85, alpha: 1)
         var palette = ghostty_config_palette_s()
         let hasPalette = get(config, "palette", &palette)
-        let blue = hasPalette ? withUnsafeBytes(of: palette.colors) { raw in
-            nsColor(raw.bindMemory(to: ghostty_config_color_s.self)[4])
-        } : NSColor.systemBlue
+        func paletteColor(_ index: Int) -> NSColor? {
+            guard hasPalette else { return nil }
+            return withUnsafeBytes(of: palette.colors) { raw in
+                nsColor(raw.bindMemory(to: ghostty_config_color_s.self)[index])
+            }
+        }
 
         var fontSize: Float = 13
         _ = get(config, "font-size", &fontSize)
@@ -50,11 +56,20 @@ struct Theme {
             dim: blend(foreground, into: background, 0.5),
             selection: color(config, "selection-background") ?? blend(foreground, into: background, 0.22),
             selectionInactive: blend(foreground, into: background, 0.1),
-            folder: blue,
+            folder: paletteColor(4) ?? .systemBlue,
+            warning: paletteColor(3) ?? .systemYellow,
             divider: blend(foreground, into: background, 0.15),
             font: font(family: primaryFontFamily(in: configContents), size: CGFloat(fontSize)),
             topPadding: CGFloat(GhosttyConfig.topPadding(in: configContents))
         )
+    }
+
+    /// A CSS color, `#rrggbb` in sRGB, for the preview's renderer page.
+    static func css(_ color: NSColor) -> String {
+        let srgb = color.usingColorSpace(.sRGB) ?? color
+        let channels = [srgb.redComponent, srgb.greenComponent, srgb.blueComponent]
+            .map { Int((min(max($0, 0), 1) * 255).rounded()) }
+        return "#" + channels.map { String(format: "%02x", $0) }.joined()
     }
 
     /// The first `font-family`, as Ghostty reads it: an empty value clears the
