@@ -95,7 +95,7 @@ public struct BrowserPrompt: Equatable, Sendable {
     public enum Kind: Equatable, Sendable {
         case add(folder: String)
         case rename(path: String)
-        case delete(path: String, question: String)
+        case delete(path: String, question: DeleteQuestion)
     }
 
     public enum Outcome: Equatable, Sendable { case editing, cancelled, submitted(String), confirmed }
@@ -128,7 +128,7 @@ public struct BrowserPrompt: Equatable, Sendable {
         BrowserPrompt(kind: .rename(path: path), line: PromptLine((path as NSString).lastPathComponent))
     }
 
-    public static func delete(path: String, question: String) -> BrowserPrompt {
+    public static func delete(path: String, question: DeleteQuestion) -> BrowserPrompt {
         BrowserPrompt(kind: .delete(path: path, question: question), line: PromptLine())
     }
 
@@ -137,7 +137,17 @@ public struct BrowserPrompt: Equatable, Sendable {
         switch kind {
         case .add: addLabel
         case .rename: "Rename: "
-        case .delete(_, let question): question
+        case .delete(_, let question): question.text
+        }
+    }
+
+    /// What goes before an error, in place of the label: short, so the error
+    /// always has the row. A delete question means nothing once answered.
+    public var errorLabel: String {
+        switch kind {
+        case .add: "New: "
+        case .rename: "Rename: "
+        case .delete: "Delete: "
         }
     }
 
@@ -167,6 +177,68 @@ public struct BrowserPrompt: Equatable, Sendable {
     /// Shows `message` until the next key; the prompt stays open.
     public mutating func fail(_ message: String) {
         error = message
+    }
+}
+
+/// What `d` asks, in parts, so a row too narrow for all of it (the browser
+/// beside the editor is about 33 columns) can shorten the name and the end
+/// of the sentence and still say which item, and how to answer.
+public struct DeleteQuestion: Equatable, Sendable {
+    /// "Delete ", "Delete folder ", or "" when the name leads.
+    public let before: String
+    /// "notes.md", or "drafts/" for a folder.
+    public let name: String
+    /// "?", " and its 12 items?" or " has unsaved changes. Delete anyway?".
+    public let after: String
+
+    public static let answer = " (y/N)"
+    /// A long name gives up its middle down to this many Characters while
+    /// the words after it still show: enough to recognize it by.
+    static let shortestName = 14
+
+    public init(before: String, name: String, after: String) {
+        self.before = before
+        self.name = name
+        self.after = after
+    }
+
+    public var text: String { before + name + after + Self.answer }
+
+    /// The question as it fits in `width`, as `measure` measures text. The
+    /// first of these that fits: all of it; the name losing its middle; the
+    /// sentence losing words from its end (`has unsaved` stays longest);
+    /// only the name, shortened as needed. The answer, `(y/N)`, always ends
+    /// it. Narrower than even that, all of it, for the row to clip.
+    public func fitted(to width: Double, measure: (String) -> Double) -> String {
+        func fits(_ candidate: String) -> Bool { measure(candidate) <= width }
+        if fits(text) { return text }
+        for length in stride(from: name.count - 1, through: Self.shortestName, by: -1) {
+            let candidate = before + Self.shortened(name, to: length) + after + Self.answer
+            if fits(candidate) { return candidate }
+        }
+        let shortName = Self.shortened(name, to: Self.shortestName)
+        for end in Self.wordEnds(of: after).reversed() {
+            let candidate = before + shortName + after.prefix(end) + "…" + Self.answer
+            if fits(candidate) { return candidate }
+        }
+        for length in stride(from: name.count, through: 1, by: -1) {
+            let candidate = before + Self.shortened(name, to: length) + Self.answer
+            if fits(candidate) { return candidate }
+        }
+        return text
+    }
+
+    /// `name` in at most `length` Characters, its middle replaced by "…" so
+    /// the start and the extension (or a folder's `/`) stay.
+    private static func shortened(_ name: String, to length: Int) -> String {
+        guard name.count > length else { return name }
+        let visible = length - 1
+        return name.prefix(visible - visible / 2) + "…" + name.suffix(visible / 2)
+    }
+
+    /// Where each word of `text` ends: the offsets of the spaces after the first.
+    private static func wordEnds(of text: String) -> [Int] {
+        text.enumerated().compactMap { offset, character in offset > 0 && character == " " ? offset : nil }
     }
 }
 

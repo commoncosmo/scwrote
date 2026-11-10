@@ -239,17 +239,18 @@ public struct FileActions: Sendable {
     }
 
     /// `hasUnsavedChanges`: the item, or anything inside it, has unsaved changes in nvim.
-    public func deleteQuestion(for path: String, hasUnsavedChanges: Bool) -> String {
+    public func deleteQuestion(for path: String, hasUnsavedChanges: Bool) -> DeleteQuestion {
         let name = (path as NSString).lastPathComponent
         let isFolder = fileSystem.isFolder(at: path)
         if hasUnsavedChanges {
-            return "\(name)\(isFolder ? "/" : "") has unsaved changes. Delete anyway? (y/N)"
+            return DeleteQuestion(before: "", name: name + (isFolder ? "/" : ""), after: " has unsaved changes. Delete anyway?")
         }
-        guard isFolder else { return "Delete \(name)? (y/N)" }
+        guard isFolder else { return DeleteQuestion(before: "Delete ", name: name, after: "?") }
         // One past the cap tells "exactly the cap" from "more".
         let count = fileSystem.itemCount(inFolder: path, upTo: itemCountCap + 1)
         let amount = count > itemCountCap ? Self.grouped(itemCountCap) + "+" : Self.grouped(count)
-        return "Delete folder \(name)/ and its \(amount) \(count == 1 ? "item" : "items")? (y/N)"
+        return DeleteQuestion(
+            before: "Delete folder ", name: name + "/", after: " and its \(amount) \(count == 1 ? "item" : "items")?")
     }
 
     /// `12345` as `12,345`, the same whatever the user's locale, like the

@@ -331,16 +331,15 @@ final class FileBrowserView: NSView {
     }
 
     /// The prompt on the bottom row, like vim's command line: the label dim,
-    /// then the text with a block cursor, or an error in its place. Text too
-    /// long for the row slides left so the cursor stays in view.
+    /// then the text with a block cursor. An error takes the row after a
+    /// short label. A delete question is fitted to the row, keeping which
+    /// item and `(y/N)` (see `DeleteQuestion.fitted`). Text too long for the
+    /// row slides left so the cursor stays in view.
     private func draw(_ prompt: BrowserPrompt) {
         let row = bottomRow
         let rowRect = NSRect(x: 0, y: grid.rowTop(row), width: bounds.width, height: rowHeight)
         theme.background.setFill()
         rowRect.fill()
-
-        let label = attributed(prompt.label, color: theme.dim, truncation: .byClipping)
-        let labelWidth = ceil(label.size().width)
         let available = bounds.width - sidePadding * 2
 
         NSGraphicsContext.saveGraphicsState()
@@ -348,16 +347,34 @@ final class FileBrowserView: NSView {
         defer { NSGraphicsContext.restoreGraphicsState() }
 
         if let error = prompt.error {
+            let label = attributed(prompt.errorLabel, color: theme.dim)
+            let labelWidth = ceil(label.size().width)
             draw(label, row: row, x: sidePadding, width: labelWidth)
             let message = attributed(error, color: theme.warning)
             draw(message, row: row, x: sidePadding + labelWidth, width: available - labelWidth)
             return
         }
 
+        let blank = attributed(" ", color: theme.foreground)
+        if case let .delete(_, question) = prompt.kind {
+            let cursorWidth = ceil(blank.size().width)
+            let fitted = question.fitted(to: Double(available - cursorWidth)) { text in
+                Double(ceil(self.attributed(text, color: self.theme.dim).size().width))
+            }
+            let label = attributed(fitted, color: theme.dim)
+            let labelWidth = ceil(label.size().width)
+            theme.selection.setFill()
+            NSRect(x: sidePadding + labelWidth, y: rowRect.minY, width: cursorWidth, height: rowRect.height).fill()
+            draw(label, row: row, x: sidePadding, width: labelWidth)
+            return
+        }
+
+        let label = attributed(prompt.label, color: theme.dim, truncation: .byClipping)
+        let labelWidth = ceil(label.size().width)
         let characters = Array(prompt.line.text)
         let cursor = prompt.line.cursor
         let beforeCursor = attributed(String(characters[..<cursor]), color: theme.foreground)
-        let underCursor = attributed(cursor < characters.count ? String(characters[cursor]) : " ", color: theme.foreground)
+        let underCursor = cursor < characters.count ? attributed(String(characters[cursor]), color: theme.foreground) : blank
         let cursorX = labelWidth + ceil(beforeCursor.size().width)
         let cursorWidth = ceil(underCursor.size().width)
         let shift = max(0, cursorX + cursorWidth - available)

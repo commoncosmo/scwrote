@@ -175,13 +175,17 @@ private func fail(_ message: String) -> Result<NewItem, FileActionError> {
         for i in 0..<12 { try t.write("drafts/f\(i).md") }
         try t.write("one/x.md")
         try FileManager.default.createDirectory(atPath: t.root + "/zero", withIntermediateDirectories: true)
-        let q = { (p: String, u: Bool) in t.actions.deleteQuestion(for: p, hasUnsavedChanges: u) }
+        let q = { (p: String, u: Bool) in t.actions.deleteQuestion(for: p, hasUnsavedChanges: u).text }
         #expect(q(t.root + "/notes.md", false) == "Delete notes.md? (y/N)")
         #expect(q(t.root + "/drafts", false) == "Delete folder drafts/ and its 12 items? (y/N)")
         #expect(q(t.root + "/one", false) == "Delete folder one/ and its 1 item? (y/N)")
         #expect(q(t.root + "/zero", false) == "Delete folder zero/ and its 0 items? (y/N)")
         #expect(q(t.root + "/notes.md", true) == "notes.md has unsaved changes. Delete anyway? (y/N)")
         #expect(q(t.root + "/drafts", true) == "drafts/ has unsaved changes. Delete anyway? (y/N)")
+        #expect(t.actions.deleteQuestion(for: t.root + "/drafts", hasUnsavedChanges: false)
+            == DeleteQuestion(before: "Delete folder ", name: "drafts/", after: " and its 12 items?"))
+        #expect(t.actions.deleteQuestion(for: t.root + "/notes.md", hasUnsavedChanges: true)
+            == DeleteQuestion(before: "", name: "notes.md", after: " has unsaved changes. Delete anyway?"))
     }
 
     /// Counting stops at the cap, so a huge folder (node_modules) can't stall
@@ -191,9 +195,9 @@ private func fail(_ message: String) -> Result<NewItem, FileActionError> {
         for i in 0..<5 { try t.write("big/f\(i).md") }
         for i in 0..<3 { try t.write("three/f\(i).md") }
         let actions = FileActions(root: t.root, fileSystem: t.fileSystem, itemCountCap: 3)
-        #expect(actions.deleteQuestion(for: t.root + "/big", hasUnsavedChanges: false)
+        #expect(actions.deleteQuestion(for: t.root + "/big", hasUnsavedChanges: false).text
             == "Delete folder big/ and its 3+ items? (y/N)")
-        #expect(actions.deleteQuestion(for: t.root + "/three", hasUnsavedChanges: false)
+        #expect(actions.deleteQuestion(for: t.root + "/three", hasUnsavedChanges: false).text
             == "Delete folder three/ and its 3 items? (y/N)")
         #expect(t.fileSystem.itemCount(inFolder: t.root + "/big", upTo: 2) == 2)
         #expect(t.fileSystem.itemCount(inFolder: t.root + "/big", upTo: 100) == 5)
@@ -201,11 +205,11 @@ private func fail(_ message: String) -> Result<NewItem, FileActionError> {
 
     @Test func theDefaultCapIsTenThousand() throws {
         let actions = { (count: Int) in FileActions(root: "/r", fileSystem: FolderOf(count)) }
-        #expect(actions(20_000).deleteQuestion(for: "/r/node_modules", hasUnsavedChanges: false)
+        #expect(actions(20_000).deleteQuestion(for: "/r/node_modules", hasUnsavedChanges: false).text
             == "Delete folder node_modules/ and its 10,000+ items? (y/N)")
-        #expect(actions(10_000).deleteQuestion(for: "/r/node_modules", hasUnsavedChanges: false)
+        #expect(actions(10_000).deleteQuestion(for: "/r/node_modules", hasUnsavedChanges: false).text
             == "Delete folder node_modules/ and its 10,000 items? (y/N)")
-        #expect(actions(1_234).deleteQuestion(for: "/r/node_modules", hasUnsavedChanges: false)
+        #expect(actions(1_234).deleteQuestion(for: "/r/node_modules", hasUnsavedChanges: false).text
             == "Delete folder node_modules/ and its 1,234 items? (y/N)")
     }
 

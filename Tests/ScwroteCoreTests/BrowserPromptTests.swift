@@ -36,13 +36,15 @@ struct PromptLineTests {
     }
 }
 
+private let deleteA = DeleteQuestion(before: "Delete ", name: "a.md", after: "?")
+
 struct BrowserPromptTests {
     @Test func labels() {
         #expect(BrowserPrompt.add(folder: "/p/notes", root: "/p").label == "New: notes/")
         #expect(BrowserPrompt.add(folder: "/p", root: "/p").label == "New: ./")
         #expect(BrowserPrompt.rename(path: "/p/a.md").label == "Rename: ")
         #expect(BrowserPrompt.rename(path: "/p/a.md").line.text == "a.md")
-        #expect(BrowserPrompt.delete(path: "/p/a.md", question: "Delete a.md? (y/N)").label == "Delete a.md? (y/N)")
+        #expect(BrowserPrompt.delete(path: "/p/a.md", question: deleteA).label == "Delete a.md? (y/N)")
     }
 
     @Test func enterSubmitsAndEscCancels() {
@@ -53,12 +55,20 @@ struct BrowserPromptTests {
     }
 
     @Test func onlyYConfirmsADelete() {
-        var prompt = BrowserPrompt.delete(path: "/p/a.md", question: "?")
+        var prompt = BrowserPrompt.delete(path: "/p/a.md", question: deleteA)
         #expect(prompt.handle(.character("y")) == .confirmed)
         for key: PromptKey in [.character("Y"), .character("n"), .enter, .escape, .backspace] {
-            var other = BrowserPrompt.delete(path: "/p/a.md", question: "?")
+            var other = BrowserPrompt.delete(path: "/p/a.md", question: deleteA)
             #expect(other.handle(key) == .cancelled)
         }
+    }
+
+    /// An error replaces the label as well as the text, after a short word
+    /// saying what failed, so a long label can never push it off the row.
+    @Test func errorsFollowAShortLabel() {
+        #expect(BrowserPrompt.add(folder: "/p/a/very/deep/folder", root: "/p").errorLabel == "New: ")
+        #expect(BrowserPrompt.rename(path: "/p/a.md").errorLabel == "Rename: ")
+        #expect(BrowserPrompt.delete(path: "/p/a.md", question: deleteA).errorLabel == "Delete: ")
     }
 
     @Test func anErrorShowsUntilTheNextKey() {
@@ -92,7 +102,7 @@ struct BrowserPromptTests {
 
 struct BrowserPromptUnmappedKeyTests {
     @Test func cancelsADelete() {
-        var prompt = BrowserPrompt.delete(path: "/p/a.md", question: "Delete a.md? (y/N)")
+        var prompt = BrowserPrompt.delete(path: "/p/a.md", question: deleteA)
         #expect(prompt.handleUnmapped() == .cancelled)
     }
 
@@ -168,5 +178,50 @@ struct PromptKeyRepeatsTests {
         var repeats = PromptKeyRepeats()
         let repeated = repeats.drops(keyCode: a, isRepeat: true, inDeleteQuestion: false)
         #expect(!repeated)
+    }
+}
+
+/// A delete question in a row too narrow for it (the browser beside the
+/// editor is about 33 columns): it keeps saying which item, and how to
+/// answer. Measured in Characters here; the browser measures in points.
+struct DeleteQuestionFittingTests {
+    private let count = { (text: String) in Double(text.count) }
+    private let longName = "chapter-03-the-long-night.md"
+
+    @Test func aQuestionThatFitsIsWhole() {
+        #expect(deleteA.fitted(to: 33, measure: count) == "Delete a.md? (y/N)")
+    }
+
+    @Test func aLongNameLosesItsMiddle() {
+        let question = DeleteQuestion(before: "Delete ", name: longName, after: "?")
+        #expect(question.fitted(to: 33, measure: count) == "Delete chapter-0…-night.md? (y/N)")
+    }
+
+    @Test func unsavedChangesStayInViewWithTheStartOfTheName() {
+        let question = DeleteQuestion(before: "", name: longName, after: " has unsaved changes. Delete anyway?")
+        #expect(question.fitted(to: 33, measure: count) == "chapter…ght.md has unsaved… (y/N)")
+        let short = DeleteQuestion(before: "", name: "notes.md", after: " has unsaved changes. Delete anyway?")
+        #expect(short.fitted(to: 33, measure: count) == "notes.md has unsaved… (y/N)")
+    }
+
+    @Test func aFolderKeepsItsNameOverItsCount() {
+        let question = DeleteQuestion(before: "Delete folder ", name: "node_modules/", after: " and its 10,000+ items?")
+        #expect(question.fitted(to: 33, measure: count) == "Delete folder node_modules/ (y/N)")
+        #expect(question.fitted(to: 45, measure: count) == "Delete folder node_modules/ and its… (y/N)")
+    }
+
+    @Test func theAnswerAlwaysShows() {
+        let questions = [
+            DeleteQuestion(before: "Delete folder ", name: "a-folder-with-a-long-name/", after: " and its 12 items?"),
+            DeleteQuestion(before: "", name: longName, after: " has unsaved changes. Delete anyway?"),
+            DeleteQuestion(before: "Delete ", name: longName, after: "?"),
+        ]
+        for question in questions {
+            for width in 21...80 {
+                let fitted = question.fitted(to: Double(width), measure: count)
+                #expect(fitted.count <= width, "\(fitted) at \(width)")
+                #expect(fitted.hasSuffix(" (y/N)"), "\(fitted) at \(width)")
+            }
+        }
     }
 }
