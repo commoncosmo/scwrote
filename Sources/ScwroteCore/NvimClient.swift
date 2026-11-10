@@ -26,7 +26,7 @@ public final class NvimClient: @unchecked Sendable {
     private var socket: Int32 = -1
     private var isClosed = false
     private var nextRequestID: Int64 = 1
-    private var received = Data()
+    private var received = MessagePackBuffer()
     private var notifications: [(method: String, params: [MessagePackValue])] = []
 
     /// `connectTimeout` covers nvim still starting up when the first request
@@ -202,8 +202,7 @@ public final class NvimClient: @unchecked Sendable {
     /// `isWanted` accepts one of the others, which it returns. nil when the
     /// buffer runs out first.
     private func receiveBuffered(until isWanted: ([MessagePackValue]) -> Bool) -> [MessagePackValue]? {
-        while let (message, length) = MessagePackValue.decode(received) {
-            received.removeFirst(length)
+        while let message = received.next() {
             guard case let .array(parts) = message else { continue }
             if parts.count == 3, parts[0] == .int(2),
                case let .string(method) = parts[1], case let .array(params) = parts[2] {
@@ -222,7 +221,7 @@ public final class NvimClient: @unchecked Sendable {
         while true {
             let count = Darwin.read(socket, &chunk, chunk.count)
             if count > 0 {
-                received.append(contentsOf: chunk[..<count])
+                received.append(chunk[..<count])
                 return
             }
             let timedOut = count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
