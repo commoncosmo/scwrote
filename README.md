@@ -63,9 +63,9 @@ name.md`).
 **Add, rename, delete.** `a`, `r` and `d` ask on the browser's bottom row,
 like vim's command line. Enter confirms and Esc cancels; while it's open,
 keys go to it, and the window's Cmd keys still work (and cancel it). Editing:
-typing, Backspace, ← →, Ctrl-a / Ctrl-e (start / end), Ctrl-w (delete the
-word, or path part, before the cursor), Ctrl-u (delete everything before the
-cursor).
+typing, Backspace (or Ctrl-h), Forward Delete, ← →, Ctrl-a / Ctrl-e or Home /
+End (start / end), Ctrl-w (delete the word, or path part, before the cursor),
+Ctrl-u (delete everything before the cursor), Cmd+V (paste the first line).
 
 - `a` reads `New: notes/`: the selected folder, the selected file's folder,
   or the root (`New: ./`). `notes/today.md` makes `notes/` along the way; a

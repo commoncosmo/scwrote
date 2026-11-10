@@ -54,9 +54,10 @@ the undo for deletes.
 
 - Drawn on the browser's bottom row, like vim's command line. Enter confirms,
   Esc cancels.
-- Editing: typing, Backspace, ← →, Ctrl-a / Ctrl-e (start / end), Ctrl-w
-  (delete the word before the cursor), Ctrl-u (delete everything before the
-  cursor).
+- Editing: typing, Backspace (or Ctrl-h), Forward Delete, ← →, Ctrl-a /
+  Ctrl-e or Home / End (start / end), Ctrl-w (delete the word before the
+  cursor), Ctrl-u (delete everything before the cursor), Cmd+V (paste the
+  first line; in a delete question it cancels, like any key but `y`).
 - Errors show on that row after a short label (`New: notes.md already exists`,
   `Delete: permission denied`)
   and clear at the next key. Nothing is ever overwritten.
@@ -80,7 +81,7 @@ the undo for deletes.
 - The prompt reads `Rename: notes.md`, the current name, cursor at the end.
 - The new name is relative to the item's folder. A `/` in it moves the item,
   but only somewhere inside the browser's root.
-- An unchanged name does nothing.
+- An unchanged name does nothing. A file's new name can't end in `/`.
 - If the file is open in nvim, its buffer takes the new name and keeps any
   unsaved changes (the unsaved dot moves with it); `:w` afterwards writes to
   the new name without complaint. Renaming a folder does the same for every
@@ -98,7 +99,9 @@ the undo for deletes.
   - When the file, or a file inside the folder, has unsaved changes in nvim:
     `notes.md has unsaved changes. Delete anyway? (y/N)` (for a folder:
     `drafts/ has unsaved changes. Delete anyway? (y/N)`)
-- Only `y` deletes; any other key cancels.
+- Only `y` deletes; any other key cancels, including a key typed while `d`
+  waits for nvim (the question then doesn't open). A symlink is asked about
+  like a file, even one that points to a folder: only the link is deleted.
 - The item goes to the Trash. Buffers of deleted files are closed in nvim
   (unsaved changes discarded: the user confirmed).
 
