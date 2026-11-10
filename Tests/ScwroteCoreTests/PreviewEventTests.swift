@@ -62,6 +62,29 @@ struct PreviewEventTests {
         #expect(snapshot.textOmission == .tooLarge)
     }
 
+    @Test func unsavedDecodesTheWholeSet() {
+        let event = PreviewEvent(method: "scwrote_preview", params: params([
+            "type": .string("unsaved"), "paths": .array([.string("/a.md"), .string("/b.md")]),
+        ]))
+        #expect(event == .unsaved(["/a.md", "/b.md"]))
+    }
+
+    @Test func anEmptyUnsavedSetDecodesFromAnArrayOrAMap() {
+        for empty in [MessagePackValue.array([]), .map([:])] {
+            let event = PreviewEvent(method: "scwrote_preview", params: params([
+                "type": .string("unsaved"), "paths": empty,
+            ]))
+            #expect(event == .unsaved([]))
+        }
+    }
+
+    @Test func unsavedWithBadPathsIsIgnored() {
+        #expect(PreviewEvent(method: "scwrote_preview", params: params([
+            "type": .string("unsaved"), "paths": .array([.int(3)]),
+        ])) == nil)
+        #expect(PreviewEvent(method: "scwrote_preview", params: params(["type": .string("unsaved")])) == nil)
+    }
+
     @Test func modifiedDecodes() {
         let event = PreviewEvent(method: "scwrote_preview", params: params([
             "type": .string("modified"), "path": .string("/notes/a.md"), "modified": .bool(false),

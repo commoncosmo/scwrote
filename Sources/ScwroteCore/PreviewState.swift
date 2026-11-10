@@ -108,6 +108,9 @@ public struct PreviewState: Equatable, Sendable {
         case let .cursor(path, position):
             if case let .buffer(snapshot) = target, snapshot.path == path { return .follow(position) }
             return .nothing
+
+        case .unsaved:
+            return .nothing
         }
     }
 

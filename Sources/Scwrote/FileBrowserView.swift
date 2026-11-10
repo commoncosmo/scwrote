@@ -20,6 +20,12 @@ final class FileBrowserView: NSView {
     var onClick: (() -> Void)?
     /// `-` moved the browser to another folder.
     var onRootChange: ((String) -> Void)?
+    /// Files with unsaved changes in nvim. Their rows, and the folders above
+    /// them, get a dot; the header counts them.
+    var unsaved = UnsavedFiles() { didSet { needsDisplay = true } }
+    /// The root with symlinks resolved, the form nvim reports paths in; kept
+    /// for the root it was resolved from.
+    private var realRoot: (root: String, real: String)?
 
     /// First row drawn; scrolls to keep the cursor in view.
     private var topRow = 0
@@ -176,12 +182,20 @@ final class FileBrowserView: NSView {
         theme.background.setFill()
         bounds.fill()
 
-        // Cut long paths at the start: the folder's own name is the part that matters.
+        // The unsaved count sits at the right; the path gets what's left, cut
+        // at the start: the folder's own name is the part that matters.
+        var headerWidth = bounds.width - sidePadding * 2
+        if unsaved.count > 0 {
+            let count = attributed("● \(unsaved.count) unsaved", color: theme.warning)
+            let width = ceil(count.size().width)
+            draw(count, row: 0, x: bounds.width - sidePadding - width, width: width)
+            headerWidth -= width + rowHeight
+        }
         let header = (browser.root as NSString).abbreviatingWithTildeInPath + (isPinned ? "  · pinned" : "")
-        drawLine(header, row: 0, color: theme.dim, truncation: .byTruncatingHead)
+        draw(attributed(header, color: theme.dim, truncation: .byTruncatingHead), row: 0, x: sidePadding, width: headerWidth)
 
         if browser.rows.isEmpty {
-            drawLine("(empty)", row: 1, color: theme.dim)
+            draw(attributed("(empty)", color: theme.dim), row: 1, x: sidePadding, width: bounds.width - sidePadding * 2)
             return
         }
 
@@ -197,25 +211,52 @@ final class FileBrowserView: NSView {
             let indent = String(repeating: "  ", count: row.depth)
             let marker = row.entry.isDirectory ? (row.isExpanded ? "▾ " : "▸ ") : "  "
             let name = row.entry.name + (row.entry.isDirectory ? "/" : "")
-            drawLine(indent + marker + name, row: gridRow, color: row.entry.isDirectory ? theme.folder : theme.foreground)
+            let text = attributed(indent + marker + name, color: row.entry.isDirectory ? theme.folder : theme.foreground)
+            if unsaved.count > 0, unsaved.marks(nvimPath(of: row.entry.path), isDirectory: row.entry.isDirectory) {
+                drawMarked(text, row: gridRow)
+            } else {
+                draw(text, row: gridRow, x: sidePadding, width: bounds.width - sidePadding * 2)
+            }
         }
     }
 
-    /// Draws one line of text on a grid row, its glyphs centered in the row
-    /// the way Ghostty centers them in a cell.
-    private func drawLine(
-        _ text: String, row: Int, color: NSColor, truncation: NSLineBreakMode = .byTruncatingTail
-    ) {
+    /// A row's path in nvim's form, to compare with `unsaved`.
+    private func nvimPath(of path: String) -> String {
+        if realRoot?.root != browser.root {
+            realRoot = (browser.root, FileBrowser.realPath(browser.root))
+        }
+        return browser.nvimPath(of: path, realRoot: realRoot!.real)
+    }
+
+    /// A row followed by the unsaved dot. A long name is cut, never the dot.
+    private func drawMarked(_ text: NSAttributedString, row: Int) {
+        let dot = attributed(" ●", color: theme.warning)
+        let dotWidth = ceil(dot.size().width)
+        let available = bounds.width - sidePadding * 2
+        let textWidth = min(ceil(text.size().width), available - dotWidth)
+        draw(text, row: row, x: sidePadding, width: textWidth)
+        draw(dot, row: row, x: sidePadding + textWidth, width: dotWidth)
+    }
+
+    /// `string` in the theme's font, one line, cut at `truncation`.
+    private func attributed(
+        _ string: String, color: NSColor, truncation: NSLineBreakMode = .byTruncatingTail
+    ) -> NSAttributedString {
         let style = NSMutableParagraphStyle()
         style.lineBreakMode = truncation
-        let attributed = NSAttributedString(string: text, attributes: [
+        return NSAttributedString(string: string, attributes: [
             .font: theme.font, .foregroundColor: color, .paragraphStyle: style,
         ])
+    }
+
+    /// Draws text on a grid row from `x`, at most `width` wide, its glyphs
+    /// centered in the row the way Ghostty centers them in a cell.
+    private func draw(_ text: NSAttributedString, row: Int, x: CGFloat, width: CGFloat) {
         let font = theme.font
         let glyphHeight = font.ascender - font.descender
         let y = grid.rowTop(row) + (rowHeight - glyphHeight) / 2
         // Taller than the glyphs: text that doesn't fit its rect isn't drawn.
         let height = ceil(glyphHeight + font.leading) + 2
-        attributed.draw(in: NSRect(x: sidePadding, y: y, width: bounds.width - sidePadding * 2, height: height))
+        text.draw(in: NSRect(x: x, y: y, width: max(width, 0), height: height))
     }
 }

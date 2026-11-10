@@ -283,3 +283,20 @@ struct FileBrowserActionTests {
         #expect(browser.type("j") == nil)
     }
 }
+
+struct FileBrowserNvimPathTests {
+    @Test func swapsTheRootForItsRealPath() {
+        let browser = FileBrowser(root: "/var/x")
+        #expect(browser.nvimPath(of: "/var/x/a/b.md", realRoot: "/private/var/x") == "/private/var/x/a/b.md")
+    }
+
+    @Test func leavesPathsAloneWhenTheRootIsReal() {
+        let browser = FileBrowser(root: "/p")
+        #expect(browser.nvimPath(of: "/p/a.md", realRoot: "/p") == "/p/a.md")
+    }
+
+    @Test func onlySwapsAWholeFolderName() {
+        let browser = FileBrowser(root: "/var/x")
+        #expect(browser.nvimPath(of: "/var/xy/a.md", realRoot: "/private/var/x") == "/var/xy/a.md")
+    }
+}

@@ -7,6 +7,9 @@
 /// scratch buffers, and no floating windows. A buffer is sent when a change is
 /// done (leaving insert mode, a normal-mode change, a write), never per
 /// keystroke in insert mode; the modified flag and cursor are sent at once.
+/// The whole set of files with unsaved changes is reported on install, on
+/// renames and when a modified file is unloaded, so the file browser can mark
+/// unsaved files that aren't on screen and never keeps a stale one.
 /// The buffer's text comes along only while `sendsText` and when its kind is
 /// drawn from text; otherwise building it would cost nvim time on every edit
 /// of a big file for nothing. Reinstalling replaces the autocommands (that is
@@ -105,12 +108,32 @@ public enum PreviewAutocommands {
           })
         end
 
+        -- Every file with unsaved changes, current or not, for the file
+        -- browser, sent whole so the app's set can't drift. `leaving` is a
+        -- buffer about to be unloaded: its changes are being thrown away.
+        local function send_unsaved(leaving)
+          local paths = {}
+          for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+            if buf ~= leaving and vim.api.nvim_buf_is_loaded(buf) and is_file(buf) and vim.bo[buf].modified then
+              table.insert(paths, vim.api.nvim_buf_get_name(buf))
+            end
+          end
+          send({ type = "unsaved", paths = paths })
+        end
+
         -- No TextChangedI: text is sent on leaving insert mode, not per keystroke.
         vim.api.nvim_create_autocmd({ "BufEnter", "InsertLeave", "TextChanged", "BufWritePost" },
           { group = group, callback = send_buffer })
         vim.api.nvim_create_autocmd("BufModifiedSet", { group = group, callback = send_modified })
+        -- Unloading (`:bd!`, `:e!`) can throw changes away, and renaming
+        -- (`:saveas`, `:file`) moves them to another name: send the whole set.
+        vim.api.nvim_create_autocmd("BufUnload", { group = group, callback = function(args)
+          if is_file(args.buf) and vim.bo[args.buf].modified then send_unsaved(args.buf) end
+        end })
+        vim.api.nvim_create_autocmd("BufFilePost", { group = group, callback = function() send_unsaved() end })
         vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, { group = group, callback = send_cursor })
 
         send_buffer()
+        send_unsaved()
         """
 }
