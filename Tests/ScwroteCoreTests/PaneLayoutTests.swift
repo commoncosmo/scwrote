@@ -199,3 +199,77 @@ struct PaneLayoutFocusBrowserTests {
         #expect(layout.focus == .browser)
     }
 }
+
+struct PaneLayoutPreviewTests {
+    @Test func cmd2ShowsGoesToThenHidesThePreview() {
+        var layout = PaneLayout(startsInBrowser: false)
+        layout.togglePreview()
+        #expect(layout.isPreviewShown && layout.focus == .preview)
+        layout.clicked(.editor)
+        layout.togglePreview()
+        #expect(layout.isPreviewShown && layout.focus == .preview)
+        layout.togglePreview()
+        #expect(!layout.isPreviewShown && layout.focus == .editor)
+    }
+
+    @Test func bracketsMoveOnePaneAtATime() {
+        var layout = PaneLayout(startsInBrowser: false)
+        layout.togglePreview()               // in the preview
+        layout.moveLeft()
+        #expect(layout.focus == .editor)
+        layout.moveLeft()
+        #expect(layout.focus == .browser && layout.mode == .split)
+        layout.moveLeft()
+        #expect(layout.focus == .browser)
+        layout.moveRight()                    // unpinned browser hides on leaving
+        #expect(layout.focus == .editor && layout.mode == .editorOnly)
+        layout.moveRight()
+        #expect(layout.focus == .preview)
+        layout.moveRight()
+        #expect(layout.focus == .preview)
+    }
+
+    @Test func moveRightFromTheEditorDoesNothingWithoutAPreview() {
+        var layout = PaneLayout(startsInBrowser: false)
+        layout.moveRight()
+        #expect(layout.focus == .editor && !layout.isPreviewShown)
+    }
+
+    @Test func leavingThePreviewKeepsItShown() {
+        var layout = PaneLayout(startsInBrowser: false)
+        layout.togglePreview()
+        layout.leavePreview()
+        #expect(layout.focus == .editor && layout.isPreviewShown)
+    }
+
+    @Test func choosingAnImageShowsThePreviewAndStaysInTheBrowser() {
+        var layout = PaneLayout(startsInBrowser: false)
+        layout.toggleBrowser()                // unpinned, focused
+        layout.openedViewOnlyFile()
+        #expect(layout.isPreviewShown && layout.focus == .browser && layout.mode == .split)
+    }
+
+    @Test func beforeAnyFileThePreviewSitsBesideTheFullBrowser() {
+        var layout = PaneLayout(startsInBrowser: true)
+        layout.openedViewOnlyFile()
+        #expect(layout.mode == .browserOnly && layout.isPreviewShown && layout.focus == .browser)
+        layout.moveRight()                    // Cmd+] still does nothing until a file is open
+        #expect(layout.focus == .browser)
+        layout.leaveBrowser()
+        #expect(layout.focus == .browser)
+    }
+
+    @Test func aPaneThatGivesWayHandsFocusToTheEditor() {
+        var layout = PaneLayout(startsInBrowser: false)
+        layout.togglePreview()
+        layout.paneGaveWay(.preview)
+        #expect(layout.focus == .editor && layout.isPreviewShown)
+    }
+
+    @Test func openingAFileKeepsThePreviewShown() {
+        var layout = PaneLayout(startsInBrowser: true)
+        layout.togglePreview()
+        layout.openedFile()
+        #expect(layout.isPreviewShown && layout.focus == .editor)
+    }
+}

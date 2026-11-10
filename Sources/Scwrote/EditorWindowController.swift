@@ -91,22 +91,23 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         change { $0.togglePin() }
     }
 
-    /// Cmd+[ (View menu): go to the browser, showing it if hidden.
+    /// Cmd+[ (View menu): one pane to the left.
     @objc func goToFileBrowser(_: Any?) {
-        change { $0.focusBrowser() }
+        change { $0.moveLeft() }
     }
 
-    /// Cmd+] (View menu): go to the editor, hiding the browser unless pinned.
+    /// Cmd+] (View menu): one pane to the right.
     @objc func goToEditor(_: Any?) {
-        change { $0.leaveBrowser() }
+        change { $0.moveRight() }
     }
 
     private func perform(_ shortcut: WindowShortcut) {
         switch shortcut {
         case .toggleBrowser: toggleFileBrowser(nil)
         case .toggleBrowserPin: toggleFileBrowserPin(nil)
-        case .goToBrowser: goToFileBrowser(nil)
-        case .goToEditor: goToEditor(nil)
+        case .togglePreview: change { $0.togglePreview() }
+        case .moveLeft: change { $0.moveLeft() }
+        case .moveRight: change { $0.moveRight() }
         }
     }
 
@@ -122,6 +123,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     private func applyPanes() {
         layoutView.mode = panes.mode
         browserView.isPinned = panes.isPinned
+        // The preview view doesn't exist yet; a later task focuses it.
         let focused: NSView = panes.focus == .browser ? browserView : terminalView
         if window?.firstResponder !== focused { window?.makeFirstResponder(focused) }
     }

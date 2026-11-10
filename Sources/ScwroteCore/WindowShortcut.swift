@@ -5,10 +5,12 @@ public enum WindowShortcut: Equatable, Sendable {
     case toggleBrowser
     /// Cmd+Shift+1.
     case toggleBrowserPin
-    /// Cmd+[: go to the browser, showing it if hidden.
-    case goToBrowser
-    /// Cmd+]: go to the editor.
-    case goToEditor
+    /// Cmd+2: show the preview and go to it, go to it, or hide it.
+    case togglePreview
+    /// Cmd+[: move one pane to the left.
+    case moveLeft
+    /// Cmd+]: move one pane to the right.
+    case moveRight
 
     public struct Modifiers: OptionSet, Sendable {
         public let rawValue: Int
@@ -26,8 +28,9 @@ public enum WindowShortcut: Equatable, Sendable {
         switch (keyCode, modifiers) {
         case (18, [.command]): self = .toggleBrowser
         case (18, [.command, .shift]): self = .toggleBrowserPin
-        case (33, [.command]): self = .goToBrowser
-        case (30, [.command]): self = .goToEditor
+        case (19, [.command]): self = .togglePreview
+        case (33, [.command]): self = .moveLeft
+        case (30, [.command]): self = .moveRight
         default: return nil
         }
     }
