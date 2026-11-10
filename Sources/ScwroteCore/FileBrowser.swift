@@ -18,6 +18,12 @@ public enum BrowserKey: Equatable, Sendable {
 public enum BrowserAction: Equatable, Sendable {
     case open(String)
     case leave
+    /// `a`: ask for a name and create a file or folder.
+    case add
+    /// `r`: ask for a new name for the item at this path.
+    case rename(String)
+    /// `d`: ask before moving the item at this path to the Trash.
+    case delete(String)
 }
 
 /// A netrw-style tree of one folder, driven by vim keys. Pure state: it lists
@@ -52,9 +58,11 @@ public struct FileBrowser {
         rebuildRows()
     }
 
-    public var selectedPath: String? {
-        rows.indices.contains(cursor) ? rows[cursor].entry.path : nil
+    public var selectedEntry: FileEntry? {
+        rows.indices.contains(cursor) ? rows[cursor].entry : nil
     }
+
+    public var selectedPath: String? { selectedEntry?.path }
 
     public mutating func handle(_ key: BrowserKey, pageHeight: Int) -> BrowserAction? {
         if pendingG {
@@ -93,6 +101,10 @@ public struct FileBrowser {
         case .halfPageDown: move(by: halfPage)
         case .halfPageUp: move(by: -halfPage)
         case .escape: return .leave
+        // A count before these means nothing; it is dropped like any other.
+        case .character("a"): return .add
+        case .character("r"): return selectedPath.map(BrowserAction.rename)
+        case .character("d"): return selectedPath.map(BrowserAction.delete)
         default: break
         }
         return nil

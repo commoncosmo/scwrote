@@ -35,6 +35,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// A second connection that only listens, for the preview.
     let previewEvents: NvimEventListener
     private var watcher: FolderWatcher?
+    /// Add, rename and delete for the browser's folder; follows its root.
+    private var fileActions: FileActions
 
     /// `controller` carries the nvim command in its config (see
     /// `GhosttyConfig.editorConfig` for why it isn't a surface option).
@@ -65,6 +67,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         )
         nvim = NvimClient(socketPath: nvimSocket)
         previewEvents = NvimEventListener(socketPath: nvimSocket)
+        fileActions = FileActions(root: request.browserRoot, fileSystem: LocalFileSystem())
         super.init(window: window)
 
         window.delegate = self
@@ -80,7 +83,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
         browserView.onClick = { [weak self] in self?.change { $0.clicked(.browser) } }
         browserView.onAction = { [weak self] in self?.handle($0) }
-        browserView.onRootChange = { [weak self] in self?.watch($0) }
+        browserView.onRootChange = { [weak self] in self?.browserRootChanged($0) }
+        browserView.onPrompt = { [weak self] in self?.finishPrompt($0) }
 
         layoutView.onGaveWay = { [weak self] in self?.panesGaveWay($0) }
         connectPreview()
@@ -106,28 +110,33 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
     /// Cmd+1 (View menu): show the browser and go to it, go to it, or hide it.
     @objc func toggleFileBrowser(_: Any?) {
+        browserView.prompt = nil
         change { $0.toggleBrowser() }
     }
 
     /// Cmd+Shift+1 (View menu).
     @objc func toggleFileBrowserPin(_: Any?) {
+        browserView.prompt = nil
         change { $0.togglePin() }
     }
 
     /// Cmd+2 (View menu): show the preview and go to it, go to it, or hide it
     /// (also when the window has no room to show it).
     @objc func togglePreview(_: Any?) {
+        browserView.prompt = nil
         let squeezedOut = layoutView.gaveWay(for: panes).contains(.preview)
         change { $0.togglePreview(squeezedOut: squeezedOut) }
     }
 
     /// Cmd+[ (View menu): one pane to the left.
     @objc func moveToLeftPane(_: Any?) {
+        browserView.prompt = nil
         change { $0.moveLeft() }
     }
 
     /// Cmd+] (View menu): one pane to the right.
     @objc func moveToRightPane(_: Any?) {
+        browserView.prompt = nil
         change { $0.moveRight() }
     }
 
@@ -187,6 +196,106 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         switch action {
         case .leave: change { $0.leaveBrowser() }
         case let .open(path): choose(path)
+        case .add:
+            let browser = browserView.browser
+            let folder = fileActions.folderForNewItem(selected: browser.selectedEntry)
+            browserView.prompt = .add(folder: folder, root: browser.root)
+        case let .rename(path):
+            browserView.prompt = .rename(path: path)
+        case let .delete(path):
+            let question = fileActions.deleteQuestion(for: path, hasUnsavedChanges: hasUnsavedChanges(at: path))
+            browserView.prompt = .delete(path: path, question: question)
+        }
+    }
+
+    /// Whether the item at a browser path, or anything inside it, has
+    /// unsaved changes in nvim.
+    private func hasUnsavedChanges(at path: String) -> Bool {
+        let browser = browserView.browser
+        let isDirectory = browser.rows.first { $0.entry.path == path }?.entry.isDirectory ?? false
+        let nvimPath = browser.nvimPath(of: path, realRoot: FileBrowser.realPath(browser.root))
+        return browserView.unsaved.marks(nvimPath, isDirectory: isDirectory)
+    }
+
+    // MARK: - File actions
+
+    /// Carries out what the prompt asked for. A refused or failed action
+    /// leaves the prompt open with the reason; otherwise it closes, and the
+    /// browser shows the result at once rather than waiting for the folder
+    /// watcher.
+    private func finishPrompt(_ outcome: BrowserPrompt.Outcome) {
+        guard let prompt = browserView.prompt else { return }
+        switch (prompt.kind, outcome) {
+        case let (.add(folder), .submitted(name)):
+            switch fileActions.create(name, in: folder) {
+            case let .failure(error): browserView.prompt?.fail(error.message)
+            case let .success(item): added(item)
+            }
+        case let (.rename(path), .submitted(name)):
+            // Resolved now: once the item has moved there's nothing to resolve.
+            let oldNvimPath = Self.nvimPath(of: path)
+            switch fileActions.rename(path, to: name) {
+            case let .failure(error): browserView.prompt?.fail(error.message)
+            case .success(nil): browserView.prompt = nil
+            case let .success(newPath?): renamed(from: oldNvimPath, to: newPath)
+            }
+        case let (.delete(path, _), .confirmed):
+            let nvimPath = Self.nvimPath(of: path)
+            switch fileActions.delete(path) {
+            case let .failure(error): browserView.prompt?.fail(error.message)
+            case .success: deleted(nvimPath: nvimPath)
+            }
+        default:
+            browserView.prompt = nil
+        }
+    }
+
+    /// A new file opens as if chosen; a new folder is selected.
+    private func added(_ item: NewItem) {
+        browserView.prompt = nil
+        browserView.reload()
+        browserView.reveal(item.path)
+        if !item.isFolder { choose(item.path) }
+    }
+
+    /// nvim's buffers take the new name, keeping unsaved changes.
+    private func renamed(from oldNvimPath: String, to newPath: String) {
+        browserView.prompt = nil
+        browserView.reload()
+        browserView.reveal(newPath)
+        let newNvimPath = Self.nvimPath(of: newPath)
+        syncNvim("follow the rename of \(oldNvimPath)") { try $0.renameBuffers(from: oldNvimPath, to: newNvimPath) }
+    }
+
+    /// The cursor stays where the item was (on the row that took its place).
+    private func deleted(nvimPath: String) {
+        browserView.prompt = nil
+        browserView.reload()
+        syncNvim("close the buffers of \(nvimPath)") { try $0.closeBuffers(at: nvimPath) }
+    }
+
+    /// An item's path the way nvim names its buffers: the folders above it
+    /// with symlinks resolved (`/var` is `/private/var`). The item itself is
+    /// left alone, so deleting or renaming a symlink never touches the buffer
+    /// of the file it points to, which is still there.
+    private static func nvimPath(of path: String) -> String {
+        let folder = (path as NSString).deletingLastPathComponent
+        return (FileBrowser.realPath(folder) as NSString).appendingPathComponent((path as NSString).lastPathComponent)
+    }
+
+    /// The disk change stands even if nvim can't follow it, so a failure is
+    /// only reported: a beep, and the first line on stderr (nvim's own
+    /// message, without the Lua traceback after it).
+    private func syncNvim(_ what: String, _ work: @escaping @Sendable (NvimClient) throws -> Void) {
+        Task {
+            do {
+                try await nvimCall(work)
+            } catch {
+                NSSound.beep()
+                let message: String = if case let NvimClient.Failure.nvim(text) = error { text } else { "\(error)" }
+                let firstLine = message.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? message
+                FileHandle.standardError.write(Data("scwrote: nvim couldn't \(what): \(firstLine)\n".utf8))
+            }
         }
     }
 
@@ -230,6 +339,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     // MARK: - Files on disk
+
+    /// `-` moved the browser: actions follow the new root, and a prompt
+    /// opened for the old one closes.
+    private func browserRootChanged(_ root: String) {
+        browserView.prompt = nil
+        fileActions = FileActions(root: root, fileSystem: LocalFileSystem())
+        watch(root)
+    }
 
     private func watch(_ root: String) {
         watcher?.stop()

@@ -8,7 +8,8 @@ import ScwroteCore
 ///       <Left>, <Right>, <C-d>, <C-u> are browser keys. The window's own
 ///       keys, <D-1> (Cmd+1), <D-S-1>, <D-2>, <D-[> and <D-]>, are posted as
 ///       real key events, so they take the path a keyboard's would; so is
-///       <S-R> (Shift+R), for the preview's `R` when it has the keyboard. Text in
+///       <S-R> (Shift+R), for the preview's `R` when it has the keyboard, and
+///       the browser prompt's editing keys <BS>, <C-a>, <C-e> and <C-w>. Text in
 ///       braces goes to nvim with nvim_input, in nvim's key notation:
 ///       {ohello<Esc>} opens a line, types "hello" and leaves insert mode.
 ///   SCWROTE_DEBUG_SNAPSHOT=/path.png   afterwards, save a picture of the
@@ -55,7 +56,8 @@ extension EditorWindowController {
     /// the same key-equivalent and first-responder handling as a keyboard's.
     /// If the app couldn't come to the front (started from a terminal that
     /// isn't), the queue would drop them for want of a key window, so the
-    /// press goes to the window's key-equivalent handling directly.
+    /// press goes to the window's key-equivalent handling directly, and if
+    /// that doesn't take it, to the view with the keyboard.
     private func post(_ keyCode: UInt16, _ characters: String, _ modifiers: NSEvent.ModifierFlags) {
         guard let window else { return }
         for type in [NSEvent.EventType.keyDown, .keyUp] {
@@ -67,8 +69,8 @@ extension EditorWindowController {
             ) else { continue }
             if window.isKeyWindow {
                 NSApp.postEvent(event, atStart: false)
-            } else if type == .keyDown {
-                _ = window.performKeyEquivalent(with: event)
+            } else if type == .keyDown, !window.performKeyEquivalent(with: event) {
+                window.firstResponder?.keyDown(with: event)
             }
         }
     }
@@ -83,6 +85,9 @@ extension EditorWindowController {
             "<D-2>": .keyboard(19, "2", [.command]),
             "<D-[>": .keyboard(33, "[", [.command]), "<D-]>": .keyboard(30, "]", [.command]),
             "<S-R>": .keyboard(15, "R", [.shift]),
+            "<BS>": .keyboard(51, "\u{7f}", []),
+            "<C-a>": .keyboard(0, "a", [.control]), "<C-e>": .keyboard(14, "e", [.control]),
+            "<C-w>": .keyboard(13, "w", [.control]),
         ]
         var keys: [DebugKey] = []
         var rest = Substring(script)

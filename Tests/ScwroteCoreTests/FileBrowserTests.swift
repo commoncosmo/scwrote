@@ -282,6 +282,42 @@ struct FileBrowserActionTests {
 
         #expect(browser.type("j") == nil)
     }
+
+    @Test func aAsksToAdd() throws {
+        let root = try makeTree(["a.md"])
+        var browser = FileBrowser(root: root)
+
+        #expect(browser.type("a") == .add)
+        #expect(browser.type("3a") == .add)
+    }
+
+    @Test func aAsksToAddInAnEmptyFolder() throws {
+        let root = try makeTree([])
+        var browser = FileBrowser(root: root)
+
+        #expect(browser.type("a") == .add)
+    }
+
+    @Test func rAndDActOnTheSelection() throws {
+        let root = try makeTree(["a.md", "b.md"])
+        var browser = FileBrowser(root: root)
+        _ = browser.type("j")
+
+        #expect(browser.selectedEntry == FileEntry(name: "b.md", path: "\(root)/b.md", isDirectory: false))
+        #expect(browser.type("r") == .rename("\(root)/b.md"))
+        #expect(browser.type("d") == .delete("\(root)/b.md"))
+        // A count before them means nothing and doesn't move the selection.
+        #expect(browser.type("2d") == .delete("\(root)/b.md"))
+    }
+
+    @Test func rAndDDoNothingInAnEmptyFolder() throws {
+        let root = try makeTree([])
+        var browser = FileBrowser(root: root)
+
+        #expect(browser.selectedEntry == nil)
+        #expect(browser.type("r") == nil)
+        #expect(browser.type("d") == nil)
+    }
 }
 
 struct FileBrowserNvimPathTests {

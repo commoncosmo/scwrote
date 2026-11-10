@@ -5,8 +5,10 @@ import Foundation
 /// never spliced into a command, so any name is safe.
 extension NvimClient {
     /// After the file or folder at `from` moved to `to` on disk: every loaded buffer at `from`
-    /// or under it takes the matching name under `to`, keeping unsaved changes, and `:w`
-    /// afterwards writes to the new name without an error. No buffer keeps the old name.
+    /// or under it takes the matching name under `to`, keeping unsaved changes. No buffer
+    /// keeps the old name. `:w` afterwards writes to the new name without an error, except
+    /// for a buffer whose writes another BufWriteCmd could handle (a plugin's, say): that one
+    /// needs `:w!` once (see `renameBuffersLua` for why).
     public func renameBuffers(from: String, to: String) throws {
         _ = try request("nvim_exec_lua", [
             .string(Self.renameBuffersLua),

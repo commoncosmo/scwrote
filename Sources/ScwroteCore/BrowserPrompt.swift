@@ -17,6 +17,19 @@ public enum PromptKey: Equatable, Sendable {
         case .up, .down, .halfPageDown: return nil
         }
     }
+
+    /// What a key typed, as a character for the line: one printable
+    /// character. Tab, Delete and the like are control characters, and
+    /// function keys (F1, Home, Page Up...) type private-use ones; none
+    /// belongs in a file name.
+    public init?(typed text: String) {
+        guard text.count == 1, let character = text.first else { return nil }
+        let printable = character.unicodeScalars.allSatisfy { scalar in
+            scalar.properties.generalCategory != .control && !(0xF700...0xF8FF).contains(scalar.value)
+        }
+        guard printable else { return nil }
+        self = .character(character)
+    }
 }
 
 /// The text being typed in the prompt, with a cursor counted in Characters so

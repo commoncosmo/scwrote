@@ -76,4 +76,16 @@ struct BrowserPromptTests {
         #expect(PromptKey(.down) == nil)
         #expect(PromptKey(.halfPageDown) == nil)
     }
+
+    @Test func typedTextIsACharacterOnlyWhenPrintable() {
+        #expect(PromptKey(typed: "a") == .character("a"))
+        #expect(PromptKey(typed: "é") == .character("é"))
+        #expect(PromptKey(typed: " ") == .character(" "))
+        #expect(PromptKey(typed: "\t") == nil)
+        #expect(PromptKey(typed: "\u{7f}") == nil)
+        // Function keys (F1, Home, Page Up...) type private-use characters.
+        #expect(PromptKey(typed: "\u{F704}") == nil)
+        #expect(PromptKey(typed: "ab") == nil)
+        #expect(PromptKey(typed: "") == nil)
+    }
 }
