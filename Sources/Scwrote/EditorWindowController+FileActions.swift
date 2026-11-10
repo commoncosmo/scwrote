@@ -13,6 +13,7 @@ extension EditorWindowController {
     func askToDelete(_ path: String) {
         let token = UUID()
         pendingDelete = token
+        browserView.isWaitingForPrompt = true
         let nvimPath = FileBrowser.nvimPath(of: path)
         let root = browserView.browser.root
         Task {
@@ -31,6 +32,7 @@ extension EditorWindowController {
     private func openDeleteQuestion(_ token: UUID, path: String, root: String, hasUnsavedChanges: Bool) {
         guard pendingDelete == token else { return }
         pendingDelete = nil
+        browserView.isWaitingForPrompt = false
         let browser = browserView.browser
         guard browserView.prompt == nil, browser.root == root, browser.selectedEntry?.path == path,
               window?.firstResponder === browserView

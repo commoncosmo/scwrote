@@ -25,19 +25,40 @@ final class FileBrowserView: NSView {
     var prompt: BrowserPrompt? {
         didSet {
             needsDisplay = true
-            // It takes a row, which may have been the cursor's.
-            if (prompt == nil) != (oldValue == nil) { scrollToCursor() }
+            if (prompt == nil) != (oldValue == nil) {
+                // Whoever opened or closed it (a key here, or the host after
+                // a window shortcut), the key still held was theirs.
+                repeats.promptOpenedOrClosed()
+                // It takes a row, which may have been the cursor's.
+                scrollToCursor()
+            }
         }
     }
+    /// A `d` has asked for the delete question, which opens once nvim has
+    /// answered. The next key down is an answer to a question that hasn't
+    /// appeared: it cancels the wait (`onWaitCancelled`) and does nothing
+    /// else, so it never acts on the browser's rows, count or pending `g`.
+    var isWaitingForPrompt = false {
+        didSet { if isWaitingForPrompt != oldValue { repeats.promptOpenedOrClosed() } }
+    }
+    /// A key cancelled the wait for the prompt.
+    var onWaitCancelled: (() -> Void)?
     /// The prompt was confirmed, submitted or cancelled. The host closes it
     /// or, for a failed action, shows the error on it.
     var onPrompt: ((BrowserPrompt.Outcome) -> Void)?
     /// Files with unsaved changes in nvim. Their rows, and the folders above
     /// them, get a dot; the header counts them.
     var unsaved = UnsavedFiles() { didSet { needsDisplay = true } }
-    /// Rows' paths in nvim's form (`FileBrowser.nvimPath(of:)`), resolved
-    /// once until the next reload rather than at every draw.
-    private var nvimPaths: [String: String] = [:]
+    /// Rows' paths in nvim's form (`FileBrowser.nvimPath(of:isDirectory:)`),
+    /// resolved once until the next reload rather than at every draw. The
+    /// folder watcher reloads (clearing this) on any change in the folder,
+    /// including a link pointed somewhere else, so it can't go stale.
+    private var nvimPaths: [NvimPathKey: String] = [:]
+
+    private struct NvimPathKey: Hashable {
+        let path: String
+        let isDirectory: Bool
+    }
     /// Held keys repeat in the prompt, but not the one that opened or closed
     /// it, nor any in a delete question (see `PromptKeyRepeats`).
     private var repeats = PromptKeyRepeats()
@@ -109,6 +130,13 @@ final class FileBrowserView: NSView {
         if outcome != .editing { onPrompt?(outcome) }
     }
 
+    private func pasteIntoPrompt() {
+        guard var prompt else { return }
+        let outcome = prompt.paste(NSPasteboard.general.string(forType: .string) ?? "")
+        self.prompt = prompt
+        if outcome != .editing { onPrompt?(outcome) }
+    }
+
     /// A key the prompt has no use for (↑, Ctrl-d, a Cmd key): the prompt
     /// decides what that means (see `BrowserPrompt.handleUnmapped()`).
     private func pressUnmapped() {
@@ -125,20 +153,19 @@ final class FileBrowserView: NSView {
         if repeats.drops(isRepeat: event.isARepeat, inDeleteQuestion: inDeleteQuestion) {
             return
         }
-        let wasOpen = prompt != nil
-        var askedForPrompt = false
+        if isWaitingForPrompt {
+            isWaitingForPrompt = false
+            onWaitCancelled?()
+            return
+        }
         // Cmd keys reached the prompt through performKeyEquivalent already.
         if prompt != nil, !event.modifierFlags.contains(.command) {
             if let key = Self.promptKey(for: event) { press(key) } else { pressUnmapped() }
         } else if let key = Self.browserKey(for: event) {
-            switch press(key) {
-            case .add, .rename, .delete: askedForPrompt = true
-            case .open, .leave, nil: break
-            }
+            press(key)
         } else {
             super.keyDown(with: event)
         }
-        if askedForPrompt || (prompt != nil) != wasOpen { repeats.promptOpenedOrClosed() }
     }
 
     /// A Cmd key while the prompt has the keyboard counts as a key it has no
@@ -146,9 +173,21 @@ final class FileBrowserView: NSView {
     /// window's own shortcuts never get here: the window takes them first,
     /// and they close the prompt themselves.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if prompt != nil, window?.firstResponder === self, event.type == .keyDown,
+        if window?.firstResponder === self, event.type == .keyDown,
            event.modifierFlags.contains(.command), !event.isARepeat {
-            pressUnmapped()
+            if isWaitingForPrompt {
+                isWaitingForPrompt = false
+                onWaitCancelled?()
+            } else if prompt != nil {
+                // There's no Edit menu (Cmd+V is the terminal's), so paste is
+                // handled here.
+                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                if flags == .command, event.charactersIgnoringModifiers == "v" {
+                    pasteIntoPrompt()
+                    return true
+                }
+                pressUnmapped()
+            }
         }
         return super.performKeyEquivalent(with: event)
     }
@@ -186,6 +225,9 @@ final class FileBrowserView: NSView {
         guard !flags.contains(.command) else { return nil }
         switch event.keyCode {
         case 51: return .backspace
+        case 117: return .deleteForward
+        case 115: return .start
+        case 119: return .end
         case 123: return .left
         case 124: return .right
         case 36, 76: return .enter
@@ -196,6 +238,7 @@ final class FileBrowserView: NSView {
             switch event.charactersIgnoringModifiers {
             case "a": return .start
             case "e": return .end
+            case "h": return .backspace
             case "w": return .deleteWord
             case "u": return .deleteToStart
             default: return nil
@@ -317,7 +360,7 @@ final class FileBrowserView: NSView {
             let marker = row.entry.isDirectory ? (row.isExpanded ? "▾ " : "▸ ") : "  "
             let name = row.entry.name + (row.entry.isDirectory ? "/" : "")
             let text = attributed(indent + marker + name, color: row.entry.isDirectory ? theme.folder : theme.foreground)
-            if unsaved.count > 0, unsaved.marks(nvimPath(of: row.entry.path), isDirectory: row.entry.isDirectory) {
+            if unsaved.count > 0, unsaved.marks(nvimPath(of: row.entry.path, isDirectory: row.entry.isDirectory), isDirectory: row.entry.isDirectory) {
                 drawMarked(text, row: gridRow)
             } else {
                 draw(text, row: gridRow, x: sidePadding, width: bounds.width - sidePadding * 2)
@@ -383,10 +426,11 @@ final class FileBrowserView: NSView {
     }
 
     /// A row's path in nvim's form, to compare with `unsaved`.
-    private func nvimPath(of path: String) -> String {
-        if let known = nvimPaths[path] { return known }
-        let resolved = FileBrowser.nvimPath(of: path)
-        nvimPaths[path] = resolved
+    private func nvimPath(of path: String, isDirectory: Bool) -> String {
+        let key = NvimPathKey(path: path, isDirectory: isDirectory)
+        if let known = nvimPaths[key] { return known }
+        let resolved = FileBrowser.nvimPath(of: path, isDirectory: isDirectory)
+        nvimPaths[key] = resolved
         return resolved
     }
 

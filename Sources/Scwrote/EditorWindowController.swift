@@ -87,6 +87,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         browserView.onAction = { [weak self] in self?.handle($0) }
         browserView.onRootChange = { [weak self] in self?.browserRootChanged($0) }
         browserView.onPrompt = { [weak self] in self?.finishPrompt($0) }
+        browserView.onWaitCancelled = { [weak self] in self?.pendingDelete = nil }
 
         layoutView.onGaveWay = { [weak self] in self?.panesGaveWay($0) }
         connectPreview()
