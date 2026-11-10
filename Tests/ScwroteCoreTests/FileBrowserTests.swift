@@ -237,6 +237,18 @@ struct FileBrowserFolderTests {
 
     /// nvim reports real paths (/private/var/...), while the browser's root may
     /// be reached through a symlink (/var/... and /tmp are symlinks on macOS).
+    /// A symlink to a file is its own row, not the row of the file it points to.
+    @Test func revealKeepsASymlinkItemsOwnRow() throws {
+        let root = try makeTree(["a.md"])
+        try FileManager.default.createSymbolicLink(atPath: "\(root)/l.md", withDestinationPath: "\(root)/a.md")
+        var browser = FileBrowser(root: root)
+
+        browser.reveal("\(root)/l.md")
+
+        #expect(browser.selectedName == "l.md")
+        #expect(browser.selectedPath == "\(root)/l.md")
+    }
+
     @Test func revealMatchesAFileReachedThroughASymlinkedFolder() throws {
         let root = try makeTree(["docs/guide.md"])
         #expect(root.hasPrefix("/var/"), "the temp folder should be under the /var symlink")
@@ -340,6 +352,19 @@ struct FileBrowserNvimPathTests {
         try FileManager.default.createSymbolicLink(atPath: "\(root)/link.md", withDestinationPath: "\(root)/x.md")
 
         #expect(FileBrowser.nvimPath(of: "\(root)/link.md") == "/private\(root)/link.md")
+    }
+
+    @Test func aSymlinkedFolderRowIsNamedByItsTargetSoFilesInsideAreSeen() throws {
+        let root = try makeTree(["elsewhere/x.md"])
+        try FileManager.default.createSymbolicLink(atPath: "\(root)/linkdir", withDestinationPath: "\(root)/elsewhere")
+
+        let row = FileBrowser.nvimPath(of: "\(root)/linkdir", isDirectory: true)
+        #expect(row == "/private\(root)/elsewhere")
+        #expect(FileBrowser.nvimPath(of: "\(root)/x.md", isDirectory: false) == "/private\(root)/x.md")
+        #expect(FileBrowser.nvimPath(of: "\(root)/linkdir", isDirectory: false) == "/private\(root)/linkdir")
+        var unsaved = UnsavedFiles()
+        unsaved.apply(.modified(path: "/private\(root)/elsewhere/x.md", isModified: true))
+        #expect(unsaved.marks(row, isDirectory: true))
     }
 
     @Test func worksForAnItemThatIsGone() throws {

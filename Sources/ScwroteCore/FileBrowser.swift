@@ -112,10 +112,12 @@ public struct FileBrowser {
 
     /// Opens the folders down to `path` and selects it. Paths outside the
     /// root are ignored. Compares real paths, since nvim reports /private/var/...
-    /// for a root reached through the /var symlink (and the like).
+    /// for a root reached through the /var symlink (and the like). Only the
+    /// folders above the item are resolved, so a symlink to a file selects
+    /// its own row, not its target's.
     public mutating func reveal(_ path: String) {
         let realRoot = Self.realPath(root)
-        let realTarget = Self.realPath(path)
+        let realTarget = Self.nvimPath(of: path)
         guard realTarget.hasPrefix(realRoot + "/") else { return }
         let target = root + realTarget.dropFirst(realRoot.count)
         var folder = (target as NSString).deletingLastPathComponent
@@ -135,6 +137,13 @@ public struct FileBrowser {
     public static func nvimPath(of path: String) -> String {
         let folder = (path as NSString).deletingLastPathComponent
         return (realPath(folder) as NSString).appendingPathComponent((path as NSString).lastPathComponent)
+    }
+
+    /// A row's path as nvim names the buffers under it: a folder fully
+    /// resolved (a symlink to a folder stands for its target, where the files
+    /// inside are named), a file as `nvimPath(of:)`.
+    public static func nvimPath(of path: String, isDirectory: Bool) -> String {
+        isDirectory ? realPath(path) : nvimPath(of: path)
     }
 
     /// The path with every symlink resolved (realpath(3)), or as given if it
