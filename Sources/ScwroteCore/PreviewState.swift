@@ -56,6 +56,14 @@ public struct PreviewState: Equatable, Sendable {
         }
     }
 
+    /// The shown buffer is drawn from text it came without, because the
+    /// preview was hidden when it was sent: the text is on its way (the
+    /// listener sends the buffer again when asked for it), so don't draw yet.
+    public var isAwaitingText: Bool {
+        guard case let .buffer(snapshot) = target else { return false }
+        return snapshot.textOmission == .notRequested && kind.needsText
+    }
+
     public var header: PreviewHeader {
         var label = "No file"
         var isUnsaved = false
@@ -129,7 +137,7 @@ public struct PreviewState: Equatable, Sendable {
     private mutating func show(_ newTarget: Target, keepingMessage: Bool) {
         target = newTarget
         if !keepingMessage || message == Self.tooLarge { message = nil; isError = false }
-        if case let .buffer(snapshot) = newTarget, snapshot.text == nil {
+        if case let .buffer(snapshot) = newTarget, snapshot.textOmission == .tooLarge {
             message = Self.tooLarge
             isError = false
         }

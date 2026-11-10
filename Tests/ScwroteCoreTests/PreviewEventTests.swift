@@ -38,6 +38,30 @@ struct PreviewEventTests {
         )))
     }
 
+    @Test func textLeftOutBecauseNobodyAskedSaysSo() {
+        var fields = bufferFields
+        fields["text"] = nil
+        fields["omitted"] = .string("not_requested")
+
+        guard case let .buffer(snapshot)? = PreviewEvent(method: "scwrote_preview", params: params(fields)) else {
+            Issue.record("not a buffer event")
+            return
+        }
+        #expect(snapshot.text == nil && snapshot.textOmission == .notRequested)
+    }
+
+    @Test func textLeftOutForSizeIsTooLarge() {
+        var fields = bufferFields
+        fields["text"] = nil
+        fields["omitted"] = .string("too_large")
+
+        guard case let .buffer(snapshot)? = PreviewEvent(method: "scwrote_preview", params: params(fields)) else {
+            Issue.record("not a buffer event")
+            return
+        }
+        #expect(snapshot.textOmission == .tooLarge)
+    }
+
     @Test func modifiedDecodes() {
         let event = PreviewEvent(method: "scwrote_preview", params: params([
             "type": .string("modified"), "path": .string("/notes/a.md"), "modified": .bool(false),

@@ -1,16 +1,37 @@
 /// The Lua that makes nvim report to the preview. Run it with
-/// `nvim_exec_lua(lua, [channelID])`: it sends `scwrote_preview`
-/// notifications (decoded by `PreviewEvent`) to that channel.
+/// `nvim_exec_lua(lua, arguments(channel:sendsText:))`, from any connection:
+/// it sends `scwrote_preview` notifications (decoded by `PreviewEvent`) to
+/// that channel, starting with the current buffer.
 ///
 /// It only reads nvim's state. Only real files count: no help, terminal or
-/// scratch buffers, and no floating windows. Text is sent when a change is
+/// scratch buffers, and no floating windows. A buffer is sent when a change is
 /// done (leaving insert mode, a normal-mode change, a write), never per
 /// keystroke in insert mode; the modified flag and cursor are sent at once.
-/// Reinstalling replaces the autocommands, and they remove themselves once
-/// the channel is gone.
+/// The buffer's text comes along only while `sendsText` and when its kind is
+/// drawn from text; otherwise building it would cost nvim time on every edit
+/// of a big file for nothing. Reinstalling replaces the autocommands (that is
+/// how `sendsText` changes), and they remove themselves once the channel is
+/// gone.
 public enum PreviewAutocommands {
+    /// The arguments for `lua`: the channel to report to, whether to send
+    /// text, and which files have text worth sending, by extension and by
+    /// filetype, decided the way `PreviewKind` decides.
+    public static func arguments(channel: Int64, sendsText: Bool) -> [MessagePackValue] {
+        func needsText(_ kinds: [String: PreviewKind]) -> MessagePackValue {
+            .map(Dictionary(uniqueKeysWithValues: kinds.map { (.string($0.key), .bool($0.value.needsText)) }))
+        }
+        return [
+            .int(channel),
+            .bool(sendsText),
+            .map([
+                .string("extensions"): needsText(PreviewKind.byExtension),
+                .string("filetypes"): needsText(PreviewKind.byFiletype),
+            ]),
+        ]
+    }
+
     public static let lua = """
-        local chan = ...
+        local chan, sends_text, previewable = ...
         local max_bytes = \(PreviewLimits.maxBufferBytes)
         local group = vim.api.nvim_create_augroup("ScwrotePreview", { clear = true })
 
@@ -33,18 +54,32 @@ public enum PreviewAutocommands {
           end
         end
 
+        -- Whether the preview draws this file from its text: the extension
+        -- decides if PreviewKind knows it, otherwise the filetype.
+        local function needs_text(buf, path)
+          local ext = path:match("[^/]*$"):match("^.+%.([^.]*)$")
+          local by_extension = ext and previewable.extensions[ext:lower()]
+          if by_extension ~= nil then return by_extension end
+          return previewable.filetypes[vim.bo[buf].filetype] == true
+        end
+
         local function send_buffer()
           local buf = current_file()
           if not buf then return end
+          local path = vim.api.nvim_buf_get_name(buf)
           local event = {
             type = "buffer",
-            path = vim.api.nvim_buf_get_name(buf),
+            path = path,
             filetype = vim.bo[buf].filetype,
             modified = vim.bo[buf].modified,
             line = vim.fn.line("."),
             column = vim.fn.charcol(".") - 1,
           }
-          if vim.api.nvim_buf_get_offset(buf, vim.api.nvim_buf_line_count(buf)) <= max_bytes then
+          if not (sends_text and needs_text(buf, path)) then
+            event.omitted = "not_requested"
+          elseif vim.api.nvim_buf_get_offset(buf, vim.api.nvim_buf_line_count(buf)) > max_bytes then
+            event.omitted = "too_large"
+          else
             event.text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\\n")
           end
           send(event)

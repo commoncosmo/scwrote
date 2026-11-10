@@ -10,19 +10,35 @@ public struct CursorPosition: Equatable, Sendable {
     }
 }
 
+/// Why a buffer came without its text.
+public enum TextOmission: Equatable, Sendable {
+    /// Larger than `PreviewLimits.maxBufferBytes`.
+    case tooLarge
+    /// Nobody needs it: the preview is hidden, or the file's kind isn't drawn
+    /// from text (see `PreviewKind.needsText`).
+    case notRequested
+}
+
 /// A file buffer as the preview sees it.
 public struct BufferSnapshot: Equatable, Sendable {
     public var path: String
     public var filetype: String
-    /// nil when the buffer is larger than `PreviewLimits.maxBufferBytes`.
+    /// nil when it wasn't sent; `textOmission` says why.
     public var text: String?
+    /// Why `text` is nil; nil when it isn't.
+    public var textOmission: TextOmission?
     public var isModified: Bool
     public var cursor: CursorPosition
 
-    public init(path: String, filetype: String, text: String?, isModified: Bool, cursor: CursorPosition) {
+    /// Without a `textOmission`, missing text is taken to be too large.
+    public init(
+        path: String, filetype: String, text: String?, textOmission: TextOmission? = nil,
+        isModified: Bool, cursor: CursorPosition
+    ) {
         self.path = path
         self.filetype = filetype
         self.text = text
+        self.textOmission = text == nil ? textOmission ?? .tooLarge : nil
         self.isModified = isModified
         self.cursor = cursor
     }
@@ -36,15 +52,16 @@ public struct BufferSnapshot: Equatable, Sendable {
 }
 
 public enum PreviewLimits {
-    /// Buffers larger than this are reported without their text.
+    /// Buffers larger than this are reported without their text, as too large.
     public static let maxBufferBytes = 10_000_000
 }
 
 /// What nvim tells the preview, decoded from the `scwrote_preview`
 /// notifications that `PreviewAutocommands` sends.
 public enum PreviewEvent: Equatable, Sendable {
-    /// The current file's text, sent on entering it, leaving insert mode,
-    /// normal-mode changes and writes.
+    /// The current file, sent on entering it, leaving insert mode, normal-mode
+    /// changes and writes. Its text comes only when asked for (see
+    /// `NvimEventListener.setSendsText`) and the file's kind needs it.
     case buffer(BufferSnapshot)
     /// The file's modified flag changed, which happens on the first keystroke.
     case modified(path: String, isModified: Bool)
@@ -77,7 +94,10 @@ public enum PreviewEvent: Equatable, Sendable {
             else { return nil }
             var text: String?
             if case let .string(value)? = fields[.string("text")] { text = value }
-            self = .buffer(BufferSnapshot(path: path, filetype: filetype, text: text, isModified: isModified, cursor: cursor))
+            let omission: TextOmission = fields[.string("omitted")] == .string("not_requested") ? .notRequested : .tooLarge
+            self = .buffer(BufferSnapshot(
+                path: path, filetype: filetype, text: text, textOmission: omission, isModified: isModified, cursor: cursor
+            ))
         case "modified":
             guard let isModified = bool("modified") else { return nil }
             self = .modified(path: path, isModified: isModified)

@@ -2,8 +2,13 @@ import Testing
 @testable import ScwroteCore
 
 struct PreviewStateTests {
-    private func snap(_ path: String, _ text: String? = "x", modified: Bool = false) -> BufferSnapshot {
-        BufferSnapshot(path: path, filetype: "", text: text, isModified: modified, cursor: .init(line: 1, column: 0))
+    private func snap(
+        _ path: String, _ text: String? = "x", omitted: TextOmission = .tooLarge, modified: Bool = false
+    ) -> BufferSnapshot {
+        BufferSnapshot(
+            path: path, filetype: "", text: text, textOmission: text == nil ? omitted : nil,
+            isModified: modified, cursor: .init(line: 1, column: 0)
+        )
     }
 
     @Test func startsWithNoFile() {
@@ -65,6 +70,26 @@ struct PreviewStateTests {
         var state = PreviewState()
         _ = state.apply(.buffer(snap("/n/big.json", nil)))
         #expect(state.header.message == "too large to preview" && !state.header.isError)
+    }
+
+    @Test func textNotAskedForIsNotTooLarge() {
+        var state = PreviewState()
+        #expect(state.apply(.buffer(snap("/n/a.json", nil, omitted: .notRequested))) == .render)
+        #expect(state.header.message == nil)
+        #expect(state.header.label == "a.json · JSON")
+        #expect(state.isAwaitingText)
+    }
+
+    @Test func onlyKindsDrawnFromTextAwaitIt() {
+        var state = PreviewState()
+        _ = state.apply(.buffer(snap("/n/Main.swift", nil, omitted: .notRequested)))
+        #expect(!state.isAwaitingText)
+        _ = state.apply(.buffer(snap("/n/big.json", nil)))
+        #expect(!state.isAwaitingText)
+        _ = state.apply(.buffer(snap("/n/a.json")))
+        #expect(!state.isAwaitingText)
+        _ = state.pickViewOnly("/n/photo.jpg")
+        #expect(!state.isAwaitingText)
     }
 
     @Test func shrinkingBelowTheLimitClearsTheTooLargeMessage() {

@@ -98,7 +98,8 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
         if kind != .html { schemeHandler.overlay = nil }
 
         if let snapshot, snapshot.text == nil, !kind.isViewOnly {
-            // Too large: the state's own message ("too large to preview") stays.
+            // Too large (the state's own message, "too large to preview",
+            // stays), or a file with no preview, which was sent without text.
             setBody(.empty)
             onRendered?(nil, state.header.message)
             return

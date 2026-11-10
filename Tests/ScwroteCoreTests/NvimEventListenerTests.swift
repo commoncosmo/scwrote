@@ -38,7 +38,7 @@ private final class Session {
     let folder: URL
     let file: String
 
-    init(contents: String, name: String = "notes.md") throws {
+    init(contents: String, name: String = "notes.md", sendsText: Bool = true) throws {
         nvim = try HeadlessNvim()
         client = NvimClient(socketPath: nvim.socketPath)
         folder = FileManager.default.temporaryDirectory.appendingPathComponent("scwrote events \(UUID().uuidString)")
@@ -51,6 +51,7 @@ private final class Session {
         file = realpath(url.path)
 
         listener = NvimEventListener(socketPath: nvim.socketPath)
+        listener.setSendsText(sendsText)
         let log = log
         listener.start(onEvent: { log.record($0) }, onEnd: { log.recordEnd() })
     }
@@ -184,12 +185,56 @@ struct NvimEventListenerTests {
     @Test func hugeBuffersAreSentWithoutText() throws {
         let line = String(repeating: "a", count: 99) + "\n"
         let lineCount = PreviewLimits.maxBufferBytes / line.utf8.count + 1
-        let session = try Session(contents: String(repeating: line, count: lineCount), name: "huge.txt")
+        let session = try Session(contents: String(repeating: line, count: lineCount), name: "huge.md")
 
         #expect(session.waitUntilListening())
         let first = try #require(session.log.buffers.first)
         #expect(first.path == session.file)
-        #expect(first.text == nil)
+        #expect(first.text == nil && first.textOmission == .tooLarge)
+    }
+
+    /// While the preview is hidden nobody needs the text, and building it
+    /// costs nvim time on every edit of a big file.
+    @Test func textIsLeftOutUntilAskedFor() throws {
+        let session = try Session(contents: "# hi\nmore\n", sendsText: false)
+
+        #expect(session.waitUntilListening())
+        let first = try #require(session.log.buffers.first)
+        #expect(first.path == session.file && first.filetype == "markdown")
+        #expect(first.text == nil && first.textOmission == .notRequested)
+
+        // Each switch sends the current buffer again, with text or without.
+        session.listener.setSendsText(true)
+        #expect(session.log.waitFor { $0.buffers.count == 2 })
+        #expect(session.log.buffers.last?.text == "# hi\nmore")
+        session.listener.setSendsText(false)
+        #expect(session.log.waitFor { $0.buffers.count == 3 })
+        #expect(session.log.buffers.last?.textOmission == .notRequested)
+
+        try session.input("dd")
+        #expect(session.log.waitFor { $0.buffers.last?.isModified == true })
+        #expect(session.log.buffers.last?.text == nil)
+    }
+
+    @Test func filesWithNoPreviewAreSentWithoutText() throws {
+        let session = try Session(contents: "let x = 1\nlet y = 2\n", name: "Main.swift")
+
+        #expect(session.waitUntilListening())
+        try session.input("dd")
+
+        #expect(session.log.waitFor { $0.buffers.contains { $0.isModified } })
+        #expect(session.log.buffers.allSatisfy { $0.text == nil && $0.textOmission == .notRequested })
+    }
+
+    @Test func theFiletypeCountsWhenTheExtensionSaysNothing() throws {
+        let session = try Session(contents: "# hi\nmore\n", name: "notes.txt")
+        #expect(session.waitUntilListening())
+        #expect(session.log.buffers.first?.text == nil)
+
+        _ = try session.lua("vim.bo.filetype = 'markdown'")
+        try session.input("dd")
+
+        #expect(session.log.waitFor { $0.buffers.contains { $0.text == "more" } })
     }
 
     @Test func nvimExitingEndsTheListener() throws {

@@ -14,10 +14,18 @@ extension EditorWindowController {
             previewState.rendered(error: error, note: note)
             previewView.showHeader(previewState.header)
         }
-        // Events come on the listener's thread; the main queue keeps their order.
+        // Events come on the listener's thread and wait in the inbox, in order,
+        // for one hop to the main queue; a newer text for the same file
+        // replaces one still waiting there.
+        let inbox = PreviewEventInbox()
         previewEvents.start(
             onEvent: { [weak self] event in
-                DispatchQueue.main.async { MainActor.assumeIsolated { self?.receive(event) } }
+                guard inbox.post(event) else { return }
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        for event in inbox.take() { self?.receive(event) }
+                    }
+                }
             },
             onEnd: { [weak self] in
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.previewEventsEnded() } }
@@ -63,12 +71,19 @@ extension EditorWindowController {
         }
     }
 
-    /// The preview was just shown: render what changed while it was hidden,
-    /// at its real size, then go to nvim's cursor.
+    /// The preview was just shown: ask nvim for the text it left out while
+    /// the preview was hidden, render what changed at the preview's real
+    /// size, then go to nvim's cursor.
     func previewAppeared() {
+        previewEvents.setSendsText(true)
         layoutView.layoutSubtreeIfNeeded()
         if isPreviewOutOfDate { renderPreview() }
         followCursorInPreview()
+    }
+
+    /// The preview was hidden: nvim stops building text for it.
+    func previewDisappeared() {
+        previewEvents.setSendsText(false)
     }
 
     /// The keyboard came back to the editor: the preview goes back to nvim's
@@ -80,7 +95,15 @@ extension EditorWindowController {
         if effect != .render, panes.isPreviewShown { followCursorInPreview() }
     }
 
+    /// Renders the target, unless its text is still on the way: then only the
+    /// header changes, and the render waits for the buffer event that brings
+    /// the text.
     private func renderPreview() {
+        if previewState.isAwaitingText {
+            previewView.showHeader(previewState.header)
+            isPreviewOutOfDate = true
+            return
+        }
         isPreviewOutOfDate = false
         if case let .buffer(snapshot) = previewState.target {
             previewLineCount = snapshot.lineCount

@@ -150,6 +150,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         applyPanes()
         if old.mode == .editorOnly, panes.mode != .editorOnly { revealCurrentFile() }
         if !old.isPreviewShown, panes.isPreviewShown { previewAppeared() }
+        if old.isPreviewShown, !panes.isPreviewShown { previewDisappeared() }
         if old.focus != .editor, panes.focus == .editor { previewReturnedToEditor() }
     }
 

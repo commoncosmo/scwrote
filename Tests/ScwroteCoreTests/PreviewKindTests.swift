@@ -25,6 +25,12 @@ struct PreviewKindTests {
         #expect(PreviewKind(path: "/tmp/a.csv", filetype: "text") == .csv)
     }
 
+    @Test func onlyKindsDrawnFromTextNeedTheBuffersText() {
+        let needing: [PreviewKind] = [.markdown, .csv, .tsv, .html, .mermaid, .svg, .json, .yaml]
+        #expect(needing.allSatisfy { $0.needsText })
+        #expect(!PreviewKind.image.needsText && !PreviewKind.pdf.needsText && !PreviewKind.unsupported.needsText)
+    }
+
     @Test func viewOnlyAndPageKinds() {
         #expect(PreviewKind.image.isViewOnly && PreviewKind.pdf.isViewOnly)
         #expect(!PreviewKind.svg.isViewOnly)

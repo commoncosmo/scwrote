@@ -3,7 +3,7 @@
 public enum PreviewKind: String, Equatable, Sendable {
     case markdown, csv, tsv, html, mermaid, svg, json, yaml, image, pdf, unsupported
 
-    private static let byExtension: [String: PreviewKind] = [
+    static let byExtension: [String: PreviewKind] = [
         "md": .markdown, "markdown": .markdown,
         "csv": .csv,
         "tsv": .tsv, "tab": .tsv,
@@ -19,7 +19,7 @@ public enum PreviewKind: String, Equatable, Sendable {
     ]
 
     /// nvim's `filetype` values that map to a kind.
-    private static let byFiletype: [String: PreviewKind] = [
+    static let byFiletype: [String: PreviewKind] = [
         "markdown": .markdown, "csv": .csv, "tsv": .tsv, "html": .html,
         "mermaid": .mermaid, "svg": .svg, "json": .json, "jsonc": .json,
         "yaml": .yaml,
@@ -51,6 +51,12 @@ public enum PreviewKind: String, Equatable, Sendable {
         case .pdf: "PDF"
         case .unsupported: "no preview"
         }
+    }
+
+    /// Kinds drawn from the buffer's text. Images and PDFs are read from disk,
+    /// and a file with no preview needs nothing.
+    public var needsText: Bool {
+        !isViewOnly && self != .unsupported
     }
 
     /// Images and PDFs are only shown, never interacted with.
