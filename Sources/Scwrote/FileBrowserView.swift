@@ -38,10 +38,9 @@ final class FileBrowserView: NSView {
     /// Rows' paths in nvim's form (`FileBrowser.nvimPath(of:)`), resolved
     /// once until the next reload rather than at every draw.
     private var nvimPaths: [String: String] = [:]
-    /// The key being held down went to the prompt: its repeats are dropped,
-    /// even once the prompt has closed, so holding `d` or Enter can't carry
-    /// on into the browser.
-    private var isHoldingPromptKey = false
+    /// Held keys repeat in the prompt, but not the one that opened or closed
+    /// it, nor any in a delete question (see `PromptKeyRepeats`).
+    private var repeats = PromptKeyRepeats()
 
     /// First row drawn; scrolls to keep the cursor in view.
     private var topRow = 0
@@ -88,16 +87,19 @@ final class FileBrowserView: NSView {
         scrollToCursor()
     }
 
-    func press(_ key: BrowserKey) {
+    /// What the key asked the host to do, if anything.
+    @discardableResult
+    func press(_ key: BrowserKey) -> BrowserAction? {
         if prompt != nil {
             if let promptKey = PromptKey(key) { press(promptKey) } else { pressUnmapped() }
-            return
+            return nil
         }
         let previousRoot = browser.root
         let action = browser.handle(key, pageHeight: visibleRowCount)
         if browser.root != previousRoot { onRootChange?(browser.root) }
         scrollToCursor()
         if let action { onAction?(action) }
+        return action
     }
 
     func press(_ key: PromptKey) {
@@ -119,16 +121,29 @@ final class FileBrowserView: NSView {
     // MARK: - Keyboard
 
     override func keyDown(with event: NSEvent) {
-        if event.isARepeat, prompt != nil || isHoldingPromptKey { return }
-        isHoldingPromptKey = prompt != nil
+        let inDeleteQuestion = if case .delete = prompt?.kind { true } else { false }
+        if repeats.drops(keyCode: event.keyCode, isRepeat: event.isARepeat, inDeleteQuestion: inDeleteQuestion) {
+            return
+        }
+        let wasOpen = prompt != nil
+        var askedForPrompt = false
         // Cmd keys reached the prompt through performKeyEquivalent already.
         if prompt != nil, !event.modifierFlags.contains(.command) {
             if let key = Self.promptKey(for: event) { press(key) } else { pressUnmapped() }
         } else if let key = Self.browserKey(for: event) {
-            press(key)
+            switch press(key) {
+            case .add, .rename, .delete: askedForPrompt = true
+            case .open, .leave, nil: break
+            }
         } else {
             super.keyDown(with: event)
         }
+        if askedForPrompt || (prompt != nil) != wasOpen { repeats.openedOrClosedPrompt(keyCode: event.keyCode) }
+    }
+
+    override func keyUp(with event: NSEvent) {
+        repeats.released(keyCode: event.keyCode)
+        super.keyUp(with: event)
     }
 
     /// A Cmd key while the prompt has the keyboard counts as a key it has no

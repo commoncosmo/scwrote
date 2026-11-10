@@ -9,7 +9,10 @@ import ScwroteCore
 ///       keys, <D-1> (Cmd+1), <D-S-1>, <D-2>, <D-[> and <D-]>, are posted as
 ///       real key events, so they take the path a keyboard's would; so is
 ///       <S-R> (Shift+R), for the preview's `R` when it has the keyboard, and
-///       the browser prompt's editing keys <BS>, <C-a>, <C-e> and <C-w>. Text in
+///       the browser prompt's editing keys <BS>, <C-a>, <C-e> and <C-w>; <K-a>
+///       and <K-d> post plain `a` and `d`. <R> repeats the last posted key as
+///       if held down: a posted key is released only when the next key that
+///       isn't <R> comes. Text in
 ///       braces goes to nvim with nvim_input, in nvim's key notation:
 ///       {ohello<Esc>} opens a line, types "hello" and leaves insert mode.
 ///   SCWROTE_DEBUG_SNAPSHOT=/path.png   afterwards, save a picture of the
@@ -29,14 +32,25 @@ extension EditorWindowController {
                 window.setContentSize(NSSize(width: width, height: window.contentLayoutRect.height))
             }
             try? await Task.sleep(for: .seconds(1)) // let nvim start
+            var held: (keyCode: UInt16, characters: String, modifiers: NSEvent.ModifierFlags)?
             for key in keys {
+                if case .repeatLast = key {
+                    if let held { post(.keyDown, held.keyCode, held.characters, held.modifiers, isARepeat: true) }
+                } else if let released = held {
+                    post(.keyUp, released.keyCode, released.characters, released.modifiers)
+                    held = nil
+                }
                 switch key {
                 case let .browser(browserKey): browserView.press(browserKey)
-                case let .keyboard(keyCode, characters, modifiers): post(keyCode, characters, modifiers)
+                case let .keyboard(keyCode, characters, modifiers):
+                    post(.keyDown, keyCode, characters, modifiers)
+                    held = (keyCode, characters, modifiers)
                 case let .nvim(text): _ = try? await nvimCall { try $0.request("nvim_input", [.string(text)]) }
+                case .repeatLast: break
                 }
                 try? await Task.sleep(for: .milliseconds(400))
             }
+            if let held { post(.keyUp, held.keyCode, held.characters, held.modifiers) }
             if let snapshot {
                 try? await Task.sleep(for: .milliseconds(600))
                 await saveSnapshot(to: snapshot)
@@ -50,28 +64,31 @@ extension EditorWindowController {
         case keyboard(UInt16, String, NSEvent.ModifierFlags)
         /// Keys for nvim, in its own notation.
         case nvim(String)
+        /// The last posted key again, as a key repeat.
+        case repeatLast
     }
 
-    /// Posts a key press and release to the app's event queue: they go through
+    /// Posts a key press or release to the app's event queue: it goes through
     /// the same key-equivalent and first-responder handling as a keyboard's.
     /// If the app couldn't come to the front (started from a terminal that
-    /// isn't), the queue would drop them for want of a key window, so the
-    /// press goes to the window's key-equivalent handling directly, and if
-    /// that doesn't take it, to the view with the keyboard.
-    private func post(_ keyCode: UInt16, _ characters: String, _ modifiers: NSEvent.ModifierFlags) {
-        guard let window else { return }
-        for type in [NSEvent.EventType.keyDown, .keyUp] {
-            guard let event = NSEvent.keyEvent(
-                with: type, location: .zero, modifierFlags: modifiers,
-                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-                context: nil, characters: characters, charactersIgnoringModifiers: characters,
-                isARepeat: false, keyCode: keyCode
-            ) else { continue }
-            if window.isKeyWindow {
-                NSApp.postEvent(event, atStart: false)
-            } else if type == .keyDown, !window.performKeyEquivalent(with: event) {
-                window.firstResponder?.keyDown(with: event)
-            }
+    /// isn't), the queue would drop it for want of a key window, so a press
+    /// goes to the window's key-equivalent handling directly, and if that
+    /// doesn't take it, to the view with the keyboard (a release goes
+    /// nowhere then).
+    private func post(
+        _ type: NSEvent.EventType, _ keyCode: UInt16, _ characters: String, _ modifiers: NSEvent.ModifierFlags,
+        isARepeat: Bool = false
+    ) {
+        guard let window, let event = NSEvent.keyEvent(
+            with: type, location: .zero, modifierFlags: modifiers,
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+            context: nil, characters: characters, charactersIgnoringModifiers: characters,
+            isARepeat: isARepeat, keyCode: keyCode
+        ) else { return }
+        if window.isKeyWindow {
+            NSApp.postEvent(event, atStart: false)
+        } else if type == .keyDown, !window.performKeyEquivalent(with: event) {
+            window.firstResponder?.keyDown(with: event)
         }
     }
 
@@ -88,6 +105,8 @@ extension EditorWindowController {
             "<BS>": .keyboard(51, "\u{7f}", []),
             "<C-a>": .keyboard(0, "a", [.control]), "<C-e>": .keyboard(14, "e", [.control]),
             "<C-w>": .keyboard(13, "w", [.control]),
+            "<K-a>": .keyboard(0, "a", []), "<K-d>": .keyboard(2, "d", []),
+            "<R>": .repeatLast,
         ]
         var keys: [DebugKey] = []
         var rest = Substring(script)

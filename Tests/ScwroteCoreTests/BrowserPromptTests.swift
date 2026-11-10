@@ -105,3 +105,68 @@ struct BrowserPromptUnmappedKeyTests {
         #expect(prompt.line.text == "a.md")
     }
 }
+
+/// Holding a key down: its repeats edit the prompt like vim's command line,
+/// except the key that opened or closed the prompt (holding `a` mustn't type
+/// "aaa" into the name, holding Enter mustn't carry on into the browser) and
+/// anything in a delete question, where one key answers.
+struct PromptKeyRepeatsTests {
+    let a: UInt16 = 0, backspace: UInt16 = 51, left: UInt16 = 123
+
+    @Test func repeatsOfTheKeyThatOpenedThePromptAreDropped() {
+        var repeats = PromptKeyRepeats()
+        let pressed = repeats.drops(keyCode: a, isRepeat: false, inDeleteQuestion: false)
+        repeats.openedOrClosedPrompt(keyCode: a)
+        let repeated = repeats.drops(keyCode: a, isRepeat: true, inDeleteQuestion: false)
+        let again = repeats.drops(keyCode: a, isRepeat: true, inDeleteQuestion: false)
+        #expect(!pressed)
+        #expect(repeated)
+        #expect(again)
+    }
+
+    @Test func otherKeysRepeatInThePrompt() {
+        var repeats = PromptKeyRepeats()
+        repeats.openedOrClosedPrompt(keyCode: a)
+        let backspaceDown = repeats.drops(keyCode: backspace, isRepeat: false, inDeleteQuestion: false)
+        let backspaceRepeat = repeats.drops(keyCode: backspace, isRepeat: true, inDeleteQuestion: false)
+        let leftRepeat = repeats.drops(keyCode: left, isRepeat: true, inDeleteQuestion: false)
+        #expect(!backspaceDown)
+        #expect(!backspaceRepeat)
+        #expect(!leftRepeat)
+    }
+
+    @Test func releasingTheKeyEndsTheHold() {
+        var repeats = PromptKeyRepeats()
+        repeats.openedOrClosedPrompt(keyCode: a)
+        repeats.released(keyCode: backspace)
+        let stillHeld = repeats.drops(keyCode: a, isRepeat: true, inDeleteQuestion: false)
+        repeats.released(keyCode: a)
+        let pressedAgain = repeats.drops(keyCode: a, isRepeat: false, inDeleteQuestion: false)
+        let repeatedAgain = repeats.drops(keyCode: a, isRepeat: true, inDeleteQuestion: false)
+        #expect(stillHeld)
+        #expect(!pressedAgain)
+        #expect(!repeatedAgain)
+    }
+
+    @Test func anotherKeyGoingDownEndsTheHold() {
+        var repeats = PromptKeyRepeats()
+        repeats.openedOrClosedPrompt(keyCode: a)
+        _ = repeats.drops(keyCode: backspace, isRepeat: false, inDeleteQuestion: false)
+        let repeated = repeats.drops(keyCode: a, isRepeat: true, inDeleteQuestion: false)
+        #expect(!repeated)
+    }
+
+    @Test func everyRepeatInADeleteQuestionIsDropped() {
+        var repeats = PromptKeyRepeats()
+        let down = repeats.drops(keyCode: left, isRepeat: false, inDeleteQuestion: true)
+        let repeated = repeats.drops(keyCode: left, isRepeat: true, inDeleteQuestion: true)
+        #expect(!down)
+        #expect(repeated)
+    }
+
+    @Test func nothingIsHeldAtFirst() {
+        var repeats = PromptKeyRepeats()
+        let repeated = repeats.drops(keyCode: a, isRepeat: true, inDeleteQuestion: false)
+        #expect(!repeated)
+    }
+}

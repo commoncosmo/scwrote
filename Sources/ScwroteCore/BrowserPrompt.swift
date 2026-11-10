@@ -169,3 +169,34 @@ public struct BrowserPrompt: Equatable, Sendable {
         error = message
     }
 }
+
+/// Which key repeats the browser drops around its prompt. Held keys repeat
+/// in the prompt as in vim's command line (Backspace, ← →), except:
+///
+/// - the key that opened or closed the prompt, until it's released or
+///   another key goes down: holding `a` mustn't type "aaa" into the new
+///   name, and holding Enter or Esc mustn't carry on into the browser;
+/// - any key in a delete question, where a single key answers.
+public struct PromptKeyRepeats: Equatable, Sendable {
+    private var held: UInt16?
+
+    public init() {}
+
+    /// Whether to drop this key-down. A key that isn't dropped goes down
+    /// after the held one, so it ends the hold.
+    public mutating func drops(keyCode: UInt16, isRepeat: Bool, inDeleteQuestion: Bool) -> Bool {
+        if isRepeat, keyCode == held || inDeleteQuestion { return true }
+        held = nil
+        return false
+    }
+
+    /// The key just opened or closed the prompt, or asked for one (`d`
+    /// waits to hear from nvim first).
+    public mutating func openedOrClosedPrompt(keyCode: UInt16) {
+        held = keyCode
+    }
+
+    public mutating func released(keyCode: UInt16) {
+        if keyCode == held { held = nil }
+    }
+}
