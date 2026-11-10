@@ -3,7 +3,7 @@
 /// it; leaving an unpinned browser hides it.
 public struct PaneLayout: Equatable, Sendable {
     public enum Mode: Equatable, Sendable { case browserOnly, split, editorOnly }
-    public enum Pane: Equatable, Sendable { case browser, editor, preview }
+    public enum Pane: Hashable, Sendable { case browser, editor, preview }
 
     public private(set) var mode: Mode
     public private(set) var focus: Pane
