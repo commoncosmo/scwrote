@@ -195,7 +195,7 @@ final class FileBrowserView: NSView {
         draw(attributed(header, color: theme.dim, truncation: .byTruncatingHead), row: 0, x: sidePadding, width: headerWidth)
 
         if browser.rows.isEmpty {
-            draw(attributed("(empty)", color: theme.dim), row: 1, x: sidePadding, width: bounds.width - sidePadding * 2)
+            draw(attributed("(empty) · a: new file", color: theme.dim), row: 1, x: sidePadding, width: bounds.width - sidePadding * 2)
             return
         }
 
