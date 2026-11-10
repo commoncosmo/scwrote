@@ -72,7 +72,8 @@ cursor).
   trailing `/` makes a folder. A new file opens in nvim at once; a new folder
   is selected.
 - `r` starts with the current name. A `/` in the new name moves the item,
-  but only within the browser's folder. If the file is open in nvim, its
+  but only within the browser's folder (a symlink you made inside the folder
+  is followed, though, wherever it leads). If the file is open in nvim, its
   buffer takes the new name and keeps unsaved changes; renaming a folder does
   the same for every open file inside it. `:w` then writes to the new name
   (a buffer that a plugin writes, such as an encrypted file, needs `:w!`
