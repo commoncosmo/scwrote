@@ -266,6 +266,13 @@ struct PaneLayoutPreviewTests {
         #expect(layout.focus == .editor && layout.isPreviewShown)
     }
 
+    @Test func aPreviewThatGivesWayBeforeAnyFileHandsTheKeyboardToTheBrowser() {
+        var layout = PaneLayout(startsInBrowser: true)
+        layout.togglePreview()
+        layout.paneGaveWay(.preview)
+        #expect(layout.focus == .browser && layout.isPreviewShown)
+    }
+
     @Test func openingAFileKeepsThePreviewShown() {
         var layout = PaneLayout(startsInBrowser: true)
         layout.togglePreview()

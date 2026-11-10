@@ -23,6 +23,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     var latestCursor: (path: String, position: CursorPosition)?
     /// The shown buffer's line count, for following HTML by proportion.
     var previewLineCount = 1
+    /// Something changed while the preview was hidden (or it never rendered):
+    /// render when it is shown.
+    var isPreviewOutOfDate = true
 
     /// nvim's RPC socket. Calls block, so they run on `nvimQueue`.
     private let nvim: NvimClient
@@ -134,20 +137,18 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    /// Applies a layout change. A browser that just appeared opens on the file
-    /// being edited; a preview that just appeared catches up with the cursor;
-    /// coming back to the editor points the preview back at nvim's buffer.
+    /// Applies a layout change. The keyboard never goes to a pane the window
+    /// has no room for. A browser that just appeared opens on the file being
+    /// edited; a preview that just appeared catches up with nvim; coming back
+    /// to the editor points the preview back at nvim's buffer and cursor.
     func change(_ update: (inout PaneLayout) -> Void) {
         let old = panes
         update(&panes)
+        if layoutView.gaveWay(for: panes).contains(panes.focus) { panes.paneGaveWay(panes.focus) }
         applyPanes()
         if old.mode == .editorOnly, panes.mode != .editorOnly { revealCurrentFile() }
-        if !old.isPreviewShown, panes.isPreviewShown {
-            // It rendered while hidden, at no size: follow at its real size.
-            layoutView.layoutSubtreeIfNeeded()
-            followCursorInPreview()
-        }
-        if old.focus != .editor, panes.focus == .editor { applyPreview(previewState.returnToEditor()) }
+        if !old.isPreviewShown, panes.isPreviewShown { previewAppeared() }
+        if old.focus != .editor, panes.focus == .editor { previewReturnedToEditor() }
     }
 
     private func applyPanes() {
@@ -219,7 +220,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         watcher = FolderWatcher(path: root) { [weak self] in
             guard let self else { return }
             browserView.reload()
-            if case .viewOnly = previewState.target { previewView.reloadFromDisk() }
+            if case .viewOnly = previewState.target {
+                if panes.isPreviewShown { previewView.reloadFromDisk() } else { isPreviewOutOfDate = true }
+            }
         }
     }
 

@@ -89,10 +89,15 @@ public struct PaneLayout: Equatable, Sendable {
     }
 
     /// The window had no room for `pane`, so it was squeezed out. If it had the
-    /// keyboard, the editor takes it.
+    /// keyboard, the editor takes it, or before any file is open the browser
+    /// (only the preview gives way then: the browser fills the window).
     public mutating func paneGaveWay(_ pane: Pane) {
-        guard focus == pane, editorHasFile else { return }
-        focus = .editor
+        guard focus == pane else { return }
+        if editorHasFile {
+            focus = .editor
+        } else if pane == .preview {
+            focus = .browser
+        }
     }
 
     /// Esc in the browser: back to the editor, hiding the browser unless pinned.

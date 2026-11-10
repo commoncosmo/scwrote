@@ -52,12 +52,22 @@ final class EditorLayoutView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override func layout() {
-        super.layout()
-        let frames = PaneFrames.compute(
+    /// The panes `panes` would squeeze out at the current size. Empty before
+    /// the view has a size.
+    func gaveWay(for panes: PaneLayout) -> Set<PaneLayout.Pane> {
+        bounds.width > 0 ? frames(for: panes).gaveWay : []
+    }
+
+    private func frames(for panes: PaneLayout) -> PaneFrames {
+        PaneFrames.compute(
             panes, totalWidth: Double(bounds.width),
             browserWidth: Double(browserWidth), previewWidth: Double(previewWidth)
         )
+    }
+
+    override func layout() {
+        super.layout()
+        let frames = frames(for: panes)
         let previous = self.frames
         self.frames = frames
 

@@ -32,8 +32,13 @@ extension EditorWindowController {
         applyPreview(previewState.apply(event))
     }
 
-    /// Carries out what the preview state asked for.
+    /// Carries out what the preview state asked for. A hidden preview does no
+    /// work: it is only marked out of date, and catches up when shown.
     func applyPreview(_ effect: PreviewEffect) {
+        guard panes.isPreviewShown else {
+            if effect == .render || effect == .headerOnly { isPreviewOutOfDate = true }
+            return
+        }
         switch effect {
         case .render:
             renderPreview()
@@ -49,7 +54,25 @@ extension EditorWindowController {
         }
     }
 
+    /// The preview was just shown: render what changed while it was hidden,
+    /// at its real size, then go to nvim's cursor.
+    func previewAppeared() {
+        layoutView.layoutSubtreeIfNeeded()
+        if isPreviewOutOfDate { renderPreview() }
+        followCursorInPreview()
+    }
+
+    /// The keyboard came back to the editor: the preview goes back to nvim's
+    /// buffer, and following picks up at once.
+    func previewReturnedToEditor() {
+        let effect = previewState.returnToEditor()
+        applyPreview(effect)
+        // A render already followed.
+        if effect != .render, panes.isPreviewShown { followCursorInPreview() }
+    }
+
     private func renderPreview() {
+        isPreviewOutOfDate = false
         if case let .buffer(snapshot) = previewState.target {
             previewLineCount = snapshot.lineCount
         } else {
@@ -69,8 +92,9 @@ extension EditorWindowController {
 
     /// An image or PDF chosen in the browser or by a link: shown in the
     /// preview, shown even if hidden, while nvim and the keyboard stay put.
+    /// Picked first, so a preview that this shows renders the file once.
     func showViewOnly(_ path: String) {
-        change { $0.openedViewOnlyFile() }
         applyPreview(previewState.pickViewOnly(path))
+        change { $0.openedViewOnlyFile() }
     }
 }
