@@ -10,7 +10,7 @@ import ScwroteCore
 ///       real key events, so they take the path a keyboard's would; so is
 ///       <S-R> (Shift+R), for the preview's `R` when it has the keyboard, and
 ///       the browser prompt's editing keys <BS>, <Del> (forward delete), <Home>,
-///       <End>, <C-a>, <C-e>, <C-w>, <C-h> and <D-v> (paste); <K-a>
+///       <End>, <C-a>, <C-e>, <C-w>, <C-h> and <D-v> (paste); <K-a>, <K-j>
 ///       and <K-d> post plain `a` and `d`. <R> repeats the last posted key as
 ///       if held down: a posted key is released only when the next key that
 ///       isn't <R> comes. Text in
@@ -108,7 +108,7 @@ extension EditorWindowController {
             "<C-w>": .keyboard(13, "w", [.control]), "<C-h>": .keyboard(4, "h", [.control]),
             "<Del>": .keyboard(117, "\u{F728}", []), "<Home>": .keyboard(115, "\u{F729}", []),
             "<End>": .keyboard(119, "\u{F72B}", []), "<D-v>": .keyboard(9, "v", [.command]),
-            "<K-a>": .keyboard(0, "a", []), "<K-d>": .keyboard(2, "d", []),
+            "<K-a>": .keyboard(0, "a", []), "<K-d>": .keyboard(2, "d", []), "<K-j>": .keyboard(38, "j", []),
             "<R>": .repeatLast,
         ]
         var keys: [DebugKey] = []
