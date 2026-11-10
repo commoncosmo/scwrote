@@ -125,6 +125,45 @@ struct NvimEventListenerTests {
         #expect(session.log.events.contains(.modified(path: session.file, isModified: false)))
     }
 
+    @Test func installingReportsUnsavedFilesThatArentOnScreen() throws {
+        let session = try Session(contents: "# hi\n")
+        #expect(session.waitUntilListening())
+        let other = session.folder.appendingPathComponent("other.md").path
+        try Data("x\n".utf8).write(to: URL(fileURLWithPath: other))
+
+        // Change notes.md, then leave it (unsaved) for another file.
+        try session.input("ox<Esc>:set hidden<CR>")
+        #expect(session.log.waitFor { $0.events.contains(.modified(path: session.file, isModified: true)) })
+        _ = try session.lua("vim.cmd.edit(vim.fn.fnameescape(...))", [.string(other)])
+        #expect(session.log.waitFor { $0.buffers.contains { $0.path == realpath(other) } })
+        let before = session.log.events.count
+
+        // Reinstalling (as Cmd+2 does) reports every unsaved file again.
+        session.listener.setSendsText(false)
+
+        #expect(session.log.waitFor {
+            $0.events.dropFirst(before).contains(.modified(path: session.file, isModified: true))
+        })
+    }
+
+    @Test func throwingChangesAwayReportsTheFileAsSaved() throws {
+        let session = try Session(contents: "# hi\n")
+        #expect(session.waitUntilListening())
+        let other = session.folder.appendingPathComponent("other.md").path
+        try Data("x\n".utf8).write(to: URL(fileURLWithPath: other))
+
+        try session.input("ox<Esc>:set hidden<CR>")
+        #expect(session.log.waitFor { $0.events.contains(.modified(path: session.file, isModified: true)) })
+        _ = try session.lua("vim.cmd.edit(vim.fn.fnameescape(...))", [.string(other)])
+        #expect(session.log.waitFor { $0.events.contains(.modified(path: session.file, isModified: true)) })
+        // The temp folder's name has spaces, so name the buffer as "#" (the alternate file).
+        try session.input(":bd! #<CR>")
+
+        #expect(session.log.waitFor { $0.events.last(where: {
+            if case .modified(session.file, _) = $0 { true } else { false }
+        }) == .modified(path: session.file, isModified: false) })
+    }
+
     @Test func cursorMovesAreSent() throws {
         let session = try Session(contents: "one\ntwo\n")
         #expect(session.waitUntilListening())

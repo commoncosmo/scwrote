@@ -19,6 +19,12 @@ folder becomes nvim's working directory. The window uses your Ghostty config
 Fills the window when you start on a folder; choosing a file opens it in nvim
 and hides the browser. Pinned, it stays beside the editor.
 
+A yellow ● marks every file open in nvim with changes not yet written, and
+every folder above one, open or collapsed, so the dots lead you to it. The
+header counts them (`● 2 unsaved`), files outside the browser's folder
+included. A dot appears with your first change and goes on `:w`, or when you
+throw the changes away (`:e!`, `:bd!`). Unnamed buffers aren't counted.
+
 Moving between the browser and the editor works from either pane, the way
 Cmd+[ and Cmd+] move between splits in Ghostty and iTerm2. With the preview
 shown they move one pane at a time across all three (see Preview below):

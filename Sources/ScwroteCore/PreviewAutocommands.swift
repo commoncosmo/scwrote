@@ -7,6 +7,9 @@
 /// scratch buffers, and no floating windows. A buffer is sent when a change is
 /// done (leaving insert mode, a normal-mode change, a write), never per
 /// keystroke in insert mode; the modified flag and cursor are sent at once.
+/// Every file with unsaved changes is reported on install, and a file
+/// unloaded with its changes thrown away is reported as no longer modified,
+/// so the file browser can mark unsaved files that aren't on screen.
 /// The buffer's text comes along only while `sendsText` and when its kind is
 /// drawn from text; otherwise building it would cost nvim time on every edit
 /// of a big file for nothing. Reinstalling replaces the autocommands (that is
@@ -105,12 +108,29 @@ public enum PreviewAutocommands {
           })
         end
 
+        -- A file unloaded with its changes unwritten (`:bd!`) no longer has any.
+        local function send_discarded(args)
+          if not (is_file(args.buf) and vim.bo[args.buf].modified) then return end
+          send({ type = "modified", path = vim.api.nvim_buf_get_name(args.buf), modified = false })
+        end
+
+        -- Every file with unsaved changes, current or not, for the file browser.
+        local function send_unsaved()
+          for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+            if vim.api.nvim_buf_is_loaded(buf) and is_file(buf) and vim.bo[buf].modified then
+              send({ type = "modified", path = vim.api.nvim_buf_get_name(buf), modified = true })
+            end
+          end
+        end
+
         -- No TextChangedI: text is sent on leaving insert mode, not per keystroke.
         vim.api.nvim_create_autocmd({ "BufEnter", "InsertLeave", "TextChanged", "BufWritePost" },
           { group = group, callback = send_buffer })
         vim.api.nvim_create_autocmd("BufModifiedSet", { group = group, callback = send_modified })
+        vim.api.nvim_create_autocmd("BufUnload", { group = group, callback = send_discarded })
         vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, { group = group, callback = send_cursor })
 
         send_buffer()
+        send_unsaved()
         """
 }

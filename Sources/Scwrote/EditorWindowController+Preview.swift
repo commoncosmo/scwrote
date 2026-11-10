@@ -46,6 +46,8 @@ extension EditorWindowController {
         case let .cursor(path, position): latestCursor = (path, position)
         case .modified: break
         }
+        var unsaved = browserView.unsaved
+        if unsaved.apply(event) { browserView.unsaved = unsaved }
         applyPreview(previewState.apply(event))
     }
 

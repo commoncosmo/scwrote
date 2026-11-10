@@ -114,9 +114,17 @@ public struct FileBrowser {
         rebuildRows(keeping: target)
     }
 
+    /// A row's path the way nvim reports it: the root's part swapped for
+    /// `realRoot` (the root with symlinks resolved, from `realPath(_:)`).
+    /// Cheap enough to call for every row drawn.
+    public func nvimPath(of path: String, realRoot: String) -> String {
+        guard root != realRoot, path.hasPrefix(root + "/") else { return path }
+        return realRoot + path.dropFirst(root.count)
+    }
+
     /// The path with every symlink resolved (realpath(3)), or as given if it
     /// doesn't exist.
-    static func realPath(_ path: String) -> String {
+    public static func realPath(_ path: String) -> String {
         guard let resolved = Darwin.realpath(path, nil) else { return path }
         defer { free(resolved) }
         return String(cString: resolved)
