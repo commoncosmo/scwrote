@@ -158,7 +158,7 @@ final class NvimFileSyncTests {
         #expect(try contents(b) == "one\n")
         #expect(try !bufferNames().contains(a))
         // The fallback: still "not edited", so a plain :w asks for :w!.
-        #expect(throws: NvimClient.Failure.self) { try command("write") }
+        #expect { try command("write") } throws: { isNvimRefusal($0) }
         #expect(try contents(b) == "one\n")
     }
 
@@ -212,8 +212,10 @@ final class NvimFileSyncTests {
         try client.edit(path("e/a.md"))
         try FileManager.default.moveItem(atPath: path("d"), toPath: path("e"))
 
-        #expect(throws: NvimClient.Failure.self) {
+        #expect {
             try client.renameBuffers(from: path("d"), to: path("e"))
+        } throws: {
+            isNvimRefusal($0)
         }
 
         let names = try bufferNames()
@@ -279,6 +281,11 @@ final class NvimFileSyncTests {
     }
 
     // MARK: - Helpers
+
+    /// nvim answering with an error, as against a lost connection.
+    private func isNvimRefusal(_ error: any Error) -> Bool {
+        if case NvimClient.Failure.nvim = error { true } else { false }
+    }
 
     private func path(_ relative: String) -> String {
         folder + "/" + relative
