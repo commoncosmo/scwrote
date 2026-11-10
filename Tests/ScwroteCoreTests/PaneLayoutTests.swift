@@ -292,7 +292,7 @@ struct PaneLayoutEmptyFolderTests {
     @Test func cmdRightBracketDoesTheSame() {
         var layout = PaneLayout(startsInBrowser: true)
         layout.moveRight()
-        #expect(layout.focus == .editor && layout.mode == .editorOnly)
+        #expect(layout.focus == .editor && layout.mode == .editorOnly && layout.editorHasFile)
     }
 
     @Test func aPinnedBrowserStaysWhenLeftEarly() {
