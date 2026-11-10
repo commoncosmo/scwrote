@@ -12,8 +12,11 @@ final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
     private let appResources: URL
     /// The shown buffer's unsaved text, served in place of the file at `path`.
     var overlay: (path: String, text: String)?
-    /// Tasks waiting for a file read; a stopped task is removed and never answered.
-    private var reading: [ObjectIdentifier: any WKURLSchemeTask] = [:]
+    /// Tasks waiting for a file read; a stopped task is removed and never
+    /// answered. Each start gets its own token: a stopped task's identifier
+    /// can be reused by a new task, which must not get the old one's file.
+    private var reading: [ObjectIdentifier: (token: Int, task: any WKURLSchemeTask)] = [:]
+    private var nextToken = 0
 
     init(appResources: URL) {
         self.appResources = appResources.standardizedFileURL
@@ -33,11 +36,15 @@ final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
             return
         }
         let id = ObjectIdentifier(task)
-        reading[id] = task
+        nextToken += 1
+        let token = nextToken
+        reading[id] = (token, task)
         let isApp = url.scheme == PreviewURL.appScheme
         Task {
             let data = await Self.read(file)
-            guard let task = reading.removeValue(forKey: id) else { return }
+            guard let waiting = reading[id], waiting.token == token else { return }
+            reading[id] = nil
+            let task = waiting.task
             if let data {
                 // The renderer's own text files are UTF-8; user files say for themselves.
                 Self.respond(task, url: url, data: data, mimeType: Self.mimeType(of: file.path), isUTF8: isApp)
@@ -66,9 +73,13 @@ final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
         }
     }
 
+    /// The file's contents, if it is a regular file (or a link to one):
+    /// never a device, a pipe or a folder, which could block or never end.
     @concurrent
     private nonisolated static func read(_ file: URL) async -> Data? {
-        try? Data(contentsOf: file)
+        var info = stat()
+        guard stat(file.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
+        return try? Data(contentsOf: file)
     }
 
     private static func mimeType(of path: String) -> String {
