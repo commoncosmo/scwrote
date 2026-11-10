@@ -2,34 +2,6 @@ import Foundation
 import Testing
 @testable import ScwroteCore
 
-private let nvimPath = ExecutableLocator.find("nvim", searchPath: ProcessInfo.processInfo.environment["PATH"] ?? "")
-
-/// A real headless nvim listening on a fresh socket, stopped when the test ends.
-private final class HeadlessNvim {
-    let socketPath: String
-    private let process = Process()
-
-    init() throws {
-        // Unix socket paths are limited to ~104 bytes, so keep this short.
-        socketPath = NSTemporaryDirectory() + "sn-\(UUID().uuidString.prefix(8)).sock"
-        process.executableURL = URL(fileURLWithPath: nvimPath!)
-        process.arguments = ["--headless", "--clean", "--listen", socketPath]
-        try process.run()
-    }
-
-    deinit {
-        process.terminate()
-        process.waitUntilExit()
-        try? FileManager.default.removeItem(atPath: socketPath)
-    }
-}
-
-private func realpath(_ path: String) -> String {
-    guard let resolved = Darwin.realpath(path, nil) else { return path }
-    defer { free(resolved) }
-    return String(cString: resolved)
-}
-
 @Suite(.enabled(if: nvimPath != nil, "needs nvim on PATH"))
 struct NvimClientTests {
     @Test func editOpensTheFileInNvim() throws {
@@ -61,6 +33,23 @@ struct NvimClientTests {
         #expect(throws: NvimClient.Failure.self) {
             try client.request("nvim_no_such_function", [])
         }
+    }
+
+    /// nvim sends `rpcnotify(0, ...)` to every channel. The app's own client
+    /// never asks for notifications, so it must not keep them.
+    @Test func notificationsAreDroppedUnlessQueued() throws {
+        let nvim = try HeadlessNvim()
+        let client = NvimClient(socketPath: nvim.socketPath)
+        let listening = NvimClient(socketPath: nvim.socketPath, queuesNotifications: true)
+        _ = try listening.channelID()
+
+        _ = try client.request("nvim_exec_lua", [.string("vim.rpcnotify(0, 'broadcast', 1)"), .array([])])
+        // Sent after the notification, so answered after it arrives.
+        _ = try client.channelID()
+        _ = try listening.channelID()
+
+        #expect(client.queuedNotificationCount == 0)
+        #expect(listening.queuedNotificationCount == 1)
     }
 
     @Test func connectingToASocketThatNeverAppearsGivesUp() {

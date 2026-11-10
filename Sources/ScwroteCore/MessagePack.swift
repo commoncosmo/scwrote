@@ -109,14 +109,34 @@ public indirect enum MessagePackValue: Hashable, Sendable {
     /// The first value in `data` and how many bytes it used, or nil if `data`
     /// doesn't hold a complete value yet (more bytes are on the way).
     public static func decode(_ data: Data) -> (MessagePackValue, Int)? {
-        var reader = Reader(bytes: [UInt8](data))
-        guard let value = reader.value() else { return nil }
-        return (value, reader.index)
+        switch data.withUnsafeBytes({ decode(from: $0) }) {
+        case let .value(value, length): (value, length)
+        case .incomplete: nil
+        }
+    }
+
+    /// What the start of some bytes holds.
+    enum Decoded {
+        /// A whole value, and how many bytes it used.
+        case value(MessagePackValue, length: Int)
+        /// Not a whole value yet: it needs at least this many bytes in all.
+        case incomplete(needing: Int)
+    }
+
+    /// Decodes the first value in `bytes` without copying them. Large strings
+    /// and binaries are measured before they are read, so an incomplete value
+    /// costs little and says how much more it needs.
+    static func decode(from bytes: UnsafeRawBufferPointer) -> Decoded {
+        var reader = Reader(bytes: bytes)
+        guard let value = reader.value() else { return .incomplete(needing: reader.needed) }
+        return .value(value, length: reader.index)
     }
 
     private struct Reader {
-        let bytes: [UInt8]
+        let bytes: UnsafeRawBufferPointer
         var index = 0
+        /// After a failed `take`: how many bytes would have been enough for it.
+        var needed = 0
 
         mutating func value() -> MessagePackValue? {
             guard let byte = take(1)?.first else { return nil }
@@ -161,8 +181,11 @@ public indirect enum MessagePackValue: Hashable, Sendable {
             }
         }
 
-        mutating func take(_ count: Int) -> ArraySlice<UInt8>? {
-            guard count >= 0, index + count <= bytes.count else { return nil }
+        mutating func take(_ count: Int) -> Slice<UnsafeRawBufferPointer>? {
+            guard count >= 0, index + count <= bytes.count else {
+                needed = index + max(count, 0)
+                return nil
+            }
             defer { index += count }
             return bytes[index ..< index + count]
         }

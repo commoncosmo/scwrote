@@ -80,8 +80,9 @@ final class FileBrowserView: NSView {
         }
     }
 
-    /// Cmd combinations are left to the menu and window.
-    private static func browserKey(for event: NSEvent) -> BrowserKey? {
+    /// Cmd combinations are left to the menu and window. The preview pane
+    /// reads its keys the same way.
+    static func browserKey(for event: NSEvent) -> BrowserKey? {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard !flags.contains(.command) else { return nil }
         switch event.keyCode {

@@ -12,9 +12,14 @@ struct WindowShortcutTests {
         #expect(WindowShortcut(keyCode: key1, modifiers: [.command, .shift]) == .toggleBrowserPin)
     }
 
-    @Test func cmdBracketsGoToEachPane() {
-        #expect(WindowShortcut(keyCode: leftBracket, modifiers: [.command]) == .goToBrowser)
-        #expect(WindowShortcut(keyCode: rightBracket, modifiers: [.command]) == .goToEditor)
+    @Test func cmdBracketsMoveOnePaneLeftOrRight() {
+        #expect(WindowShortcut(keyCode: leftBracket, modifiers: [.command]) == .moveLeft)
+        #expect(WindowShortcut(keyCode: rightBracket, modifiers: [.command]) == .moveRight)
+    }
+
+    @Test func cmd2TogglesThePreview() {
+        #expect(WindowShortcut(keyCode: 19, modifiers: [.command]) == .togglePreview)
+        #expect(WindowShortcut(keyCode: 19, modifiers: [.command, .shift]) == nil)
     }
 
     /// Cmd+{ and Cmd+} are left free.
@@ -32,6 +37,6 @@ struct WindowShortcutTests {
     }
 
     @Test func otherCmdKeysAreNotTaken() {
-        #expect(WindowShortcut(keyCode: 19, modifiers: [.command]) == nil) // Cmd+2
+        #expect(WindowShortcut(keyCode: 20, modifiers: [.command]) == nil) // Cmd+3
     }
 }

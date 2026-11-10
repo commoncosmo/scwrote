@@ -2,22 +2,38 @@ import AppKit
 import GhosttyTerminal
 import ScwroteCore
 
-/// One window: the file browser and a Ghostty terminal surface running nvim,
-/// shown according to `PaneLayout`.
+/// One window: the file browser, a Ghostty terminal surface running nvim and
+/// the preview, shown according to `PaneLayout`.
 @MainActor
 final class EditorWindowController: NSWindowController, NSWindowDelegate {
     var onClose: (() -> Void)?
     /// True until nvim exits. Closing the window while it runs hangs up on it.
     private(set) var isNvimRunning = true
+    /// Set as the window closes, when its connections to nvim are let go.
+    private(set) var isClosing = false
 
     let terminalView = EditorTerminalView(frame: .zero)
     let browserView: FileBrowserView
+    let previewView: PreviewPaneView
     let layoutView: EditorLayoutView
     private(set) var panes: PaneLayout
+
+    /// What the preview shows (see EditorWindowController+Preview).
+    var previewState = PreviewState()
+    /// nvim's newest cursor and the file it is in. A buffer snapshot's own
+    /// cursor goes stale as `.cursor` events arrive.
+    var latestCursor: (path: String, position: CursorPosition)?
+    /// The shown buffer's line count, for following HTML by proportion.
+    var previewLineCount = 1
+    /// Something changed while the preview was hidden (or it never rendered):
+    /// render when it is shown.
+    var isPreviewOutOfDate = true
 
     /// nvim's RPC socket. Calls block, so they run on `nvimQueue`.
     private let nvim: NvimClient
     private let nvimQueue = DispatchQueue(label: "scwrote.nvim")
+    /// A second connection that only listens, for the preview.
+    let previewEvents: NvimEventListener
     private var watcher: FolderWatcher?
 
     /// `controller` carries the nvim command in its config (see
@@ -38,13 +54,17 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window.contentMinSize = NSSize(width: 360, height: 200)
 
         browserView = FileBrowserView(browser: FileBrowser(root: request.browserRoot), theme: theme)
+        previewView = PreviewPaneView(theme: theme)
+        panes = PaneLayout(startsInBrowser: request.startsInBrowser)
         layoutView = EditorLayoutView(
             browserView: browserView,
             editorView: TerminalContainerView(terminalView: terminalView),
+            previewView: previewView,
+            panes: panes,
             dividerColor: theme.divider
         )
-        panes = PaneLayout(startsInBrowser: request.startsInBrowser)
         nvim = NvimClient(socketPath: nvimSocket)
+        previewEvents = NvimEventListener(socketPath: nvimSocket)
         super.init(window: window)
 
         window.delegate = self
@@ -61,6 +81,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         browserView.onClick = { [weak self] in self?.change { $0.clicked(.browser) } }
         browserView.onAction = { [weak self] in self?.handle($0) }
         browserView.onRootChange = { [weak self] in self?.watch($0) }
+
+        layoutView.onGaveWay = { [weak self] in self?.panesGaveWay($0) }
+        connectPreview()
 
         window.contentView = layoutView
         window.center()
@@ -91,49 +114,93 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         change { $0.togglePin() }
     }
 
-    /// Cmd+[ (View menu): go to the browser, showing it if hidden.
-    @objc func goToFileBrowser(_: Any?) {
-        change { $0.focusBrowser() }
+    /// Cmd+2 (View menu): show the preview and go to it, go to it, or hide it
+    /// (also when the window has no room to show it).
+    @objc func togglePreview(_: Any?) {
+        let squeezedOut = layoutView.gaveWay(for: panes).contains(.preview)
+        change { $0.togglePreview(squeezedOut: squeezedOut) }
     }
 
-    /// Cmd+] (View menu): go to the editor, hiding the browser unless pinned.
-    @objc func goToEditor(_: Any?) {
-        change { $0.leaveBrowser() }
+    /// Cmd+[ (View menu): one pane to the left.
+    @objc func moveToLeftPane(_: Any?) {
+        change { $0.moveLeft() }
+    }
+
+    /// Cmd+] (View menu): one pane to the right.
+    @objc func moveToRightPane(_: Any?) {
+        change { $0.moveRight() }
+    }
+
+    /// View menu: let the shown HTML file's remote content load (also `R` in
+    /// the preview, or a click on the header's note).
+    @objc func loadRemoteContent(_: Any?) {
+        previewView.loadRemoteContent()
     }
 
     private func perform(_ shortcut: WindowShortcut) {
         switch shortcut {
         case .toggleBrowser: toggleFileBrowser(nil)
         case .toggleBrowserPin: toggleFileBrowserPin(nil)
-        case .goToBrowser: goToFileBrowser(nil)
-        case .goToEditor: goToEditor(nil)
+        case .togglePreview: togglePreview(nil)
+        case .moveLeft: moveToLeftPane(nil)
+        case .moveRight: moveToRightPane(nil)
         }
     }
 
-    /// Applies a layout change. A browser that just appeared opens on the file
-    /// being edited.
+    /// Applies a layout change. The keyboard never goes to a pane the window
+    /// has no room for. A browser that just appeared opens on the file being
+    /// edited; a preview that just appeared catches up with nvim; coming back
+    /// to the editor points the preview back at nvim's buffer and cursor
+    /// (being sent there because a pane gave way doesn't count).
     func change(_ update: (inout PaneLayout) -> Void) {
-        let wasHidden = panes.mode == .editorOnly
+        let old = panes
         update(&panes)
+        let returnsToEditor = old.focus != .editor && panes.focus == .editor
+        if layoutView.gaveWay(for: panes).contains(panes.focus) { panes.paneGaveWay(panes.focus) }
         applyPanes()
-        if wasHidden, panes.mode != .editorOnly { revealCurrentFile() }
+        if old.mode == .editorOnly, panes.mode != .editorOnly { revealCurrentFile() }
+        if !old.isPreviewShown, panes.isPreviewShown { previewAppeared() }
+        if old.isPreviewShown, !panes.isPreviewShown { previewDisappeared() }
+        if returnsToEditor { previewReturnedToEditor() }
     }
 
     private func applyPanes() {
-        layoutView.mode = panes.mode
+        layoutView.panes = panes
         browserView.isPinned = panes.isPinned
-        let focused: NSView = panes.focus == .browser ? browserView : terminalView
+        let focused: NSView = switch panes.focus {
+        case .browser: browserView
+        case .editor: terminalView
+        case .preview: previewView
+        }
         if window?.firstResponder !== focused { window?.makeFirstResponder(focused) }
+    }
+
+    /// Panes squeezed out for lack of room give up the keyboard. That isn't
+    /// the user returning to the editor, so the preview stays as it is.
+    private func panesGaveWay(_ gone: Set<PaneLayout.Pane>) {
+        let old = panes
+        for pane in gone { panes.paneGaveWay(pane) }
+        if panes != old { applyPanes() }
     }
 
     private func handle(_ action: BrowserAction) {
         switch action {
         case .leave: change { $0.leaveBrowser() }
-        case let .open(path): open(path)
+        case let .open(path): choose(path)
         }
     }
 
     // MARK: - nvim
+
+    /// Opens a file chosen in the browser or a preview link: images and PDFs
+    /// in the preview, anything else in nvim.
+    func choose(_ path: String) {
+        if PreviewKind(path: path).isViewOnly {
+            showViewOnly(path)
+        } else {
+            open(path)
+        }
+    }
 
     private func open(_ path: String) {
         Task {
@@ -155,7 +222,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    private func nvimCall<T: Sendable>(_ work: @escaping @Sendable (NvimClient) throws -> T) async throws -> T {
+    func nvimCall<T: Sendable>(_ work: @escaping @Sendable (NvimClient) throws -> T) async throws -> T {
         let nvim = nvim
         return try await withCheckedThrowingContinuation { continuation in
             nvimQueue.async { continuation.resume(with: Result { try work(nvim) }) }
@@ -166,7 +233,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
     private func watch(_ root: String) {
         watcher?.stop()
-        watcher = FolderWatcher(path: root) { [weak self] in self?.browserView.reload() }
+        watcher = FolderWatcher(path: root) { [weak self] in
+            guard let self else { return }
+            browserView.reload()
+            if case .viewOnly = previewState.target {
+                if panes.isPreviewShown { previewView.reloadFromDisk() } else { isPreviewOutOfDate = true }
+            }
+        }
     }
 
     // MARK: - Window
@@ -187,7 +260,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_: Notification) {
+        isClosing = true
         watcher?.stop()
+        previewEvents.stop()
         onClose?()
     }
 }
@@ -196,6 +271,9 @@ extension EditorWindowController: NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(toggleFileBrowserPin(_:)) {
             item.title = panes.isPinned ? "Unpin File Browser" : "Pin File Browser"
+        }
+        if item.action == #selector(loadRemoteContent(_:)) {
+            return panes.isPreviewShown && previewView.hasBlockedRemoteContent
         }
         return true
     }
@@ -229,7 +307,7 @@ extension EditorWindowController: TerminalSurfaceTitleDelegate, TerminalSurfaceC
 }
 
 /// Catches the window's own keys (`WindowShortcut`: Cmd+1, Cmd+Shift+1,
-/// Cmd+[, Cmd+]) before the terminal sees them: Ghostty binds Cmd+digit to
+/// Cmd+2, Cmd+[, Cmd+]) before the terminal sees them: Ghostty binds Cmd+digit to
 /// tabs and Cmd+[ / Cmd+] to splits, neither of which scwrote has.
 @MainActor
 final class EditorWindow: NSWindow {

@@ -2,6 +2,11 @@ import Foundation
 
 /// A blocking msgpack-RPC client for a running nvim's `--listen` socket.
 /// Calls block until nvim answers, so make them off the main thread.
+///
+/// A client made to listen (see `NvimEventListener`) queues the notifications
+/// nvim sends for `nextNotification()`; since that waits for the next one, it
+/// is used for nothing else. Other clients drop them: nvim broadcasts some to
+/// every channel, and nobody would ever take them.
 public final class NvimClient: @unchecked Sendable {
     public enum Failure: Error, Equatable {
         /// The socket couldn't be reached before `connectTimeout`.
@@ -14,17 +19,41 @@ public final class NvimClient: @unchecked Sendable {
 
     private let socketPath: String
     private let connectTimeout: TimeInterval
+    /// Held for a whole call, including while it waits on nvim.
     private let lock = NSLock()
+    /// Guards `socket` and `isClosed` for `close()`, which must not wait for
+    /// `lock`: a call may be holding it while blocked in a read. Changing
+    /// `socket` takes both locks, so either is enough to read it.
+    private let closeLock = NSLock()
     private var socket: Int32 = -1
+    private var isClosed = false
     private var nextRequestID: Int64 = 1
-    private var received = Data()
+    private var received = MessagePackBuffer()
+    private var notifications: [(method: String, params: [MessagePackValue])] = []
+    private let queuesNotifications: Bool
+    /// Whether a call waits as long as nvim takes to answer, rather than
+    /// giving up after the socket's 5 s read timeout.
+    private let waitsOutTimeouts: Bool
 
     /// `connectTimeout` covers nvim still starting up when the first request
     /// is made: until then the socket file may not exist yet.
-    public init(socketPath: String, connectTimeout: TimeInterval = 2) {
+    public convenience init(socketPath: String, connectTimeout: TimeInterval = 2) {
+        self.init(socketPath: socketPath, connectTimeout: connectTimeout, queuesNotifications: false)
+    }
+
+    /// `queuesNotifications` keeps notifications for `nextNotification()`.
+    /// `waitsOutTimeouts` makes calls wait however long nvim takes: it answers
+    /// nothing until its startup is done, which plugins can stretch past 5 s.
+    /// Either way a closed connection ends a call at once.
+    init(socketPath: String, connectTimeout: TimeInterval = 2, queuesNotifications: Bool, waitsOutTimeouts: Bool = false) {
         self.socketPath = socketPath
         self.connectTimeout = connectTimeout
+        self.queuesNotifications = queuesNotifications
+        self.waitsOutTimeouts = waitsOutTimeouts
     }
+
+    /// How many notifications wait for `nextNotification()`, for tests.
+    var queuedNotificationCount: Int { lock.withLock { notifications.count } }
 
     deinit {
         if socket >= 0 { Darwin.close(socket) }
@@ -46,6 +75,38 @@ public final class NvimClient: @unchecked Sendable {
         }
     }
 
+    /// The next notification nvim sent, waiting as long as it takes. Throws
+    /// `.connectionLost` when nvim goes away or the client is closed. Only for
+    /// a client that queues notifications.
+    public func nextNotification() throws -> (method: String, params: [MessagePackValue]) {
+        precondition(queuesNotifications, "this client drops notifications")
+        lock.lock()
+        defer { lock.unlock() }
+        if socket < 0 { try connect() }
+
+        do {
+            while notifications.isEmpty {
+                _ = receiveBuffered(until: { _ in false })
+                if notifications.isEmpty { try readMore(waitingOutTimeouts: true) }
+            }
+            return notifications.removeFirst()
+        } catch Failure.connectionLost {
+            disconnect()
+            throw Failure.connectionLost
+        }
+    }
+
+    /// Closes the connection for good, from any thread. A call waiting on nvim
+    /// returns at once with `.connectionLost`, and later calls throw it too.
+    func close() {
+        closeLock.lock()
+        defer { closeLock.unlock() }
+        isClosed = true
+        // Wakes a blocked read with end-of-file. The fd itself is closed by
+        // the thread holding `lock`, so it can't be reused under that read.
+        if socket >= 0 { shutdown(socket, SHUT_RDWR) }
+    }
+
     // MARK: - nvim commands
 
     /// `:edit` the file. The path is passed as data, never spliced into a
@@ -65,16 +126,32 @@ public final class NvimClient: @unchecked Sendable {
         return name
     }
 
+    /// The ID nvim gave this connection, for `rpcnotify()` to address it.
+    public func channelID() throws -> Int64 {
+        guard case let .array(info) = try request("nvim_get_api_info", []),
+              case let .int(id)? = info.first
+        else { throw Failure.nvim("nvim_get_api_info gave no channel ID") }
+        return id
+    }
+
     // MARK: - Socket
 
     private func connect() throws {
         let deadline = Date().addingTimeInterval(connectTimeout)
         while true {
             if let fd = Self.open(socketPath) {
+                closeLock.lock()
+                defer { closeLock.unlock() }
+                guard !isClosed else {
+                    Darwin.close(fd)
+                    throw Failure.connectionLost
+                }
                 socket = fd
                 received.removeAll()
+                notifications.removeAll()
                 return
             }
+            if closeLock.withLock({ isClosed }) { throw Failure.connectionLost }
             guard Date() < deadline else { throw Failure.cannotConnect(socketPath) }
             Thread.sleep(forTimeInterval: 0.02)
         }
@@ -111,8 +188,10 @@ public final class NvimClient: @unchecked Sendable {
     }
 
     private func disconnect() {
-        if socket >= 0 { Darwin.close(socket) }
-        socket = -1
+        closeLock.withLock {
+            if socket >= 0 { Darwin.close(socket) }
+            socket = -1
+        }
         received.removeAll()
     }
 
@@ -127,22 +206,48 @@ public final class NvimClient: @unchecked Sendable {
         }
     }
 
-    /// Reads messages until the response to `id` arrives. Anything else nvim
-    /// sends meanwhile (notifications, requests to us) is skipped.
+    /// Reads messages until the response to `id` arrives. Notifications that
+    /// come meanwhile are queued or dropped; anything else (requests to us,
+    /// responses to calls that failed) is skipped.
     private func response(to id: Int64) throws -> MessagePackValue {
-        var chunk = [UInt8](repeating: 0, count: 64 * 1024)
         while true {
-            while let (message, length) = MessagePackValue.decode(received) {
-                received.removeFirst(length)
-                guard case let .array(parts) = message, parts.count == 4,
-                      parts[0] == .int(1), parts[1] == .int(id)
-                else { continue }
+            if let parts = receiveBuffered(until: { $0.count == 4 && $0[0] == .int(1) && $0[1] == .int(id) }) {
                 if parts[2] != .nil { throw Failure.nvim(Self.describe(parts[2])) }
                 return parts[3]
             }
+            try readMore(waitingOutTimeouts: waitsOutTimeouts)
+        }
+    }
+
+    /// Decodes the messages already read, queueing notifications (or dropping
+    /// them, unless `queuesNotifications`), until
+    /// `isWanted` accepts one of the others, which it returns. nil when the
+    /// buffer runs out first.
+    private func receiveBuffered(until isWanted: ([MessagePackValue]) -> Bool) -> [MessagePackValue]? {
+        while let message = received.next() {
+            guard case let .array(parts) = message else { continue }
+            if parts.count == 3, parts[0] == .int(2),
+               case let .string(method) = parts[1], case let .array(params) = parts[2] {
+                if queuesNotifications { notifications.append((method, params)) }
+                continue
+            }
+            if isWanted(parts) { return parts }
+        }
+        return nil
+    }
+
+    /// Appends at least one more chunk from the socket to `received`. A read
+    /// timeout throws, unless `waitingOutTimeouts`, when it means keep waiting.
+    private func readMore(waitingOutTimeouts: Bool) throws {
+        var chunk = [UInt8](repeating: 0, count: 64 * 1024)
+        while true {
             let count = Darwin.read(socket, &chunk, chunk.count)
-            guard count > 0 else { throw Failure.connectionLost }
-            received.append(contentsOf: chunk[..<count])
+            if count > 0 {
+                received.append(chunk[..<count])
+                return
+            }
+            let timedOut = count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+            guard waitingOutTimeouts, timedOut else { throw Failure.connectionLost }
         }
     }
 
