@@ -136,6 +136,91 @@ final class NvimFileSyncTests {
         #expect(try !bufferNames().contains(a))
     }
 
+    /// A BufWriteCmd of the user's that matches the new name would write for
+    /// real if the rename's empty write ran, so the empty write is skipped.
+    @Test func aWriteHandlerForTheFileIsNeverRun() throws {
+        _ = try lua("""
+            vim.api.nvim_create_autocmd("BufWriteCmd", { pattern = "*.md", callback = function(ev)
+              vim.fn.writefile(vim.api.nvim_buf_get_lines(ev.buf, 0, -1, false), ev.match)
+              vim.bo[ev.buf].modified = false
+            end })
+            """)
+        let a = try file("a.md", "one\n")
+        try client.edit(a)
+        try command("normal! ox")
+        let b = path("b.md")
+        try FileManager.default.moveItem(atPath: a, toPath: b)
+
+        try client.renameBuffers(from: a, to: b)
+
+        #expect(try client.currentFile() == b)
+        #expect(try isModified())
+        #expect(try contents(b) == "one\n")
+        #expect(try !bufferNames().contains(a))
+        // The fallback: still "not edited", so a plain :w asks for :w!.
+        #expect(throws: NvimClient.Failure.self) { try command("write") }
+        #expect(try contents(b) == "one\n")
+    }
+
+    @Test(arguments: [
+        ("*.md", true),
+        ("*", true),
+        ("*.MD", true),
+        ("/private/*/b.md", true),
+        ("*.{gpg,asc,pgp}", false),
+        ("*.shada", false),
+        ("zipfile:*", false),
+        ("scp://*", false),
+        ("*/elsewhere/*.md", false),
+    ])
+    func autocommandPatternsThatCouldMatchTheFile(pattern: String, matches: Bool) throws {
+        let code = NvimClient.autocommandPatternLua + "\nreturn pattern_matches(...)"
+
+        #expect(try lua(code, [.string(pattern), .string(path("notes/b.md"))]) == .bool(matches))
+    }
+
+    @Test func aBufferWithASpecialBuftypeIsRenamedWithTheRest() throws {
+        try command("set hidden")
+        let first = try file("d/a.md", "")
+        try client.edit(first)
+        _ = try lua("""
+            local buf = vim.api.nvim_create_buf(true, true)
+            vim.api.nvim_buf_set_name(buf, ...)
+            """, [.string(path("d/m.md"))])
+        let last = try file("d/z.md", "")
+        try client.edit(last)
+        try FileManager.default.moveItem(atPath: path("d"), toPath: path("e"))
+
+        try client.renameBuffers(from: path("d"), to: path("e"))
+
+        let names = try bufferNames()
+        #expect(names.contains(path("e/a.md")))
+        #expect(names.contains(path("e/m.md")))
+        #expect(names.contains(path("e/z.md")))
+        #expect(!names.contains { $0.hasPrefix(path("d") + "/") })
+    }
+
+    /// A loaded buffer already has one of the new names, so that rename
+    /// fails; the others still happen, and the failure is reported.
+    @Test func oneFailureDoesNotStopTheRest() throws {
+        try command("set hidden")
+        let a = try file("d/a.md", "")
+        let b = try file("d/b.md", "")
+        try client.edit(a)
+        try client.edit(b)
+        // A new, unwritten file: a buffer for e/a.md with nothing on disk.
+        try client.edit(path("e/a.md"))
+        try FileManager.default.moveItem(atPath: path("d"), toPath: path("e"))
+
+        #expect(throws: NvimClient.Failure.self) {
+            try client.renameBuffers(from: path("d"), to: path("e"))
+        }
+
+        let names = try bufferNames()
+        #expect(names.contains(path("e/b.md")))
+        #expect(!names.contains(b))
+    }
+
     @Test func closingAFileDiscardsItsBuffer() throws {
         let a = try file("a.md", "one\n")
         try client.edit(a)
