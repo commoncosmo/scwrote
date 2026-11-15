@@ -442,9 +442,6 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
 
     /// The page's `setTheme` argument, in the Ghostty theme's colors and font.
     private static func pageTheme(_ theme: Theme) -> [String: Any] {
-        let background = theme.background.usingColorSpace(.sRGB) ?? theme.background
-        let luminance = 0.2126 * background.redComponent + 0.7152 * background.greenComponent
-            + 0.0722 * background.blueComponent
         return [
             "background": Theme.css(theme.background),
             "foreground": Theme.css(theme.foreground),
@@ -455,7 +452,7 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
             "divider": Theme.css(theme.divider),
             "fontFamily": theme.font.familyName ?? "monospace",
             "fontSize": Double(theme.font.pointSize),
-            "isDark": luminance < 0.5,
+            "isDark": theme.isDark,
         ]
     }
 }
