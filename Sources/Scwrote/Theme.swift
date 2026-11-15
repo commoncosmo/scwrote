@@ -23,6 +23,20 @@ struct Theme {
     /// browser's rows can start level with nvim's.
     var topPadding: CGFloat
 
+    /// Whether the background reads as dark (see `BackgroundTone`).
+    var isDark: Bool {
+        let background = background.usingColorSpace(.sRGB) ?? background
+        return BackgroundTone.isDark(
+            red: background.redComponent, green: background.greenComponent, blue: background.blueComponent)
+    }
+
+    /// The window's appearance for this theme. The title bar takes the theme's
+    /// background, so its text and controls must follow the theme too, not
+    /// the system: a dark theme in light mode would get dark title text.
+    var appearance: NSAppearance? {
+        NSAppearance(named: isDark ? .darkAqua : .aqua)
+    }
+
     /// Reads the final colors (theme applied) through libghostty. Call after a
     /// TerminalController exists: creating one initializes libghostty.
     static func load(configContents: String) -> Theme {

@@ -55,6 +55,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         // Ghostty's default look: the title bar takes the terminal's background.
         window.titlebarAppearsTransparent = true
         window.backgroundColor = theme.background
+        window.appearance = theme.appearance
         window.contentMinSize = NSSize(width: 360, height: 200)
 
         browserView = FileBrowserView(browser: FileBrowser(root: request.browserRoot), theme: theme)
