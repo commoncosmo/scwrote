@@ -2194,7 +2194,7 @@ Codicons icons in this font are by Microsoft, https://github.com/microsoft/vscod
 and were converted into the Nerd Fonts Symbols font (changes: glyphs were
 resized and re-encoded into a symbols font). License text:
 
-﻿Attribution 4.0 International
+Attribution 4.0 International
 
 =======================================================================
 
@@ -2769,9 +2769,12 @@ to represent the company, product, or service to which they refer.**
 
 ---- Symbols Nerd Font icon set: Font Awesome Extension (MIT) ----
 
-Font Awesome Extension, https://github.com/AndreLZGava/font-awesome-extension,
-used under the MIT license (per the Nerd Fonts license audit).
-Copyright (c) the Font Awesome Extension authors.
+Font Awesome Extension by André Luiz Gava, https://github.com/AndreLZGava/font-awesome-extension.
+The project's own license file (LICENCE):
+
+MIT License
+
+Copyright (c) 2017 André Luiz Gava
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -3272,19 +3275,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ---- Symbols Nerd Font icon set: Weather Icons (SIL OFL 1.1) ----
 
 Weather Icons, https://github.com/erikflowers/weather-icons. Icon designs
-originally by Lukas Bischoff; icon art for v1.1 onward by Erik Flowers. OFL
-text as shipped with Nerd Fonts (src/glyphs/weather-icons/OFL.txt):
-
-Copyright (c) <dates>, <Erik Flowers> (<URL|email>),
-with Reserved Font Name <Reserved Font Name>.
-Copyright (c) <dates>, <additional Copyright Holder> (<URL|email>),
-with Reserved Font Name <additional Reserved Font Name>.
-Copyright (c) <dates>, <additional Copyright Holder> (<URL|email>).
-
-This Font Software is licensed under the SIL Open Font License, Version 1.1.
-This license is copied below, and is also available with a FAQ at:
-http://scripts.sil.org/OFL
-
+originally by Lukas Bischoff; icon art for v1.1 onward by Erik Flowers.
+Copyright line and license file not available from the project (its README
+states SIL OFL 1.1); license per the project README and the Nerd Fonts license
+audit: SIL OFL 1.1. The standard SIL OFL 1.1 text follows; it is not the
+project's own file.
 
 -----------------------------------------------------------
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
@@ -3408,27 +3403,30 @@ For more information, please refer to <http://unlicense.org>
 
 ---- Symbols Nerd Font icon set: IEC Power Symbols (MIT) ----
 
-IEC Power Symbols, https://unicodepowersymbol.com (IEC 60417 power symbols
-proposed for Unicode), used under the MIT license per the Nerd Fonts license
-audit. Copyright (c) the IEC Power Symbols authors.
+IEC Power Symbols by Joe Loughry, https://github.com/jloughry/Unicode
+(IEC 60417 power symbols proposed for Unicode). The project's own license file
+(LICENSE.txt):
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+The MIT License (MIT)
+
+Copyright (c) 2013 Joe Loughry
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 
