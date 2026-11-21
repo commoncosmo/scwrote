@@ -5,7 +5,7 @@ A native macOS editor shell: a Ghostty-rendered window running your nvim.
 ```bash
 scwrote README.md
 scwrote ./
-scwrote ./source/testrepo/README.md
+scwrote notes/today.md
 ```
 
 `scwrote <files>` behaves like `nvim <files>` typed in the same shell: same
@@ -13,6 +13,55 @@ arguments, same working directory, same environment (`PATH` and all). With a
 folder, or no argument, it opens a file browser on that folder instead, and the
 folder becomes nvim's working directory. The window uses your Ghostty config
 (font, theme) and closes when nvim exits.
+
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/commoncosmo/scwrote/main/install.sh | sh
+```
+
+Requires macOS 26 or later and Neovim (`brew install neovim`).
+
+This downloads the latest release, checks it against its checksum, and puts
+the command at `~/.local/bin/scwrote` and the app (binary plus the resource
+folder libghostty loads from beside it) in `~/.local/share/scwrote/`. It never
+uses `sudo`, and if anything fails your previous install is left as it was.
+Make sure `~/.local/bin` is on your `PATH`, then check with `scwrote --version`.
+
+Two variables change what it does:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/commoncosmo/scwrote/main/install.sh | PREFIX="$HOME/opt" sh
+curl -fsSL https://raw.githubusercontent.com/commoncosmo/scwrote/main/install.sh | SCWROTE_VERSION=1.2.3 sh
+```
+
+`PREFIX` is where to install (default `~/.local`). `SCWROTE_VERSION` is a
+release to install, as `X.Y.Z` with no `v` (default: the latest).
+
+To update, run the install line again. To uninstall:
+
+```bash
+rm -rf ~/.local/share/scwrote ~/.local/bin/scwrote
+```
+
+Updating and uninstalling use the same `PREFIX` as the install (the paths
+above are for the default `~/.local`).
+
+Installing with curl doesn't quarantine anything. If you download the archive
+in a browser instead, macOS marks it as quarantined, and installing it as it is
+would install a quarantined binary. Clear that on the archive, then install
+from it:
+
+```bash
+xattr -d com.apple.quarantine scwrote-macos.tar.gz
+SCWROTE_ARCHIVE=./scwrote-macos.tar.gz sh install.sh
+```
+
+To check that a download came from this repository's release build:
+
+```bash
+gh attestation verify scwrote-macos.tar.gz --repo commoncosmo/scwrote
+```
 
 ## File browser
 
@@ -163,49 +212,6 @@ In the preview:
 While the preview has focus it stops following nvim's cursor; it picks up
 again when you return to the editor.
 
-## Build and install
-
-Requires macOS 27, Xcode 27, Neovim (`brew install neovim`) and Bun
-(`brew install oven-sh/bun/bun`).
-
-```bash
-./install.sh                  # bun install/test/build, swift test/build, install to ~/.local
-PREFIX=/opt/me ./install.sh   # or somewhere else
-```
-
-This puts the command at `~/.local/bin/scwrote` and the app (binary plus the
-resource folder libghostty loads from beside it) in `~/.local/share/scwrote/`.
-The installed copy doesn't depend on the repo; run `./install.sh` again to
-update it. Day-to-day loop: `./install.sh && scwrote README.md`.
-
-The preview's page is built with Bun and bundled into the app as a resource, so
-a fresh clone needs it built before a plain `swift build` or `swift test`:
-
-```bash
-cd web && bun install && bun run build
-```
-
-Then `swift test` runs the unit tests (`cd web && bun test` the page's), and
-`bin/scwrote` from the repo runs the latest `swift build -c release`.
-
-## Layout
-
-- `bin/scwrote`: launcher. Runs the app binary directly (not via `open`) so it
-  inherits the shell's environment and working directory.
-- `install.sh`: tests, builds, and installs the launcher and app under `PREFIX`.
-- `Sources/ScwroteCore`: pure logic, unit tested: argument handling, Ghostty
-  config loading, finding `nvim` on `PATH`, the file browser and its keys,
-  pane show/hide/pin rules, MessagePack and the nvim RPC client (tested
-  against a real headless nvim).
-- `Sources/Scwrote`: the AppKit app: one window per process, hosting a
-  libghostty surface ([libghostty-spm](https://github.com/Lakr233/libghostty-spm),
-  pinned exactly because libghostty's API isn't stable yet).
-- `Sources/Scwrote/Preview/`: the preview pane: header, web views, image and
-  PDF views.
-- `web/`: the preview's renderer page (TypeScript, built with Bun): markdown,
-  tables, trees, mermaid. `bun test` tests it; `bun run build` bundles it into
-  the app's resources.
-
 ## Debugging
 
 `SCWROTE_DEBUG=1 scwrote README.md` logs libghostty's lifecycle and actions to
@@ -241,3 +247,102 @@ SCWROTE_DEBUG_KEYS='<D-2>{ohello<Esc>}' SCWROTE_DEBUG_SNAPSHOT=/tmp/p.png scwrot
   commands, which would leave the window at "Process exited" after `:q`.
 - libghostty-spm layers a default theme over any config unless given an empty
   `TerminalTheme()`; scwrote passes an empty one so your Ghostty theme wins.
+- The release binary is universal, but CI only launches its arm64 half. The
+  Intel (x86_64) half is built but not launched in CI.
+
+## Build from source
+
+Requires macOS 26 or later, Xcode 26 or later, Neovim (`brew install neovim`)
+and Bun (`brew install oven-sh/bun/bun`).
+
+```bash
+scripts/install-from-source.sh                  # test, build, install to ~/.local
+PREFIX="$HOME/opt" scripts/install-from-source.sh   # or somewhere else
+```
+
+This runs the tests, builds the release archive as version `0.0.0-dev`, and
+installs it with `install.sh` (it sets `SCWROTE_ARCHIVE` to the local archive,
+so nothing is downloaded). Run it again to update.
+
+The preview's page is built with Bun and bundled into the app as a resource, so
+a fresh clone needs it built before a plain `swift build` or `swift test`:
+
+```bash
+cd web && bun install && bun run build
+```
+
+Then `bin/scwrote` from the clone runs the latest `swift build -c release`.
+The tests:
+
+```bash
+swift test                          # the app
+cd web && bun test                  # the preview's page
+sh scripts/tests/install-test.sh    # the installer
+```
+
+## Layout
+
+- `bin/scwrote`: launcher. Runs the app binary directly (not via `open`) so it
+  inherits the shell's environment and working directory.
+- `install.sh`: the curl installer. Downloads a release and installs the
+  launcher and app under `PREFIX`.
+- `scripts/`: `build-release.sh` (tests and builds the release archive),
+  `install-from-source.sh`, `smoke-test.sh` (runs a built binary),
+  `preview-licenses.ts` (writes `THIRD_PARTY_LICENSES`) and `tests/` (the
+  installer's tests).
+- `.github/workflows/`: `test.yml` runs the tests on every push and pull
+  request; `release.yml` builds and publishes a release for each version tag.
+- `LICENSE`, `THIRD_PARTY_LICENSES`: scwrote's license, and the licenses of
+  the third-party code in the app binary (Ghostty and its dependencies, the C
+  libraries, the fonts) and in the preview page.
+- `Sources/ScwroteCore`: pure logic, unit tested: argument handling, Ghostty
+  config loading, finding `nvim` on `PATH`, the file browser and its keys,
+  pane show/hide/pin rules, MessagePack and the nvim RPC client (tested
+  against a real headless nvim).
+- `Sources/Scwrote`: the AppKit app: one window per process, hosting a
+  libghostty surface ([libghostty-spm](https://github.com/Lakr233/libghostty-spm),
+  pinned exactly because libghostty's API isn't stable yet).
+- `Sources/Scwrote/Preview/`: the preview pane: header, web views, image and
+  PDF views.
+- `web/`: the preview's renderer page (TypeScript, built with Bun): markdown,
+  tables, trees, mermaid. `bun test` tests it; `bun run build` bundles it into
+  the app's resources.
+
+## Releasing
+
+Push a tag named `vX.Y.Z`. The Release workflow's build job builds the archive,
+installs it into a temporary prefix to check its version, and smoke-tests the
+installed app. Then, for tags only, its publish job records a build-provenance
+attestation and publishes the release with the archive and its checksum. Tag
+releases need the repository to be public for the provenance step (the
+organization's plan can't attest private repos).
+
+First release, in this order:
+
+1. Merge this branch to `main`.
+2. Run the Release workflow by hand on `main` (below) and confirm the smoke
+   test passes on the macOS 26 runner.
+3. Make the repository public.
+4. Tag `v0.1.0` on `main` and push the tag.
+
+The workflow can only be run by hand from the default branch, and the curl
+line installs `main`'s `install.sh`, so the tag has to come after the merge.
+
+To try the build without publishing, run the Release workflow by hand
+(Actions > Release > Run workflow) and give it a version. That dry run builds
+and smoke-tests the archive and never publishes.
+
+## License
+
+MIT, see `LICENSE`. The third-party code in the app binary and in the preview
+page has its own licenses, listed in `THIRD_PARTY_LICENSES` (installed beside
+the app as `share/scwrote/THIRD_PARTY_LICENSES`). Only the preview-page section
+is generated:
+
+```bash
+cd web && bun run licenses
+```
+
+The rest of the file (the app binary: Ghostty, its dependencies, the C
+libraries, the fonts) is kept by hand. Recheck it whenever `Package.resolved`
+changes.

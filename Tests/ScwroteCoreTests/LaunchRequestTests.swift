@@ -12,12 +12,12 @@ struct LaunchRequestTests {
 
     @Test func noArgumentsStartsInTheBrowserOnTheCurrentFolder() {
         let request = LaunchRequest.resolve(
-            arguments: [], currentDirectory: "/Users/sam/notes", isDirectory: folders()
+            arguments: [], currentDirectory: "/Users/me/notes", isDirectory: folders()
         )
 
         #expect(request.startsInBrowser)
-        #expect(request.browserRoot == "/Users/sam/notes")
-        #expect(request.workingDirectory == "/Users/sam/notes")
+        #expect(request.browserRoot == "/Users/me/notes")
+        #expect(request.workingDirectory == "/Users/me/notes")
         #expect(request.nvimArguments == [])
         #expect(request.title == "notes")
     }
@@ -25,13 +25,13 @@ struct LaunchRequestTests {
     @Test func folderArgumentStartsInTheBrowserAndBecomesTheWorkingDirectory() {
         let request = LaunchRequest.resolve(
             arguments: ["./source/testrepo"],
-            currentDirectory: "/Users/sam",
-            isDirectory: folders("/Users/sam/source/testrepo")
+            currentDirectory: "/Users/me",
+            isDirectory: folders("/Users/me/source/testrepo")
         )
 
         #expect(request.startsInBrowser)
-        #expect(request.browserRoot == "/Users/sam/source/testrepo")
-        #expect(request.workingDirectory == "/Users/sam/source/testrepo")
+        #expect(request.browserRoot == "/Users/me/source/testrepo")
+        #expect(request.workingDirectory == "/Users/me/source/testrepo")
         // nvim must not get the folder, or it would open netrw in the editor.
         #expect(request.nvimArguments == [])
         #expect(request.title == "testrepo")
@@ -39,11 +39,11 @@ struct LaunchRequestTests {
 
     @Test func dotMeansTheCurrentFolder() {
         let request = LaunchRequest.resolve(
-            arguments: ["./"], currentDirectory: "/Users/sam/notes", isDirectory: folders("/Users/sam/notes")
+            arguments: ["./"], currentDirectory: "/Users/me/notes", isDirectory: folders("/Users/me/notes")
         )
 
         #expect(request.startsInBrowser)
-        #expect(request.browserRoot == "/Users/sam/notes")
+        #expect(request.browserRoot == "/Users/me/notes")
     }
 
     @Test func nvimFlagsStillReachNvimWhenStartingOnAFolder() {
@@ -60,13 +60,13 @@ struct LaunchRequestTests {
     @Test func fileArgumentStartsInTheEditorWithTheShellsFolder() {
         let request = LaunchRequest.resolve(
             arguments: ["./source/testrepo/README.md"],
-            currentDirectory: "/Users/sam",
+            currentDirectory: "/Users/me",
             isDirectory: folders()
         )
 
         #expect(!request.startsInBrowser)
-        #expect(request.browserRoot == "/Users/sam")
-        #expect(request.workingDirectory == "/Users/sam")
+        #expect(request.browserRoot == "/Users/me")
+        #expect(request.workingDirectory == "/Users/me")
         #expect(request.nvimArguments == ["./source/testrepo/README.md"])
         #expect(request.title == "README.md")
     }

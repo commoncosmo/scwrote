@@ -15,18 +15,18 @@ struct GhosttyConfigTests {
     }
 
     @Test func candidatePathsFollowGhosttysOwnOrder() {
-        let paths = GhosttyConfig.candidatePaths(home: "/Users/sam", xdgConfigHome: nil)
+        let paths = GhosttyConfig.candidatePaths(home: "/Users/me", xdgConfigHome: nil)
 
         #expect(paths == [
-            "/Users/sam/.config/ghostty/config.ghostty",
-            "/Users/sam/.config/ghostty/config",
-            "/Users/sam/Library/Application Support/com.mitchellh.ghostty/config.ghostty",
-            "/Users/sam/Library/Application Support/com.mitchellh.ghostty/config",
+            "/Users/me/.config/ghostty/config.ghostty",
+            "/Users/me/.config/ghostty/config",
+            "/Users/me/Library/Application Support/com.mitchellh.ghostty/config.ghostty",
+            "/Users/me/Library/Application Support/com.mitchellh.ghostty/config",
         ])
     }
 
     @Test func candidatePathsHonorXDGConfigHome() {
-        let paths = GhosttyConfig.candidatePaths(home: "/Users/sam", xdgConfigHome: "/cfg")
+        let paths = GhosttyConfig.candidatePaths(home: "/Users/me", xdgConfigHome: "/cfg")
 
         #expect(paths.first == "/cfg/ghostty/config.ghostty")
     }

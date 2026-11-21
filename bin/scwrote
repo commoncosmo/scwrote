@@ -23,8 +23,14 @@ if [ -x "$root/share/scwrote/Scwrote" ]; then
 elif [ -x "$root/.build/release/Scwrote" ]; then
   app="$root/.build/release/Scwrote"
 else
-  echo "scwrote: no build found. Run ./install.sh in the scwrote repo." >&2
+  echo "scwrote: no build found. Install with: curl -fsSL https://raw.githubusercontent.com/commoncosmo/scwrote/main/install.sh | sh  (or run scripts/install-from-source.sh in a clone)." >&2
   exit 1
+fi
+
+if [ "${1:-}" = "--version" ]; then
+  version=$(cat "$(dirname "$app")/VERSION" 2>/dev/null) || version=0.0.0-dev
+  echo "scwrote ${version:-0.0.0-dev}"
+  exit 0
 fi
 
 # Start the app detached (nohup), so closing the terminal doesn't take the
