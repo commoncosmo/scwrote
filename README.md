@@ -2,6 +2,8 @@
 
 A native macOS editor shell: a Ghostty-rendered window running your nvim.
 
+![scwrote: the file browser, nvim editing a Markdown file, and its live preview with a table and a mermaid diagram](docs/screenshots/editor-and-preview.png)
+
 ```bash
 scwrote README.md
 scwrote ./
@@ -140,6 +142,10 @@ on that row, as do other errors (`permission denied`), until the next key.
 A pane to the right of the editor that shows the file nvim is editing, drawn
 from nvim's buffer, so unsaved text shows too. It appears only when you ask
 for it, and stays until you hide it.
+
+![A CSV file in nvim beside its preview as a table](docs/screenshots/csv-preview.png)
+
+![A JSON file with an unsaved edit: the preview shows it as a tree, and the browser and preview mark it unsaved](docs/screenshots/json-unsaved.png)
 
 | Key | Does |
 |---|---|
