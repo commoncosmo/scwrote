@@ -33,6 +33,8 @@ make_archive() {
   : > "$_stage/scwrote/share/scwrote/Fake.bundle/res"
   printf '%s\n' "$_ver" > "$_stage/scwrote/share/scwrote/VERSION"
   echo license > "$_stage/scwrote/LICENSE"
+  echo license > "$_stage/scwrote/share/scwrote/LICENSE"
+  echo notices > "$_stage/scwrote/share/scwrote/THIRD_PARTY_LICENSES"
   tar -czf "$_dir/scwrote-macos.tar.gz" -C "$_stage" scwrote
   (cd "$_dir" && shasum -a 256 scwrote-macos.tar.gz > scwrote-macos.tar.gz.sha256)
   rm -rf "$_stage"
@@ -92,6 +94,8 @@ test_installs_latest() {
   assert_status_ok || return 1
   [ -x "$PREFIX/bin/scwrote" ] || { echo "  no launcher"; return 1; }
   [ -x "$PREFIX/share/scwrote/Scwrote" ] || { echo "  no app"; return 1; }
+  [ -f "$PREFIX/share/scwrote/LICENSE" ] && [ -f "$PREFIX/share/scwrote/THIRD_PARTY_LICENSES" ] ||
+    { echo "  license notices not installed"; return 1; }
   assert_version 1.2.3
 }
 

@@ -4,7 +4,8 @@
 #   scripts/build-release.sh <version>     version is X.Y.Z, or 0.0.0-dev
 #
 # The archive holds a universal (arm64 + x86_64), ad-hoc signed binary, its
-# resource bundles, the launcher, VERSION, LICENSE and THIRD_PARTY_LICENSES.
+# resource bundles, the launcher, VERSION, LICENSE and THIRD_PARTY_LICENSES
+# (at the top level, and again under share/scwrote/ so installs carry them).
 set -eu
 
 usage() {
@@ -55,6 +56,7 @@ cp "$binary" "$stage/share/scwrote/"
 cp -R "$products"/*.bundle "$stage/share/scwrote/"
 printf '%s\n' "$version" > "$stage/share/scwrote/VERSION"
 cp LICENSE THIRD_PARTY_LICENSES "$stage/"
+cp LICENSE THIRD_PARTY_LICENSES "$stage/share/scwrote/"
 
 tar -czf "$dist/scwrote-macos.tar.gz" -C "$dist/stage" scwrote
 (cd "$dist" && shasum -a 256 scwrote-macos.tar.gz > scwrote-macos.tar.gz.sha256)
