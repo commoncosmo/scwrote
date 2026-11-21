@@ -22,6 +22,9 @@ class PreviewWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         navigationDelegate = self
         uiDelegate = self
         underPageBackgroundColor = background
+        // A force-click link preview loads the link outside the navigation
+        // policy and the remote-content block.
+        allowsLinkPreview = false
     }
 
     @available(*, unavailable)

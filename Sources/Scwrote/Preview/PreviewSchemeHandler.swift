@@ -95,6 +95,9 @@ final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
             "Content-Length": String(data.count),
             // Files change on disk while shown; never reuse an old copy.
             "Cache-Control": "no-cache",
+            // No DNS lookups for links in a page, which would reach the
+            // network even with remote content blocked.
+            "X-DNS-Prefetch-Control": "off",
         ]
         task.didReceive(HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers)!)
         task.didReceive(data)

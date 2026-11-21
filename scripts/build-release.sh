@@ -31,9 +31,22 @@ root="$(pwd)"
 
 swift test
 
-swift build -c release --arch arm64 --arch x86_64
-products="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
-binary="$products/Scwrote"
+# One build per architecture with SwiftPM's native build system, joined with
+# lipo. A single build with both --arch flags goes through the other build
+# system (swiftbuild, also the default in newer Swift), which with Xcode 26
+# can't link libghostty's static library ("library not found for -lghostty").
+# The resource bundles are the same for both, so they come from the arm64 one.
+build_slice() {
+  swift build -c release --build-system native --triple "$1-apple-macosx26.0" >&2 || exit 1
+  swift build -c release --build-system native --triple "$1-apple-macosx26.0" --show-bin-path
+}
+products="$(build_slice arm64)"
+intel="$(build_slice x86_64)"
+universal="$root/.build/universal"
+rm -rf "$universal"
+mkdir -p "$universal"
+binary="$universal/Scwrote"
+lipo -create "$products/Scwrote" "$intel/Scwrote" -output "$binary"
 
 # Ad-hoc sign the binary only, then make sure it is universal and valid.
 codesign --force --sign - "$binary"
