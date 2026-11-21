@@ -1,0 +1,36 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install neovim
+        run: brew install neovim
+
+      - name: Test and build the preview page
+        run: |
+          cd web || exit 1
+          bun install --frozen-lockfile
+          bun test
+          bun run build
+
+      - name: Swift tests
+        run: swift test
+
+      - name: Installer tests
+        run: sh scripts/tests/install-test.sh
