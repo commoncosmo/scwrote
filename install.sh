@@ -39,20 +39,38 @@ fetch() {
 }
 
 # Runs on any exit. If the swap began but didn't finish, put the old install
-# back; always remove leftovers.
+# back (with renames only, so there is never a moment with no copy); always
+# remove leftovers. Signals are ignored meanwhile so a second Ctrl-C can't
+# interrupt it.
 cleanup() {
-  if [ -n "${appdir:-}" ]; then
-    if [ "${swap_started:-}" = 1 ] && [ "${swap_done:-}" != 1 ] && [ -d "$appdir.old" ]; then
-      rm -rf "$appdir"
+  trap '' HUP INT TERM
+  if [ -n "$appdir" ]; then
+    # Once the launcher has been renamed into place, the swap is complete.
+    if [ "$swap_started" = 1 ] && [ ! -e "$bindir/scwrote.new" ]; then
+      swap_done=1
+    fi
+    if [ "$swap_started" = 1 ] && [ "$swap_done" != 1 ] && [ -d "$appdir.old" ]; then
+      rm -rf "$appdir.new"
+      if [ -e "$appdir" ]; then
+        mv "$appdir" "$appdir.new"
+      fi
       mv "$appdir.old" "$appdir"
     fi
     rm -rf "$appdir.new" "$bindir/scwrote.new"
-    [ "${swap_done:-}" = 1 ] && rm -rf "$appdir.old"
+    if [ "$swap_done" = 1 ]; then
+      rm -rf "$appdir.old"
+    fi
   fi
-  [ -z "${work:-}" ] || rm -rf "$work"
+  if [ -n "$work" ]; then
+    rm -rf "$work"
+  fi
 }
 
 main() {
+  appdir=""
+  work=""
+  swap_started=""
+  swap_done=""
   prefix="${PREFIX:-$HOME/.local}"
   bindir="$prefix/bin"
   releases="${SCWROTE_RELEASES_URL:-https://github.com/commoncosmo/scwrote/releases}"
@@ -102,6 +120,11 @@ main() {
   [ -f "$src/share/scwrote/VERSION" ] && version="$(cat "$src/share/scwrote/VERSION")"
 
   appdir="$prefix/share/scwrote"
+  # An update killed between its two renames leaves the old install as .old.
+  if [ ! -e "$appdir" ] && [ -d "$appdir.old" ]; then
+    echo "Restoring the previous install left by an interrupted update."
+    mv "$appdir.old" "$appdir" || die "could not restore $appdir.old."
+  fi
   previous=""
   if [ -f "$appdir/VERSION" ]; then
     previous="$(cat "$appdir/VERSION")"
@@ -115,7 +138,10 @@ main() {
   # cached code signature.
   mkdir -p "$bindir" "$prefix/share" ||
     die "could not create $prefix; the previous install is unchanged."
-  rm -rf "$appdir.new" "$appdir.old" "$bindir/scwrote.new"
+  rm -rf "$appdir.new" "$bindir/scwrote.new"
+  if [ -e "$appdir" ]; then
+    rm -rf "$appdir.old"
+  fi
   if ! { cp -R "$src/share/scwrote" "$appdir.new" &&
     chmod +x "$appdir.new/Scwrote" &&
     cp "$src/bin/scwrote" "$bindir/scwrote.new" &&
