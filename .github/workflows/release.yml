@@ -10,12 +10,10 @@ on:
         required: true
 
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
 
 jobs:
-  release:
+  build:
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -44,7 +42,7 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_26.6.app
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
       - name: Install neovim
         run: |
@@ -57,22 +55,49 @@ jobs:
       - name: Installer tests
         run: sh scripts/tests/install-test.sh
 
-      - name: Smoke test the archive
+      - name: Install the archive into a temporary prefix
         run: |
-          unpacked=$(mktemp -d)
-          tar -xzf dist/scwrote-macos.tar.gz -C "$unpacked"
-          scripts/smoke-test.sh "$unpacked/scwrote/share/scwrote/Scwrote"
+          prefix=$(mktemp -d)
+          PREFIX="$prefix" SCWROTE_ARCHIVE="$PWD/dist/scwrote-macos.tar.gz" sh install.sh
+          got=$("$prefix/bin/scwrote" --version)
+          if [ "$got" != "scwrote $VERSION" ]; then
+            echo "installed launcher reports '$got', expected 'scwrote $VERSION'" >&2
+            exit 1
+          fi
+          echo "INSTALL_PREFIX=$prefix" >> "$GITHUB_ENV"
+
+      - name: Smoke test the installed app
+        run: scripts/smoke-test.sh "$INSTALL_PREFIX/share/scwrote/Scwrote"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-archive
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-archive
+          path: dist
 
       - uses: actions/attest-build-provenance@v4
-        if: github.event_name == 'push'
         with:
           subject-path: dist/scwrote-macos.tar.gz
 
       - name: Publish the release
-        if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
             dist/scwrote-macos.tar.gz dist/scwrote-macos.tar.gz.sha256 \
-            --generate-notes --verify-tag
+            --generate-notes --verify-tag --repo "$GITHUB_REPOSITORY"
