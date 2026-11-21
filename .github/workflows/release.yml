@@ -17,14 +17,17 @@ permissions:
 jobs:
   release:
     runs-on: macos-26
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Work out the version
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
             version=${GITHUB_REF_NAME#v}
           else
             version=$INPUT_VERSION
@@ -44,7 +47,9 @@ jobs:
       - uses: oven-sh/setup-bun@v2
 
       - name: Install neovim
-        run: brew install neovim
+        run: |
+          brew install neovim
+          nvim --version
 
       - name: Build the release archive
         run: scripts/build-release.sh "$VERSION"
@@ -59,11 +64,12 @@ jobs:
           scripts/smoke-test.sh "$unpacked/scwrote/share/scwrote/Scwrote"
 
       - uses: actions/attest-build-provenance@v4
+        if: github.event_name == 'push'
         with:
           subject-path: dist/scwrote-macos.tar.gz
 
       - name: Publish the release
-        if: github.ref_type == 'tag'
+        if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

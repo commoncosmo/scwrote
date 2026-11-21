@@ -8,11 +8,18 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: macos-26
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_26.6.app
@@ -20,7 +27,9 @@ jobs:
       - uses: oven-sh/setup-bun@v2
 
       - name: Install neovim
-        run: brew install neovim
+        run: |
+          brew install neovim
+          nvim --version
 
       - name: Test and build the preview page
         run: |
