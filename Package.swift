@@ -24,7 +24,7 @@ let package = Package(
                 .product(name: "GhosttyKit", package: "libghostty-spm"),
             ],
             // The preview's renderer page, built from web/ by `bun run build`.
-            resources: [.copy("Resources/Preview")]
+            resources: [.copy("Resources/Preview"), .copy("Resources/AppIcon.png")]
         ),
         .testTarget(name: "ScwroteCoreTests", dependencies: ["ScwroteCore"]),
     ],
