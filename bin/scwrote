@@ -27,6 +27,12 @@ else
   exit 1
 fi
 
+if [ "${1:-}" = "--version" ]; then
+  version=$(cat "$(dirname "$app")/VERSION" 2>/dev/null) || version=0.0.0-dev
+  echo "scwrote ${version:-0.0.0-dev}"
+  exit 0
+fi
+
 # Start the app detached (nohup), so closing the terminal doesn't take the
 # window with it.
 #
