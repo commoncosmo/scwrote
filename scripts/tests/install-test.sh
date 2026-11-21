@@ -102,7 +102,8 @@ test_installs_named_version() {
 }
 
 test_checksum_mismatch_changes_nothing() {
-  run_install SCWROTE_VERSION=1.0.0 || return 1
+  run_install SCWROTE_VERSION=1.0.0
+  assert_status_ok || return 1
   before="$(snapshot "$PREFIX")"
   echo tampered >> "$REL/latest/download/scwrote-macos.tar.gz"
   run_install
@@ -112,7 +113,8 @@ test_checksum_mismatch_changes_nothing() {
 }
 
 test_missing_release_changes_nothing() {
-  run_install SCWROTE_VERSION=1.0.0 || return 1
+  run_install SCWROTE_VERSION=1.0.0
+  assert_status_ok || return 1
   before="$(snapshot "$PREFIX")"
   run_install SCWROTE_VERSION=9.9.9
   assert_status_fail || return 1
@@ -121,7 +123,8 @@ test_missing_release_changes_nothing() {
 }
 
 test_broken_archive_keeps_old_install() {
-  run_install SCWROTE_VERSION=1.0.0 || return 1
+  run_install SCWROTE_VERSION=1.0.0
+  assert_status_ok || return 1
   before="$(snapshot "$PREFIX")"
   echo "not gzip" > "$T/bad.tar.gz"
   run_install SCWROTE_ARCHIVE="$T/bad.tar.gz"
@@ -143,7 +146,8 @@ test_refuses_old_macos() {
 }
 
 test_update_reports_previous_version() {
-  run_install SCWROTE_VERSION=1.0.0 || return 1
+  run_install SCWROTE_VERSION=1.0.0
+  assert_status_ok || return 1
   run_install
   assert_status_ok || return 1
   assert_contains 1.0.0 || return 1
@@ -151,7 +155,8 @@ test_update_reports_previous_version() {
 }
 
 test_update_over_unversioned_install() {
-  run_install || return 1
+  run_install
+  assert_status_ok || return 1
   rm "$PREFIX/share/scwrote/VERSION"
   run_install
   assert_status_ok || return 1
@@ -217,6 +222,59 @@ test_no_temp_left_behind() {
   assert_status_fail || return 1
   left="$(find "$T/tmp" -name 'scwrote-install.*' 2>/dev/null)"
   [ -z "$left" ] || { echo "  left behind: $left"; return 1; }
+}
+
+test_truncated_script_changes_nothing() {
+  run_install SCWROTE_VERSION=1.0.0
+  assert_status_ok || return 1
+  before="$(snapshot "$PREFIX")"
+  total="$(wc -l < "$repo/install.sh" | tr -d ' ')"
+  n=1
+  while [ "$n" -lt "$total" ]; do
+    head -n "$n" "$repo/install.sh" | env -i HOME="$T/home" TMPDIR="$T/tmp" PREFIX="$PREFIX" \
+      PATH="$SHIM:/usr/bin:/bin" SCWROTE_ARCHIVE="$REL/latest/download/scwrote-macos.tar.gz" \
+      sh >/dev/null 2>&1
+    [ "$before" = "$(snapshot "$PREFIX")" ] || { echo "  install changed when cut after line $n"; return 1; }
+    n=$((n + 1))
+  done
+}
+
+test_failed_swap_keeps_old_install() {
+  run_install SCWROTE_VERSION=1.0.0
+  assert_status_ok || return 1
+  before="$(snapshot "$PREFIX")"
+  chmod 555 "$PREFIX/bin"
+  run_install
+  chmod 755 "$PREFIX/bin"
+  assert_status_fail || return 1
+  assert_version 1.0.0 || return 1
+  [ "$before" = "$(snapshot "$PREFIX")" ] || { echo "  install changed or leftovers remain"; return 1; }
+}
+
+test_sw_vers_failures_are_reported() {
+  for body in 'echo abc' 'true' 'exit 1'; do
+    printf '#!/bin/sh\n%s\n' "$body" > "$SHIM/sw_vers"
+    run_install
+    assert_status_fail || return 1
+    assert_contains "macOS" || return 1
+  done
+}
+
+test_accepts_macos_26_and_27() {
+  for v in 26.0 27.1; do
+    printf '#!/bin/sh\necho %s\n' "$v" > "$SHIM/sw_vers"
+    run_install
+    assert_status_ok || return 1
+  done
+}
+
+test_dangling_launcher_symlink_counts_as_install() {
+  mkdir -p "$PREFIX/bin"
+  ln -s "$T/nowhere" "$PREFIX/bin/scwrote"
+  run_install
+  assert_status_ok || return 1
+  assert_contains "an earlier version" || return 1
+  assert_version 1.2.3
 }
 
 # --- runner -----------------------------------------------------------------
