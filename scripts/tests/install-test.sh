@@ -270,6 +270,12 @@ test_stray_old_is_recovered() {
     { echo "  stray .old not restored as share/scwrote"; return 1; }
   assert_version 1.0.0 || return 1
   mv "$PREFIX/share/scwrote" "$PREFIX/share/scwrote.old"
+  run_install SCWROTE_VERSION=9.9.9
+  assert_status_fail || return 1
+  [ -x "$PREFIX/share/scwrote/Scwrote" ] && [ ! -e "$PREFIX/share/scwrote.old" ] ||
+    { echo "  stray .old not restored after a failed download"; return 1; }
+  assert_version 1.0.0 || return 1
+  mv "$PREFIX/share/scwrote" "$PREFIX/share/scwrote.old"
   run_install
   assert_status_ok || return 1
   [ ! -e "$PREFIX/share/scwrote.old" ] || { echo "  .old left behind"; return 1; }
@@ -305,7 +311,7 @@ test_dangling_launcher_symlink_counts_as_install() {
 # --- runner -----------------------------------------------------------------
 
 sed -n 's/^test_\([a-z0-9_]*\)() {$/\1/p' "$0" > "$root/names"
-[ "$(wc -l < "$root/names" | tr -d ' ')" = "$(grep -c '^test_[a-z0-9_]*() {$' "$0")" ] || { echo "runner found a different number of tests than are defined"; exit 1; }
+[ "$(wc -l < "$root/names" | tr -d ' ')" = "$(grep -c '^test_' "$0")" ] || { echo "runner found a different number of tests than are defined"; exit 1; }
 while read -r t; do
   setup "$t"
   if result="$( (test_"$t") 2>&1 )"; then

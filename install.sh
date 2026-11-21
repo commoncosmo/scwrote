@@ -84,6 +84,13 @@ main() {
   esac
   [ "${macos%%.*}" -ge 26 ] || die "scwrote needs macOS 26 or later (this is macOS $macos)."
 
+  appdir="$prefix/share/scwrote"
+  # An update killed between its two renames leaves the old install as .old.
+  if [ ! -e "$appdir" ] && [ -d "$appdir.old" ]; then
+    echo "Restoring the previous install left by an interrupted update."
+    mv "$appdir.old" "$appdir" || die "could not restore $appdir.old."
+  fi
+
   work="$(mktemp -d "${TMPDIR:-/tmp}/scwrote-install.XXXXXX")"
   trap cleanup EXIT
   trap 'exit 1' HUP INT TERM
@@ -119,12 +126,6 @@ main() {
   version=unknown
   [ -f "$src/share/scwrote/VERSION" ] && version="$(cat "$src/share/scwrote/VERSION")"
 
-  appdir="$prefix/share/scwrote"
-  # An update killed between its two renames leaves the old install as .old.
-  if [ ! -e "$appdir" ] && [ -d "$appdir.old" ]; then
-    echo "Restoring the previous install left by an interrupted update."
-    mv "$appdir.old" "$appdir" || die "could not restore $appdir.old."
-  fi
   previous=""
   if [ -f "$appdir/VERSION" ]; then
     previous="$(cat "$appdir/VERSION")"
