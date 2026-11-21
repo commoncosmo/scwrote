@@ -313,6 +313,10 @@ sh scripts/tests/install-test.sh    # the installer
 - `web/`: the preview's renderer page (TypeScript, built with Bun): markdown,
   tables, trees, mermaid. `bun test` tests it; `bun run build` bundles it into
   the app's resources.
+- `docs/icon/scwrote.svg`: the app icon's source.
+  `Sources/Scwrote/Resources/AppIcon.png` is rendered from it at 1024×1024 and
+  set as the Dock icon at launch.
+- `docs/screenshots/`: the images in this README.
 
 ## Releasing
 
