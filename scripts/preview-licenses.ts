@@ -25,6 +25,8 @@ type Manifest = {
   name: string;
   version: string;
   license?: string | { type?: string };
+  repository?: string | { url?: string };
+  homepage?: string;
   licenses?: { type?: string }[];
   dependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
@@ -54,6 +56,25 @@ function licenseId(m: Manifest): string {
   if (m.license?.type) return m.license.type;
   const list = m.licenses?.map((l) => l.type).filter(Boolean);
   return list?.length ? list.join(" OR ") : "UNKNOWN";
+}
+
+// For packages offered under a choice of licenses, the one scwrote uses.
+const licenseChoice: Record<string, string> = {
+  elkjs: "EPL-2.0",
+  dompurify: "Apache-2.0",
+};
+
+// package.json's `repository` as a browsable URL ("github:a/b", "a/b",
+// "git+https://...git", "git://...", "git@host:a/b" all become https URLs).
+function sourceUrl(m: Manifest): string {
+  const raw = typeof m.repository === "string" ? m.repository : m.repository?.url;
+  if (!raw) return m.homepage ?? "(no repository listed in package.json)";
+  let url = raw.trim().replace(/^git\+/, "");
+  const shorthand = url.match(/^(github|gitlab|bitbucket):(.+)$/);
+  if (shorthand) url = `https://${shorthand[1]}.${shorthand[1] === "bitbucket" ? "org" : "com"}/${shorthand[2]}`;
+  else if (/^[\w.-]+\/[\w.-]+$/.test(url)) url = `https://github.com/${url}`;
+  url = url.replace(/^git@([^:]+):/, "https://$1/").replace(/^(git|ssh):\/\/(git@)?/, "https://");
+  return url.replace(/\.git$/, "").replace(/#.*$/, "");
 }
 
 function licenseText(dir: string, m: Manifest): string {
@@ -90,7 +111,10 @@ const sections = [...found.keys()]
   .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
   .map((key) => {
     const { manifest, dir } = found.get(key)!;
-    return `---- ${key} (${licenseId(manifest)}) ----\n\n${licenseText(dir, manifest)}`;
+    const choice = licenseChoice[manifest.name];
+    const source = `Source: ${sourceUrl(manifest)} (version ${manifest.version})`;
+    const used = choice ? `\nUsed under ${choice}.` : "";
+    return `---- ${key} (${licenseId(manifest)}) ----\n${source}${used}\n\n${licenseText(dir, manifest)}`;
   });
 
 const generated = `${START}\n\nGenerated from web/node_modules for the packages in web/package.json's\ndependencies and everything they depend on at run time (${found.size} packages).\n\n${sections.join("\n\n")}\n\n${END}\n`;
