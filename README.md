@@ -31,7 +31,7 @@ Make sure `~/.local/bin` is on your `PATH`, then check with `scwrote --version`.
 Two variables change what it does:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/commoncosmo/scwrote/main/install.sh | PREFIX=/opt/me sh
+curl -fsSL https://raw.githubusercontent.com/commoncosmo/scwrote/main/install.sh | PREFIX="$HOME/opt" sh
 curl -fsSL https://raw.githubusercontent.com/commoncosmo/scwrote/main/install.sh | SCWROTE_VERSION=1.2.3 sh
 ```
 
@@ -44,11 +44,17 @@ To update, run the install line again. To uninstall:
 rm -rf ~/.local/share/scwrote ~/.local/bin/scwrote
 ```
 
-If you download the archive in a browser instead, macOS marks it as
-quarantined. Clear that on the unpacked folder before running it:
+Updating and uninstalling use the same `PREFIX` as the install (the paths
+above are for the default `~/.local`).
+
+Installing with curl doesn't quarantine anything. If you download the archive
+in a browser instead, macOS marks it as quarantined, and installing it as it is
+would install a quarantined binary. Clear that on the archive, then install
+from it:
 
 ```bash
-xattr -dr com.apple.quarantine <folder>
+xattr -d com.apple.quarantine scwrote-macos.tar.gz
+SCWROTE_ARCHIVE=./scwrote-macos.tar.gz sh install.sh
 ```
 
 To check that a download came from this repository's release build:
@@ -241,6 +247,8 @@ SCWROTE_DEBUG_KEYS='<D-2>{ohello<Esc>}' SCWROTE_DEBUG_SNAPSHOT=/tmp/p.png scwrot
   commands, which would leave the window at "Process exited" after `:q`.
 - libghostty-spm layers a default theme over any config unless given an empty
   `TerminalTheme()`; scwrote passes an empty one so your Ghostty theme wins.
+- The release binary is universal, but CI only launches its arm64 half. The
+  Intel (x86_64) half is built but not launched in CI.
 
 ## Build from source
 
@@ -249,7 +257,7 @@ and Bun (`brew install oven-sh/bun/bun`).
 
 ```bash
 scripts/install-from-source.sh                  # test, build, install to ~/.local
-PREFIX=/opt/me scripts/install-from-source.sh   # or somewhere else
+PREFIX="$HOME/opt" scripts/install-from-source.sh   # or somewhere else
 ```
 
 This runs the tests, builds the release archive as version `0.0.0-dev`, and
@@ -285,7 +293,8 @@ sh scripts/tests/install-test.sh    # the installer
 - `.github/workflows/`: `test.yml` runs the tests on every push and pull
   request; `release.yml` builds and publishes a release for each version tag.
 - `LICENSE`, `THIRD_PARTY_LICENSES`: scwrote's license, and the licenses of
-  the libraries the preview bundles.
+  the third-party code in the app binary (Ghostty and its dependencies, the C
+  libraries, the fonts) and in the preview page.
 - `Sources/ScwroteCore`: pure logic, unit tested: argument handling, Ghostty
   config loading, finding `nvim` on `PATH`, the file browser and its keys,
   pane show/hide/pin rules, MessagePack and the nvim RPC client (tested
@@ -301,10 +310,23 @@ sh scripts/tests/install-test.sh    # the installer
 
 ## Releasing
 
-Push a tag named `vX.Y.Z`. The Release workflow builds the archive, smoke-tests
-it, records a build-provenance attestation, and publishes the release with the
-archive and its checksum. Tag releases need the repository to be public for
-the provenance step (the organization's plan can't attest private repos).
+Push a tag named `vX.Y.Z`. The Release workflow's build job builds the archive,
+installs it into a temporary prefix to check its version, and smoke-tests the
+installed app. Then, for tags only, its publish job records a build-provenance
+attestation and publishes the release with the archive and its checksum. Tag
+releases need the repository to be public for the provenance step (the
+organization's plan can't attest private repos).
+
+First release, in this order:
+
+1. Merge this branch to `main`.
+2. Run the Release workflow by hand on `main` (below) and confirm the smoke
+   test passes on the macOS 26 runner.
+3. Make the repository public.
+4. Tag `v0.1.0` on `main` and push the tag.
+
+The workflow can only be run by hand from the default branch, and the curl
+line installs `main`'s `install.sh`, so the tag has to come after the merge.
 
 To try the build without publishing, run the Release workflow by hand
 (Actions > Release > Run workflow) and give it a version. That dry run builds
@@ -312,9 +334,15 @@ and smoke-tests the archive and never publishes.
 
 ## License
 
-MIT, see `LICENSE`. The libraries the preview bundles have their own licenses,
-listed in `THIRD_PARTY_LICENSES`. Regenerate it with:
+MIT, see `LICENSE`. The third-party code in the app binary and in the preview
+page has its own licenses, listed in `THIRD_PARTY_LICENSES` (installed beside
+the app as `share/scwrote/THIRD_PARTY_LICENSES`). Only the preview-page section
+is generated:
 
 ```bash
 cd web && bun run licenses
 ```
+
+The rest of the file (the app binary: Ghostty, its dependencies, the C
+libraries, the fonts) is kept by hand. Recheck it whenever `Package.resolved`
+changes.
