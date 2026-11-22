@@ -38,6 +38,9 @@ jobs:
           bun test
           bun run build
 
+      - name: Fetch ripgrep
+        run: sh scripts/fetch-ripgrep.sh
+
       - name: Swift tests
         run: swift test
 

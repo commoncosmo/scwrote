@@ -270,6 +270,10 @@ This runs the tests, builds the release archive as version `0.0.0-dev`, and
 installs it with `install.sh` (it sets `SCWROTE_ARCHIVE` to the local archive,
 so nothing is downloaded). Run it again to update.
 
+The build also fetches a pinned, universal ripgrep (the project search runs it)
+and ships it as `share/scwrote/rg`. `sh scripts/fetch-ripgrep.sh` alone puts it
+in `.build/ripgrep/`, which is where `swift run` and the tests look for it.
+
 The preview's page is built with Bun and bundled into the app as a resource, so
 a fresh clone needs it built before a plain `swift build` or `swift test`:
 
@@ -293,7 +297,8 @@ sh scripts/tests/install-test.sh    # the installer
 - `install.sh`: the curl installer. Downloads a release and installs the
   launcher and app under `PREFIX`.
 - `scripts/`: `build-release.sh` (tests and builds the release archive),
-  `install-from-source.sh`, `smoke-test.sh` (runs a built binary),
+  `fetch-ripgrep.sh` (fetches the pinned universal ripgrep into
+  `.build/ripgrep/`), `install-from-source.sh`, `smoke-test.sh` (runs a built binary),
   `preview-licenses.ts` (writes `THIRD_PARTY_LICENSES`) and `tests/` (the
   installer's tests).
 - `.github/workflows/`: `test.yml` runs the tests on every push and pull

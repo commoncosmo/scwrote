@@ -13,6 +13,8 @@ under its own license. Their license texts follow, in this order:
     zig-objc, uucode, z2d, zf, zigimg, libvaxis
   Fonts embedded in libghostty
     JetBrains Mono, Symbols Nerd Font and each of its icon sets
+  ripgrep
+    ripgrep, and the Rust crates compiled into it
   Inside mermaid's prebuilt browser file (mermaid.min.js)
     regenerator-runtime and Underscore.js, and the small pieces Cytoscape.js
     embeds (DOMPurify, Lodash and Cytoscape.js themselves are in the generated
@@ -3427,6 +3429,136 @@ FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
 COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+
+==== ripgrep ====
+
+
+---- ripgrep (MIT) ----
+
+What ships: share/scwrote/rg, the ripgrep 15.2.0 binary, universal.
+Source: https://github.com/BurntSushi/ripgrep
+
+ripgrep is dual-licensed under MIT and the Unlicense (public domain); the MIT
+license is used. The binary is built from ripgrep's own workspace crates
+(ripgrep, grep, grep-cli, grep-matcher, grep-printer, grep-regex,
+grep-searcher, globset and ignore), which carry the same license, and the Rust
+crates in the next section.
+
+The MIT License (MIT)
+
+Copyright (c) 2015 Andrew Gallant
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+
+
+---- Rust crates compiled into ripgrep ----
+
+The crates in ripgrep 15.2.0's Cargo.lock that the macOS build links, without
+the ones used only on other platforms or only for tests. Each is used under the
+MIT license below, except where the line says more.
+
+aho-corasick 1.1.4 — Unlicense OR MIT (used under MIT) — https://github.com/BurntSushi/aho-corasick
+anyhow 1.0.103 — MIT OR Apache-2.0 (used under MIT) — https://github.com/dtolnay/anyhow
+bstr 1.13.0 — MIT OR Apache-2.0 (used under MIT) — https://github.com/BurntSushi/bstr
+cfg-if 1.0.4 — MIT OR Apache-2.0 (used under MIT) — https://github.com/rust-lang/cfg-if
+crossbeam-deque 0.8.7 — MIT OR Apache-2.0 (used under MIT) — https://github.com/crossbeam-rs/crossbeam
+crossbeam-epoch 0.9.20 — MIT OR Apache-2.0 (used under MIT) — https://github.com/crossbeam-rs/crossbeam
+crossbeam-utils 0.8.22 — MIT OR Apache-2.0 (used under MIT) — https://github.com/crossbeam-rs/crossbeam
+encoding_rs 0.8.35 — (Apache-2.0 OR MIT) AND BSD-3-Clause (used under MIT, plus BSD-3-Clause for the WHATWG-derived data) — https://github.com/hsivonen/encoding_rs
+encoding_rs_io 0.1.7 — MIT OR Apache-2.0 (used under MIT) — https://github.com/BurntSushi/encoding_rs_io
+itoa 1.0.18 — MIT OR Apache-2.0 (used under MIT) — https://github.com/dtolnay/itoa
+lexopt 0.3.2 — MIT — https://github.com/blyxxyz/lexopt
+libc 0.2.186 — MIT OR Apache-2.0 (used under MIT) — https://github.com/rust-lang/libc
+log 0.4.33 — MIT OR Apache-2.0 (used under MIT) — https://github.com/rust-lang/log
+memchr 2.8.3 — Unlicense OR MIT (used under MIT) — https://github.com/BurntSushi/memchr
+memmap2 0.9.11 — MIT OR Apache-2.0 (used under MIT) — https://github.com/RazrFalcon/memmap2-rs
+regex-automata 0.4.15 — MIT OR Apache-2.0 (used under MIT) — https://github.com/rust-lang/regex
+regex-syntax 0.8.11 — MIT OR Apache-2.0 (used under MIT) — https://github.com/rust-lang/regex
+same-file 1.0.6 — Unlicense OR MIT (used under MIT) — https://github.com/BurntSushi/same-file
+serde 1.0.228 — MIT OR Apache-2.0 (used under MIT) — https://github.com/serde-rs/serde
+serde_core 1.0.228 — MIT OR Apache-2.0 (used under MIT) — https://github.com/serde-rs/serde
+serde_json 1.0.150 — MIT OR Apache-2.0 (used under MIT) — https://github.com/serde-rs/json
+termcolor 1.4.1 — Unlicense OR MIT (used under MIT) — https://github.com/BurntSushi/termcolor
+textwrap 0.16.2 — MIT — https://github.com/mgeisler/textwrap
+walkdir 2.5.0 — Unlicense OR MIT (used under MIT) — https://github.com/BurntSushi/walkdir
+zmij 1.0.23 — MIT — https://github.com/dtolnay/zmij
+
+Copyright holders: Andrew Gallant, the Rust Project Developers, Alex Crichton,
+The Crossbeam Project Developers, Mozilla Foundation, Jan Verbeek, Dan Burkert,
+Yevhenii Reizner, Martin Geisler, David Tolnay and the serde developers, and
+other contributors, as stated in each crate's repository above.
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+
+---- WHATWG Encoding Standard data in encoding_rs (BSD-3-Clause) ----
+
+encoding_rs includes data derived from the data files of the WHATWG Encoding
+Standard, under the BSD 3-Clause License below.
+
+Copyright © WHATWG (Apple, Google, Mozilla, Microsoft).
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 

@@ -4,8 +4,9 @@
 #   scripts/build-release.sh <version>     version is X.Y.Z, or 0.0.0-dev
 #
 # The archive holds a universal (arm64 + x86_64), ad-hoc signed binary, its
-# resource bundles, the launcher, VERSION, LICENSE and THIRD_PARTY_LICENSES
-# (at the top level, and again under share/scwrote/ so installs carry them).
+# resource bundles, a pinned universal ripgrep (share/scwrote/rg), the
+# launcher, VERSION, LICENSE and THIRD_PARTY_LICENSES (at the top level, and
+# again under share/scwrote/ so installs carry them).
 set -eu
 
 usage() {
@@ -29,6 +30,9 @@ root="$(pwd)"
 # The preview's renderer page, which the app bundles as a resource.
 (cd web && bun install --frozen-lockfile && bun test && bun run build)
 
+# The tests run the pinned ripgrep from .build/ripgrep, and the archive ships it.
+sh scripts/fetch-ripgrep.sh
+
 swift test
 
 # One build per architecture with SwiftPM's native build system, joined with
@@ -48,16 +52,22 @@ mkdir -p "$universal"
 binary="$universal/Scwrote"
 lipo -create "$products/Scwrote" "$intel/Scwrote" -output "$binary"
 
+# Both halves must be there: a binary built for one architecture only would
+# fail on the other kind of Mac.
+require_universal() {
+  archs="$(lipo -archs "$1")"
+  for a in arm64 x86_64; do
+    case " $archs " in
+      *" $a "*) ;;
+      *) echo "error: $1 is missing the $a slice (has: $archs)" >&2; exit 1 ;;
+    esac
+  done
+}
+
 # Ad-hoc sign the binary only, then make sure it is universal and valid.
 codesign --force --sign - "$binary"
 codesign --verify --strict "$binary"
-archs="$(lipo -archs "$binary")"
-for a in arm64 x86_64; do
-  case " $archs " in
-    *" $a "*) ;;
-    *) echo "error: $binary is missing the $a slice (has: $archs)" >&2; exit 1 ;;
-  esac
-done
+require_universal "$binary"
 
 dist="$root/dist"
 stage="$dist/stage/scwrote"
@@ -66,6 +76,8 @@ mkdir -p "$stage/bin" "$stage/share/scwrote"
 cp bin/scwrote "$stage/bin/scwrote"
 chmod +x "$stage/bin/scwrote"
 cp "$binary" "$stage/share/scwrote/"
+cp .build/ripgrep/rg "$stage/share/scwrote/rg"
+require_universal "$stage/share/scwrote/rg"
 cp -R "$products"/*.bundle "$stage/share/scwrote/"
 printf '%s\n' "$version" > "$stage/share/scwrote/VERSION"
 cp LICENSE THIRD_PARTY_LICENSES "$stage/"

@@ -66,6 +66,14 @@ jobs:
           fi
           echo "INSTALL_PREFIX=$prefix" >> "$GITHUB_ENV"
 
+      - name: Check the installed ripgrep
+        run: |
+          first=$("$INSTALL_PREFIX/share/scwrote/rg" --version | head -n 1)
+          case $first in
+            "ripgrep 15.2.0" | "ripgrep 15.2.0 "*) ;;
+            *) echo "installed rg reports '$first', expected ripgrep 15.2.0" >&2; exit 1 ;;
+          esac
+
       - name: Smoke test the installed app
         run: scripts/smoke-test.sh "$INSTALL_PREFIX/share/scwrote/Scwrote"
 
