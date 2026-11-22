@@ -5,6 +5,7 @@ import Testing
 private let key1: UInt16 = 18
 private let leftBracket: UInt16 = 33
 private let rightBracket: UInt16 = 30
+private let keyF: UInt16 = 3
 
 struct WindowShortcutTests {
     @Test func cmd1TogglesTheBrowserAndCmdShift1PinsIt() {
@@ -34,6 +35,11 @@ struct WindowShortcutTests {
         #expect(WindowShortcut(keyCode: leftBracket, modifiers: [.control]) == nil)
         #expect(WindowShortcut(keyCode: leftBracket, modifiers: [.option]) == nil)
         #expect(WindowShortcut(keyCode: leftBracket, modifiers: [.command, .option]) == nil)
+    }
+
+    @Test func cmdShiftFSearchesTheFolder() {
+        #expect(WindowShortcut(keyCode: keyF, modifiers: [.command, .shift]) == .search)
+        #expect(WindowShortcut(keyCode: keyF, modifiers: [.command]) == nil)
     }
 
     @Test func otherCmdKeysAreNotTaken() {

@@ -28,6 +28,9 @@ enum MainMenu {
         viewMenu.addItem(.separator())
         viewMenu.addItem(withTitle: "Move to Left Pane", action: #selector(EditorWindowController.moveToLeftPane(_:)), keyEquivalent: "[")
         viewMenu.addItem(withTitle: "Move to Right Pane", action: #selector(EditorWindowController.moveToRightPane(_:)), keyEquivalent: "]")
+        viewMenu.addItem(.separator())
+        let find = viewMenu.addItem(withTitle: "Find in Folder", action: #selector(EditorWindowController.toggleSearch(_:)), keyEquivalent: "f")
+        find.keyEquivalentModifierMask = [.command, .shift]
 
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")

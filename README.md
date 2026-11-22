@@ -218,6 +218,39 @@ In the preview:
 While the preview has focus it stops following nvim's cursor; it picks up
 again when you return to the editor.
 
+## Search
+
+Cmd+Shift+F (View > Find in Folder) searches every file in the browser's
+folder for what you type, as plain text, ignoring case. An overlay opens over
+the panes: the matches as you type, and below them the lines around the
+selected one. Enter opens it in nvim at the match, with the query as the `/`
+pattern, so `n` and `N` go to the next and previous one.
+
+It searches what ripgrep would, so it skips files your `.gitignore` names
+(even outside a git repository, and `.ignore` and `.rgignore` too), hidden
+files and folders, and binary files. Unsaved edits in nvim are searched
+instead of the file on disk, under the same rules: a file the search would
+skip on disk is skipped unsaved too. It stops at 1,000 matching lines, and the
+count says "1000+ matches"; type more to narrow it.
+
+| Key | Typing | List |
+|---|---|---|
+| characters | edit the query | — |
+| Ctrl-J / ↓ | next match | next match |
+| Ctrl-K / ↑ | previous match | previous match |
+| `j` / `k` | (typed) | next / previous |
+| Ctrl-D / Ctrl-U | Ctrl-U deletes back to the start | half a page down / up |
+| `gg` / `G` | (typed) | first / last |
+| `i` or `/` | (typed) | back to typing |
+| Enter | open selected | open selected |
+| Esc | switch to list | close |
+| Cmd+Shift+F | close | close |
+
+A click selects a match, a double-click opens it, and a click outside the
+overlay closes it. Reopening brings back the last query, selected, so typing
+replaces it. Search needs ripgrep: release installs bundle it; from source,
+run `scripts/fetch-ripgrep.sh` or `brew install ripgrep`.
+
 ## Debugging
 
 `SCWROTE_DEBUG=1 scwrote README.md` logs libghostty's lifecycle and actions to
@@ -231,8 +264,9 @@ SCWROTE_DEBUG_KEYS='G<CR>' SCWROTE_DEBUG_SNAPSHOT=/tmp/shot.png scwrote ./
 
 Keys go to the browser; `<CR>` `<Esc>` `<Up>` `<Down>` `<Left>` `<Right>`
 `<C-d>` `<C-u>` are named keys. The window's own keys, `<D-1>` (Cmd+1),
-`<D-S-1>`, `<D-2>`, `<D-[>` and `<D-]>`, are posted as real key events, so they take
-the same path through the app as a keyboard's. Text in braces goes to nvim
+`<D-S-1>`, `<D-2>`, `<D-[>`, `<D-]>` and `<D-S-f>`, are posted as real key events, so they take
+the same path through the app as a keyboard's. While the search overlay is
+open, plain characters, `<CR>`, `<Esc>`, `<Up>` and `<Down>` go to it. Text in braces goes to nvim
 (`nvim_input`, in nvim's key notation), so `{ohello<Esc>}` opens a line, types
 "hello" and leaves insert mode. `SCWROTE_DEBUG_WIDTH=600` sets the window's
 content width in points first, to see which panes give way:

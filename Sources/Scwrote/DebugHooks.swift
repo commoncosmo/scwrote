@@ -5,13 +5,15 @@ import ScwroteCore
 ///
 ///   SCWROTE_DEBUG_KEYS="jj<CR><D-1>"   keys to press after launch, 0.4 s apart:
 ///       plain characters go to the browser; <CR>, <Esc>, <Up>, <Down>,
-///       <Left>, <Right>, <C-d>, <C-u> are browser keys. The window's own
-///       keys, <D-1> (Cmd+1), <D-S-1>, <D-2>, <D-[> and <D-]>, are posted as
-///       real key events, so they take the path a keyboard's would; so is
-///       <S-R> (Shift+R), for the preview's `R` when it has the keyboard, and
-///       the browser prompt's editing keys <BS>, <Del> (forward delete), <Home>,
-///       <End>, <C-a>, <C-e>, <C-w>, <C-h> and <D-v> (paste); <K-a>, <K-j>
-///       and <K-d> post plain `a` and `d`. <R> repeats the last posted key as
+///       <Left>, <Right>, <C-d>, <C-u> are browser keys. While the search
+///       overlay is open, plain characters, <CR>, <Esc>, <Up> and <Down> go to
+///       it instead. The window's own keys, <D-1> (Cmd+1), <D-S-1>, <D-2>,
+///       <D-[>, <D-]> and <D-S-f> (search), are posted as real key events,
+///       so they take the path a keyboard's would; so is <S-R> (Shift+R),
+///       for the preview's `R` when it has the keyboard, and the browser
+///       prompt's editing keys <BS>, <Del> (forward delete), <Home>, <End>,
+///       <C-a>, <C-e>, <C-w>, <C-h> and <D-v> (paste); <K-a>, <K-j> and <K-d>
+///       post plain `a` and `d`. <R> repeats the last posted key as
 ///       if held down: a posted key is released only when the next key that
 ///       isn't <R> comes. Text in
 ///       braces goes to nvim with nvim_input, in nvim's key notation:
@@ -42,7 +44,12 @@ extension EditorWindowController {
                     held = nil
                 }
                 switch key {
-                case let .browser(browserKey): browserView.press(browserKey)
+                case let .browser(browserKey):
+                    if isSearchOpen, let searchView {
+                        searchView.press(Self.searchKey(for: browserKey))
+                    } else {
+                        browserView.press(browserKey)
+                    }
                 case let .keyboard(keyCode, characters, modifiers):
                     post(.keyDown, keyCode, characters, modifiers)
                     held = (keyCode, characters, modifiers)
@@ -93,6 +100,21 @@ extension EditorWindowController {
         }
     }
 
+    /// A browser key as the search overlay would get it from the keyboard.
+    private static func searchKey(for key: BrowserKey) -> SearchKey {
+        switch key {
+        case let .character(character): .character(character)
+        case .enter: .enter
+        case .escape: .escape
+        case .up: .previous
+        case .down: .next
+        case .left: .edit(.left)
+        case .right: .edit(.right)
+        case .halfPageDown: .halfPageDown
+        case .halfPageUp: .halfPageUp
+        }
+    }
+
     private static func parseKeys(_ script: String) -> [DebugKey] {
         let named: [String: DebugKey] = [
             "<CR>": .browser(.enter), "<Esc>": .browser(.escape),
@@ -102,6 +124,7 @@ extension EditorWindowController {
             "<D-1>": .keyboard(18, "1", [.command]), "<D-S-1>": .keyboard(18, "!", [.command, .shift]),
             "<D-2>": .keyboard(19, "2", [.command]),
             "<D-[>": .keyboard(33, "[", [.command]), "<D-]>": .keyboard(30, "]", [.command]),
+            "<D-S-f>": .keyboard(3, "F", [.command, .shift]),
             "<S-R>": .keyboard(15, "R", [.shift]),
             "<BS>": .keyboard(51, "\u{7f}", []),
             "<C-a>": .keyboard(0, "a", [.control]), "<C-e>": .keyboard(14, "e", [.control]),
@@ -130,7 +153,7 @@ extension EditorWindowController {
 
     /// The terminal draws with Metal, so it is captured through its own
     /// snapshot API, the preview through its own (for its web views) and the
-    /// browser through ordinary view caching.
+    /// browser and search overlay through ordinary view caching.
     private func saveSnapshot(to path: String) async {
         let preview = previewView.isHidden ? nil : await previewView.snapshot()
         let size = layoutView.bounds.size
@@ -150,6 +173,13 @@ extension EditorWindowController {
         }
         layoutView.dividerColor.setFill()
         for divider in layoutView.dividerRects { divider.fill() }
+        if let overlay = layoutView.overlay, let rep = overlay.bitmapImageRepForCachingDisplay(in: overlay.bounds) {
+            overlay.cacheDisplay(in: overlay.bounds, to: rep)
+            // Clear outside its panel: drawn over the panes, not instead.
+            rep.draw(
+                in: layoutView.convert(overlay.bounds, from: overlay), from: .zero, operation: .sourceOver,
+                fraction: 1, respectFlipped: true, hints: nil)
+        }
         image.unlockFocus()
 
         guard let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),

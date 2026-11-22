@@ -11,6 +11,8 @@ public enum WindowShortcut: Equatable, Sendable {
     case moveLeft
     /// Cmd+]: move one pane to the right.
     case moveRight
+    /// Cmd+Shift+F: open or close the search overlay.
+    case search
 
     public struct Modifiers: OptionSet, Sendable {
         public let rawValue: Int
@@ -31,6 +33,7 @@ public enum WindowShortcut: Equatable, Sendable {
         case (19, [.command]): self = .togglePreview
         case (33, [.command]): self = .moveLeft
         case (30, [.command]): self = .moveRight
+        case (3, [.command, .shift]): self = .search
         default: return nil
         }
     }

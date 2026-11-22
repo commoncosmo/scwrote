@@ -25,6 +25,19 @@ final class EditorLayoutView: NSView {
     var onGaveWay: ((Set<PaneLayout.Pane>) -> Void)?
 
     var dividerColor: NSColor { didSet { needsDisplay = true } }
+    /// A view over all the panes (the search overlay), or nil. The panes stay
+    /// as they are beneath it, and its clicks never grab a divider.
+    var overlay: NSView? {
+        didSet {
+            guard overlay !== oldValue else { return }
+            oldValue?.removeFromSuperview()
+            if let overlay {
+                overlay.frame = bounds
+                addSubview(overlay)
+            }
+            window?.invalidateCursorRects(for: self)
+        }
+    }
     private var browserWidth = CGFloat(PaneFrames.defaultBrowserWidth)
     private var previewWidth = CGFloat(PaneFrames.defaultPreviewWidth)
     private var frames: PaneFrames?
@@ -72,6 +85,7 @@ final class EditorLayoutView: NSView {
         if let browser = frames.browser { browserView.frame = rect(browser) }
         previewView.isHidden = frames.preview == nil
         if let preview = frames.preview { previewView.frame = rect(preview) }
+        overlay?.frame = bounds
         if frames != previous {
             needsDisplay = true
             window?.invalidateCursorRects(for: self)
@@ -118,11 +132,12 @@ final class EditorLayoutView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        if divider(at: convert(point, from: superview)) != nil { return self }
+        if overlay == nil, divider(at: convert(point, from: superview)) != nil { return self }
         return super.hitTest(point)
     }
 
     override func resetCursorRects() {
+        guard overlay == nil else { return }
         for divider in dividers { addCursorRect(grabZone(divider.rect), cursor: .resizeLeftRight) }
     }
 
