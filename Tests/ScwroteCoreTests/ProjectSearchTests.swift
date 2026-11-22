@@ -7,14 +7,20 @@ final class ProjectSearchTests {
     /// Under `NSTemporaryDirectory()`, so in its `/var/...` form, which
     /// resolves to `/private/var/...`.
     let folder: String
+    /// Beside `folder`, not in it, so nothing here is in the file list.
+    let tools: String
 
     init() throws {
-        folder = NSTemporaryDirectory() + "scwrote search \(UUID().uuidString)"
+        let id = UUID().uuidString
+        folder = NSTemporaryDirectory() + "scwrote search \(id)"
+        tools = NSTemporaryDirectory() + "scwrote search tools \(id)"
         try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(atPath: tools, withIntermediateDirectories: true)
     }
 
     deinit {
         try? FileManager.default.removeItem(atPath: folder)
+        try? FileManager.default.removeItem(atPath: tools)
     }
 
     var resolved: String { FileBrowser.realPath(folder) }
@@ -25,6 +31,60 @@ final class ProjectSearchTests {
 
     func makeSearch() -> ProjectSearch {
         ProjectSearch(ripgrep: rgPath!, root: folder)
+    }
+
+    /// Where `writeListRipgrep` notes each `rg --files`: "start" and "end".
+    var listLog: String { tools + "/list.log" }
+    /// Until this file exists, `writeListRipgrep`'s file lists don't finish.
+    var listGate: String { tools + "/gate" }
+
+    func openListGate() {
+        FileManager.default.createFile(atPath: listGate, contents: nil)
+    }
+
+    /// The lines of `listLog` so far.
+    var listLogLines: [String] {
+        ((try? String(contentsOfFile: listLog, encoding: .utf8)) ?? "")
+            .split(separator: "\n").map(String.init)
+    }
+
+    /// Writes, at `path`, a ripgrep whose file list waits for `listGate`
+    /// and then `delay` seconds more, so a test can act while the list is
+    /// being built.
+    func writeListRipgrep(at path: String, delay: Double = 0) throws {
+        let script = """
+            #!/bin/sh
+            if [ "$1" = "--files" ]; then
+              echo start >> '\(listLog)'
+              while [ ! -e '\(listGate)' ]; do sleep 0.02; done
+              sleep \(delay)
+              '\(rgPath!)' "$@"
+              status=$?
+              echo end >> '\(listLog)'
+              exit $status
+            fi
+            exec '\(rgPath!)' "$@"
+
+            """
+        try Data(script.utf8).write(to: URL(fileURLWithPath: path))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
+    }
+
+    func makeListSearch(delay: Double = 0) throws -> ProjectSearch {
+        let path = tools + "/rg"
+        try writeListRipgrep(at: path, delay: delay)
+        return ProjectSearch(ripgrep: path, root: folder)
+    }
+
+    /// Waits until `listLog` has `count` lines saying `word`; false after `timeout`.
+    @MainActor
+    func listLogShows(_ count: Int, _ word: String, within timeout: Duration = .seconds(5)) async -> Bool {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if listLogLines.filter({ $0 == word }).count >= count { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return false
     }
 
     /// What one search delivered, and whether it finished. Main-actor only.
@@ -170,5 +230,79 @@ final class ProjectSearchTests {
         search.invalidateFileList()
         let found = try #require(await results(search, "needle", buffers: [buffer]))
         #expect(found.map(\.key) == [SearchMatch.Key(path: resolved + "/b.txt", line: 1)])
+    }
+
+    @Test @MainActor func invalidateWhileASearchWaitsForTheListStillSearchesItsBuffers() async throws {
+        try write("a.txt", "hay\n")
+        let search = try makeListSearch()
+        let buffer = UnsavedBuffer(path: resolved + "/a.txt", text: "needle")
+        let delivery = start(search, "needle", buffers: [buffer])
+        #expect(await listLogShows(1, "start"))
+        search.invalidateFileList()
+        openListGate()
+        #expect(await delivery.finished())
+        #expect(delivery.matches.map(\.key) == [SearchMatch.Key(path: resolved + "/a.txt", line: 1)])
+        withExtendedLifetime(search) {}
+    }
+
+    @Test @MainActor func repeatedInvalidatesDuringABuildDontStarveIt() async throws {
+        try write("a.txt", "hay\n")
+        openListGate()
+        let search = try makeListSearch(delay: 0.3)
+        let buffer = UnsavedBuffer(path: resolved + "/a.txt", text: "needle")
+        let delivery = start(search, "needle", buffers: [buffer])
+        // Changes every 50 ms, far more often than a build takes, as a build
+        // writing into .build would.
+        let churn = Task { @MainActor in
+            while !Task.isCancelled {
+                search.invalidateFileList()
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+        }
+        let finished = await delivery.finished(within: .seconds(3))
+        churn.cancel()
+        #expect(finished, "\(listLogLines)")
+        #expect(delivery.matches.map(\.key) == [SearchMatch.Key(path: resolved + "/a.txt", line: 1)])
+        withExtendedLifetime(search) {}
+    }
+
+    @Test @MainActor func invalidatesDuringABuildCoalesceIntoOneRebuild() async throws {
+        try write("a.txt", "hay\n")
+        let search = try makeListSearch()
+        search.prepare()
+        #expect(await listLogShows(1, "start"))
+        for _ in 0..<10 { search.invalidateFileList() }
+        openListGate()
+        #expect(await listLogShows(2, "end"))
+        await settle()
+        #expect(listLogLines == ["start", "end", "start", "end"])
+        withExtendedLifetime(search) {}
+    }
+
+    @Test @MainActor func prepareBuildsTheList() async throws {
+        try write("a.txt", "hay\n")
+        openListGate()
+        let search = try makeListSearch()
+        search.prepare()
+        #expect(await listLogShows(1, "end"))
+        let buffer = UnsavedBuffer(path: resolved + "/a.txt", text: "needle")
+        let found = try #require(await results(search, "needle", buffers: [buffer]))
+        #expect(found.map(\.key) == [SearchMatch.Key(path: resolved + "/a.txt", line: 1)])
+        // The search used the prepared list instead of building its own.
+        #expect(listLogLines == ["start", "end"])
+    }
+
+    @Test @MainActor func aListThatFailedToStartIsTriedAgain() async throws {
+        try write("a.txt", "hay\n")
+        let path = tools + "/rg"
+        // No ripgrep there yet: every run fails to start, and the search still finishes.
+        let search = ProjectSearch(ripgrep: path, root: folder)
+        let buffer = UnsavedBuffer(path: resolved + "/a.txt", text: "needle")
+        #expect(try #require(await results(search, "needle", buffers: [buffer])).isEmpty)
+
+        openListGate()
+        try writeListRipgrep(at: path)
+        let found = try #require(await results(search, "needle", buffers: [buffer]))
+        #expect(found.map(\.key) == [SearchMatch.Key(path: resolved + "/a.txt", line: 1)])
     }
 }

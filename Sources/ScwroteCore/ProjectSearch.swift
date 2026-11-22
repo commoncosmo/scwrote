@@ -41,11 +41,14 @@ public final class ProjectSearch: @unchecked Sendable {
     private var generation = 0
     private var current: Search?
 
-    /// Paths in nvim's form, or nil until built.
+    /// Paths in nvim's form, or nil until built (or after a change).
     private var fileList: Set<String>?
     private var listRun: RipgrepRun?
     /// Names the latest list build, so a dropped build's late result is ignored.
     private var listGeneration = 0
+    /// The folder changed while `listRun` was building: its list is fed to a
+    /// waiting search but not kept, and one new build starts when it ends.
+    private var listDirty = false
 
     public init(ripgrep: String, root: String) {
         self.ripgrep = ripgrep
@@ -64,17 +67,21 @@ public final class ProjectSearch: @unchecked Sendable {
         if fileList == nil && listRun == nil { buildFileList() }
     }
 
-    /// Drops the file list (FolderWatcher saw a change); the next prepare/search rebuilds it.
+    /// FolderWatcher saw a change. Drops the file list, so the next
+    /// prepare/search rebuilds it. A build already running is left to finish
+    /// rather than restarted: the watcher also fires for ignored output
+    /// (.build, node_modules), and restarting on every event would starve a
+    /// build slower than the gap between events, leaving a waiting search
+    /// unfinished. That build's moment-old list still feeds the waiting
+    /// search; changes during it coalesce into one rebuild after it.
     public func invalidateFileList() {
         lock.lock()
-        listGeneration += 1
-        let dropped = listRun
-        listRun = nil
-        fileList = nil
-        // A search still waiting for the list would otherwise never finish.
-        if let search = current, search.awaitingList, !search.isOver { buildFileList() }
-        lock.unlock()
-        dropped?.cancel()
+        defer { lock.unlock() }
+        if listRun != nil {
+            listDirty = true
+        } else {
+            fileList = nil
+        }
     }
 
     /// Cancels the running search, then searches `query` (non-empty).
@@ -129,6 +136,7 @@ public final class ProjectSearch: @unchecked Sendable {
 
     private func buildFileList() {
         listGeneration += 1
+        listDirty = false
         let build = listGeneration
         let root = root
         let paths = PathCollector()
@@ -139,8 +147,10 @@ public final class ProjectSearch: @unchecked Sendable {
                 onLine: { paths.items.insert(root + "/" + String(decoding: $0, as: UTF8.self)) },
                 onExit: { [weak self] in self?.fileListBuilt(paths.items, build: build) })
         } catch {
-            // No list means no buffer is searched, rather than a search that never finishes.
-            fileListArrived([])
+            // The list stays nil, so the next prepare/search tries again. A
+            // waiting search goes on without its buffers rather than never finishing.
+            listRun = nil
+            feedWaitingSearch([])
         }
     }
 
@@ -148,12 +158,17 @@ public final class ProjectSearch: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard build == listGeneration else { return }
-        fileListArrived(paths)
+        listRun = nil
+        feedWaitingSearch(paths)
+        if listDirty {
+            buildFileList()
+        } else {
+            fileList = paths
+        }
     }
 
-    private func fileListArrived(_ paths: Set<String>) {
-        listRun = nil
-        fileList = paths
+    /// Starts the buffer runs of a search that was waiting for the list.
+    private func feedWaitingSearch(_ paths: Set<String>) {
         guard let search = current, search.awaitingList, !search.isOver else { return }
         search.awaitingList = false
         startBufferRuns(search, fileList: paths)

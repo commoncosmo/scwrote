@@ -70,9 +70,9 @@ public final class RipgrepRun: @unchecked Sendable {
         var attributes: posix_spawnattr_t?
         posix_spawnattr_init(&attributes)
         defer { posix_spawnattr_destroy(&attributes) }
-        // ripgrep gets only 0, 1 and 2, not the app's ptys and sockets.
-        // and default signal handling, whatever this thread blocks or ignores
-        // (we ignore SIGPIPE below; cancel() relies on SIGTERM working).
+        // ripgrep gets only 0, 1 and 2, not the app's ptys and sockets, and
+        // default signal handling whatever this thread blocks or ignores (we
+        // ignore SIGPIPE above; cancel() relies on SIGTERM working).
         var noSignals = sigset_t()
         sigemptyset(&noSignals)
         var allSignals = sigset_t()
@@ -146,12 +146,14 @@ public final class RipgrepRun: @unchecked Sendable {
     /// Waits for the process, reaps it, and then calls `exit` unless cancelled.
     private func finish(then exit: (() -> Void)? = nil) {
         var info = siginfo_t()
-        // Wait without reaping, so cancel() can't signal a recycled pid.
-        waitid(P_PID, id_t(pid), &info, WEXITED | WNOWAIT)
+        // Wait without reaping, so cancel() can't signal a recycled pid. A
+        // signal can interrupt the wait; it must not end early, or the
+        // waitpid below would block while holding the lock cancel() needs.
+        while waitid(P_PID, id_t(pid), &info, WEXITED | WNOWAIT) == -1 && errno == EINTR {}
         lock.lock()
         defer { lock.unlock() }
         var status: Int32 = 0
-        waitpid(pid, &status, 0)
+        while waitpid(pid, &status, 0) == -1 && errno == EINTR {}
         reaped = true
         if !cancelled { exit?() }
     }
