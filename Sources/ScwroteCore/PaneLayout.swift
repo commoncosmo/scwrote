@@ -54,7 +54,7 @@ public struct PaneLayout: Equatable, Sendable {
         switch savedFocus {
         case .browser: isShown = savedMode != .editorOnly
         case .editor: isShown = savedMode != .browserOnly
-        case .preview: isShown = saved.isPreviewShown && savedMode != .browserOnly
+        case .preview: isShown = saved.isPreviewShown
         }
         if isShown {
             focus = savedFocus
