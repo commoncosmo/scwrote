@@ -39,6 +39,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     var fileActions: FileActions
     /// Set while a `d` waits to hear from nvim about unsaved changes.
     var pendingDelete: UUID?
+    /// Cmd+Shift+F (see EditorWindowController+Search): the overlay, kept
+    /// while closed so it reopens on its last query; the search for the
+    /// browser's folder; nvim's unsaved buffers, fetched as the overlay opens;
+    /// and a count naming the latest query, so an older one's results never land.
+    var searchView: SearchOverlayView?
+    var projectSearch: ProjectSearch?
+    var searchBuffers: SearchBufferFetch?
+    var searchGeneration = 0
 
     /// `controller` carries the nvim command in its config (see
     /// `GhosttyConfig.editorConfig` for why it isn't a surface option).
@@ -115,12 +123,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// Cmd+1 (View menu): show the browser and go to it, go to it, or hide it.
     @objc func toggleFileBrowser(_: Any?) {
         closePrompt()
+        closeSearch()
         change { $0.toggleBrowser() }
     }
 
     /// Cmd+Shift+1 (View menu).
     @objc func toggleFileBrowserPin(_: Any?) {
         closePrompt()
+        closeSearch()
         change { $0.togglePin() }
     }
 
@@ -128,6 +138,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// (also when the window has no room to show it).
     @objc func togglePreview(_: Any?) {
         closePrompt()
+        closeSearch()
         let squeezedOut = layoutView.gaveWay(for: panes).contains(.preview)
         change { $0.togglePreview(squeezedOut: squeezedOut) }
     }
@@ -135,12 +146,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// Cmd+[ (View menu): one pane to the left.
     @objc func moveToLeftPane(_: Any?) {
         closePrompt()
+        closeSearch()
         change { $0.moveLeft() }
     }
 
     /// Cmd+] (View menu): one pane to the right.
     @objc func moveToRightPane(_: Any?) {
         closePrompt()
+        closeSearch()
         change { $0.moveRight() }
     }
 
@@ -157,6 +170,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         case .togglePreview: togglePreview(nil)
         case .moveLeft: moveToLeftPane(nil)
         case .moveRight: moveToRightPane(nil)
+        case .search: toggleSearch(nil)
         }
     }
 
@@ -177,13 +191,18 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         if returnsToEditor { previewReturnedToEditor() }
     }
 
-    private func applyPanes() {
+    /// While the search overlay is open it keeps the keyboard: the panes
+    /// beneath can still change (one gives way, an open finishes late), and
+    /// the pane in focus gets the keyboard back when it closes.
+    func applyPanes() {
         layoutView.panes = panes
         browserView.isPinned = panes.isPinned
-        let focused: NSView = switch panes.focus {
-        case .browser: browserView
-        case .editor: terminalView
-        case .preview: previewView
+        let focused: NSView = if let overlay = layoutView.overlay { overlay } else {
+            switch panes.focus {
+            case .browser: browserView
+            case .editor: terminalView
+            case .preview: previewView
+            }
         }
         if window?.firstResponder !== focused { window?.makeFirstResponder(focused) }
     }
@@ -252,11 +271,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: - Files on disk
 
-    /// `-` moved the browser: actions follow the new root, and a prompt
-    /// opened for the old one closes.
+    /// `-` moved the browser: actions follow the new root, a prompt opened
+    /// for the old one closes, and the next search makes a `ProjectSearch`
+    /// for the new root (the overlay has the keyboard while open, so it's
+    /// closed now).
     private func browserRootChanged(_ root: String) {
         closePrompt()
         fileActions = FileActions(root: root, fileSystem: LocalFileSystem())
+        projectSearch = nil
         watch(root)
     }
 
@@ -265,6 +287,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         watcher = FolderWatcher(path: root) { [weak self] in
             guard let self else { return }
             browserView.reload()
+            projectSearch?.invalidateFileList()
+            if isSearchOpen { projectSearch?.prepare() }
             if case .viewOnly = previewState.target {
                 if panes.isPreviewShown { previewView.reloadFromDisk() } else { isPreviewOutOfDate = true }
             }
@@ -291,6 +315,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_: Notification) {
         isClosing = true
         watcher?.stop()
+        stopSearch()
         previewEvents.stop()
         onClose?()
     }
@@ -336,14 +361,16 @@ extension EditorWindowController: TerminalSurfaceTitleDelegate, TerminalSurfaceC
 }
 
 /// Catches the window's own keys (`WindowShortcut`: Cmd+1, Cmd+Shift+1,
-/// Cmd+2, Cmd+[, Cmd+]) before the terminal sees them: Ghostty binds Cmd+digit to
+/// Cmd+2, Cmd+[, Cmd+], Cmd+Shift+F) before the terminal sees them: Ghostty binds Cmd+digit to
 /// tabs and Cmd+[ / Cmd+] to splits, neither of which scwrote has.
 @MainActor
 final class EditorWindow: NSWindow {
     var onShortcut: ((WindowShortcut) -> Void)?
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if let shortcut = WindowShortcut(keyCode: event.keyCode, modifiers: Self.modifiers(of: event)) {
+        if let shortcut = WindowShortcut(
+            keyCode: event.keyCode, characters: event.charactersIgnoringModifiers,
+            modifiers: Self.modifiers(of: event)) {
             onShortcut?(shortcut)
             return true
         }
