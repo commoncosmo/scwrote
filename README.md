@@ -326,12 +326,28 @@ file in front. `scwrote --fresh ./` (or `--fresh` with files) skips bringing
 anything back for that launch; when that window closes, what it had is saved
 as usual and replaces the old session.
 
+nvim's flags that lay out its own windows, `-d`, `-o`, `-O`, `-p` (with or
+without a count, as in `-O3`), `-q` and `-t`, keep that layout: `scwrote -d
+a.md b.md` opens the diff as `nvim -d` would, and nvim's side of the session
+is neither brought back nor saved for that window (its window side still is).
+Other flags, such as `+42`, `-R` or `-c`, apply to the named files over the
+session as they would without one.
+
 nvim's side is saved when nvim exits, or when you close the window or quit
 while it runs; the window's side is saved when the window closes. Sessions
 live in `~/Library/Application Support/scwrote/sessions`, one folder per
 project (a folder reached through a symlink shares its session): `window.json`
 for the window and `session.vim`, written by nvim's `:mksession`, for nvim.
-Nothing is written into the project. Delete a session's folder to forget it.
+Nothing is written into the project. Each session's folder is named by a hash
+(SHA-256) of the project folder's real path, and its `window.json` names the
+project folder (`"folder"`), so this finds the session of a project called
+`notes`:
+
+```bash
+grep -l notes ~/Library/Application\ Support/scwrote/sessions/*/window.json
+```
+
+Delete a session's folder to forget it.
 
 - **Two windows on one folder:** the second gets the window's layout back but
   none of nvim's files (they're open in the first), and it never saves nvim's
@@ -339,7 +355,10 @@ Nothing is written into the project. Delete a session's folder to forget it.
 - **Your own session manager wins:** if nvim already has a session loaded as
   it starts (`scwrote -S Session.vim`, your config ran `:source` on one, or a
   plugin such as auto-session or persistence.nvim restored one), scwrote
-  leaves it alone and doesn't save nvim's side for that window.
+  leaves it alone and doesn't save nvim's side for that window. A plugin that
+  restores its session later, after nvim has started, puts it on top of
+  scwrote's; scwrote then leaves its saved `session.vim` as it was (as it
+  does once you `:source` a session or write one with `:mksession` yourself).
 - **Your nvim options always win:** the session holds no options, mappings or
   variables, and the few global options a session file sets anyway are put
   back to yours after it loads.
