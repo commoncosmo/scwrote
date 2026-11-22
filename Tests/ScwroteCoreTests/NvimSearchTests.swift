@@ -96,7 +96,99 @@ final class NvimSearchTests {
         #expect(try lua("return vim.api.nvim_win_get_cursor(0)[1]") == .int(2))
     }
 
+    // MARK: - Quickfix
+
+    @Test func entriesCarryFileLineColumnAndText() throws {
+        let a = try file("a.txt", "x\n  foo needle\n")
+        let b = try file("b.txt", "needle one\nneedle two\n")
+        try client.sendToQuickfix([
+            match(a, 2, 6, "  foo needle"), match(b, 1, 0, "needle one"), match(b, 2, 0, "needle two"),
+        ], query: "needle")
+
+        let items = try lua("""
+            local out = {}
+            for _, item in ipairs(vim.fn.getqflist()) do
+              table.insert(out, { vim.api.nvim_buf_get_name(item.bufnr), item.lnum, item.col, item.text })
+            end
+            return out
+            """)
+        #expect(items == .array([
+            .array([.string(a), .int(2), .int(7), .string("  foo needle")]),
+            .array([.string(b), .int(1), .int(1), .string("needle one")]),
+            .array([.string(b), .int(2), .int(1), .string("needle two")]),
+        ]))
+    }
+
+    @Test func theListIsNewAndTitled() throws {
+        let a = try file("a.txt", "needle\n")
+        _ = try lua("vim.fn.setqflist({}, ' ', { title = 'mine' })")
+        try client.sendToQuickfix([match(a, 1, 0, "needle")], query: "needle")
+
+        #expect(try lua("return vim.fn.getqflist({ nr = '$' }).nr") == .int(2))
+        #expect(try lua("return vim.fn.getqflist({ title = 0 }).title") == .string("scwrote search \"needle\""))
+        #expect(try lua("return vim.fn.getqflist({ nr = 1, title = 0 }).title") == .string("mine"))
+    }
+
+    @Test func cursorLandsOnTheFirstMatchOutsideTheQuickfixWindow() throws {
+        let a = try file("a.txt", (1...100).map { $0 == 40 ? "the needle" : "line \($0)" }.joined(separator: "\n") + "\n")
+        try client.sendToQuickfix([match(a, 40, 4, "the needle")], query: "needle")
+
+        #expect(try lua("""
+            for _, win in ipairs(vim.api.nvim_list_wins()) do
+              if vim.bo[vim.api.nvim_win_get_buf(win)].buftype == 'quickfix' then return true end
+            end
+            return false
+            """) == .bool(true))
+        #expect(try lua("return vim.bo.buftype") == .string(""))
+        #expect(try client.currentFile() == a)
+        #expect(try lua("return vim.api.nvim_win_get_cursor(0)") == .array([.int(40), .int(4)]))
+        #expect(try lua("return vim.fn.winline() == math.floor((vim.fn.winheight(0) + 1) / 2)") == .bool(true))
+    }
+
+    @Test func searchStateIsSetLikeOpening() throws {
+        let a = try file("a.txt", "needle\n")
+        _ = try lua("vim.v.searchforward = 0")
+        try client.sendToQuickfix([match(a, 1, 0, "needle")], query: "needle")
+
+        #expect(try lua("return vim.fn.getreg('/')") == .string("\\V\\cneedle"))
+        #expect(try lua("return vim.v.searchforward") == .int(1))
+    }
+
+    @Test func specialCharactersInTheQueryStayLiteral() throws {
+        let query = "a\"b|c%d\\e/f"
+        let a = try file("a.txt", query + "\n")
+        try client.sendToQuickfix([match(a, 1, 0, query)], query: query)
+
+        #expect(try lua("return vim.fn.getqflist({ title = 0 }).title") == .string("scwrote search \"\(query)\""))
+        #expect(try lua("return vim.fn.getreg('/')") == .string("\\V\\ca\"b|c%d\\\\e\\/f"))
+    }
+
+    @Test func aLargeListArrivesWhole() throws {
+        let a = try file("a.txt", String(repeating: "needle\n", count: 5000))
+        try client.sendToQuickfix((1...5000).map { match(a, $0, 0, "needle") }, query: "needle")
+
+        #expect(try lua("return #vim.fn.getqflist()") == .int(5000))
+    }
+
+    @Test func entriesForOddFileNamesOpenThem() throws {
+        let odd = try file("dir with space/a #b [c] %d.txt", "needle\n")
+        try client.sendToQuickfix([match(odd, 1, 0, "needle")], query: "needle")
+
+        #expect(try client.currentFile() == odd)
+    }
+
+    @Test func noMatchesChangesNothing() throws {
+        try client.sendToQuickfix([], query: "needle")
+
+        #expect(try lua("return vim.fn.getqflist({ nr = '$' }).nr") == .int(0))
+        #expect(try lua("return #vim.api.nvim_list_wins()") == .int(1))
+    }
+
     // MARK: - Helpers
+
+    private func match(_ path: String, _ line: Int, _ column: Int, _ text: String) -> SearchMatch {
+        SearchMatch(path: path, line: line, column: column, text: text, ranges: [], lineText: text)
+    }
 
     private func path(_ relative: String) -> String {
         folder + "/" + relative
