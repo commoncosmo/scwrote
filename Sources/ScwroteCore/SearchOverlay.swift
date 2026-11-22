@@ -15,23 +15,28 @@ public enum SearchKey: Equatable, Sendable {
 }
 
 /// What the overlay asks of whoever owns it.
-public enum SearchAction: Equatable, Sendable {
+public enum SearchAction<Item: Equatable & Sendable>: Equatable, Sendable {
     case queryChanged(String)
-    case open(SearchMatch)
+    case open(Item)
     case close
+    /// Quick open: show or hide hidden files.
+    case toggleHidden
 }
 
-/// The project search overlay's state: the query, which of its two modes is
+/// Which of the overlay's two modes is active.
+public enum SearchOverlayMode: Equatable, Sendable { case typing, list }
+
+/// The overlay's state over any result list: the query, which of its two modes is
 /// active (typing in the query, or vim keys over the result list), and the
 /// results. Pure; the view draws it and runs the actions.
-public struct SearchOverlay: Equatable, Sendable {
-    public enum Mode: Equatable, Sendable { case typing, list }
+public struct SearchOverlay<List: OverlayList>: Equatable, Sendable {
+    public typealias Mode = SearchOverlayMode
 
     public private(set) var query = PromptLine()
     public private(set) var mode = Mode.typing
     /// After `reopen()`: the next typed character replaces the query.
     public private(set) var isQuerySelected = false
-    public var results = SearchResults()
+    public var results = List()
 
     /// A `g` waiting for its second, in list mode.
     private var pendingG = false
@@ -46,7 +51,7 @@ public struct SearchOverlay: Equatable, Sendable {
         pendingG = false
     }
 
-    public mutating func handle(_ key: SearchKey, pageHeight: Int) -> SearchAction? {
+    public mutating func handle(_ key: SearchKey, pageHeight: Int) -> SearchAction<List.Item>? {
         switch key {
         case .edit(.enter): return handle(.enter, pageHeight: pageHeight)
         case .edit(.escape): return handle(.escape, pageHeight: pageHeight)
@@ -63,7 +68,7 @@ public struct SearchOverlay: Equatable, Sendable {
             results.move(by: -1)
             return nil
         case .enter:
-            return results.selected.map(SearchAction.open)
+            return results.selected.map(SearchAction<List.Item>.open)
         case .escape:
             return escape()
         case .edit(let edit):
@@ -95,7 +100,7 @@ public struct SearchOverlay: Equatable, Sendable {
 
     /// Pasted text, its line breaks as spaces, at the cursor (or over a
     /// selected query).
-    public mutating func paste(_ text: String) -> SearchAction? {
+    public mutating func paste(_ text: String) -> SearchAction<List.Item>? {
         pendingG = false
         let flat = text
             .replacingOccurrences(of: "\r\n", with: " ")
@@ -103,7 +108,13 @@ public struct SearchOverlay: Equatable, Sendable {
         return change { line in line.insert(String(flat)) }
     }
 
-    private mutating func escape() -> SearchAction? {
+    /// The hidden-files key (quick open only; the view decides).
+    public mutating func toggleHidden() -> SearchAction<List.Item> {
+        pendingG = false
+        return .toggleHidden
+    }
+
+    private mutating func escape() -> SearchAction<List.Item>? {
         switch mode {
         case .typing:
             mode = .list
@@ -114,7 +125,7 @@ public struct SearchOverlay: Equatable, Sendable {
         }
     }
 
-    private mutating func editQuery(_ key: PromptKey) -> SearchAction? {
+    private mutating func editQuery(_ key: PromptKey) -> SearchAction<List.Item>? {
         if isQuerySelected {
             switch key {
             case .left, .start:
@@ -133,7 +144,7 @@ public struct SearchOverlay: Equatable, Sendable {
 
     /// Applies `edit` to the query (to an empty one if it was selected) and
     /// reports the new text if it differs.
-    private mutating func change(_ edit: (inout PromptLine) -> Void) -> SearchAction? {
+    private mutating func change(_ edit: (inout PromptLine) -> Void) -> SearchAction<List.Item>? {
         let before = query.text
         var line = query
         if isQuerySelected { line = PromptLine() }
@@ -143,3 +154,6 @@ public struct SearchOverlay: Equatable, Sendable {
         return query.text == before ? nil : .queryChanged(query.text)
     }
 }
+
+public typealias TextSearchOverlay = SearchOverlay<SearchResults>
+public typealias QuickOpenOverlay = SearchOverlay<QuickOpenResults>

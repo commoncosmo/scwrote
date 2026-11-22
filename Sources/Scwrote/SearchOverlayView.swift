@@ -7,7 +7,7 @@ import ScwroteCore
 /// clear outside its panel, so a click anywhere outside the panel closes it.
 @MainActor
 final class SearchOverlayView: NSView {
-    private(set) var overlay = SearchOverlay()
+    private(set) var overlay = TextSearchOverlay()
     let theme: Theme
     /// The searched folder, resolved like the matches' paths, which show
     /// relative to it.
@@ -32,7 +32,7 @@ final class SearchOverlayView: NSView {
     }
 
     /// The query changed, a match was chosen, or the overlay asked to close.
-    var onAction: ((SearchAction) -> Void)?
+    var onAction: ((SearchAction<SearchMatch>) -> Void)?
 
     /// Files' lines for the preview, read once per opening (see `reopen()`);
     /// nil for a file too large to preview.
@@ -84,7 +84,7 @@ final class SearchOverlayView: NSView {
         send(overlay.handle(key, pageHeight: frames.rows))
     }
 
-    private func send(_ action: SearchAction?) {
+    private func send(_ action: SearchAction<SearchMatch>?) {
         scrollToSelection()
         if let action { onAction?(action) }
     }

@@ -6,16 +6,16 @@ struct SearchOverlayTests {
         SearchMatch(path: path, line: line, column: 0, text: "x", ranges: [0..<1])
     }
 
-    private func overlay(rows: Int = 0) -> SearchOverlay {
-        var overlay = SearchOverlay()
+    private func overlay(rows: Int = 0) -> TextSearchOverlay {
+        var overlay = TextSearchOverlay()
         overlay.results.add((1...max(rows, 1)).prefix(rows).map { match("a", $0) })
         return overlay
     }
 
-    private func selectedLine(_ overlay: SearchOverlay) -> Int? { overlay.results.selected?.line }
+    private func selectedLine(_ overlay: TextSearchOverlay) -> Int? { overlay.results.selected?.line }
 
     @Test func typingChangesTheQuery() {
-        var overlay = SearchOverlay()
+        var overlay = TextSearchOverlay()
         #expect(overlay.handle(.character("n"), pageHeight: 10) == .queryChanged("n"))
         #expect(overlay.handle(.character("e"), pageHeight: 10) == .queryChanged("ne"))
         #expect(overlay.query.text == "ne")
@@ -45,7 +45,7 @@ struct SearchOverlayTests {
     }
 
     @Test func escapeGoesToTheListThenCloses() {
-        var overlay = SearchOverlay()
+        var overlay = TextSearchOverlay()
         #expect(overlay.mode == .typing)
         #expect(overlay.handle(.escape, pageHeight: 10) == nil)
         #expect(overlay.mode == .list)
@@ -99,7 +99,7 @@ struct SearchOverlayTests {
 
     @Test func iAndSlashReturnToTyping() {
         for key: Character in ["i", "/"] {
-            var overlay = SearchOverlay()
+            var overlay = TextSearchOverlay()
             _ = overlay.handle(.escape, pageHeight: 10)
             #expect(overlay.handle(.character(key), pageHeight: 10) == nil)
             #expect(overlay.mode == .typing)
@@ -108,7 +108,7 @@ struct SearchOverlayTests {
     }
 
     @Test func ctrlUInTypingClearsTheQuery() {
-        var overlay = SearchOverlay()
+        var overlay = TextSearchOverlay()
         _ = overlay.handle(.character("a"), pageHeight: 10)
         _ = overlay.handle(.character("b"), pageHeight: 10)
         #expect(overlay.handle(.halfPageUp, pageHeight: 10) == .queryChanged(""))
@@ -119,7 +119,7 @@ struct SearchOverlayTests {
     }
 
     @Test func enterOpensTheSelected() {
-        var empty = SearchOverlay()
+        var empty = TextSearchOverlay()
         #expect(empty.handle(.enter, pageHeight: 10) == nil)
         var overlay = overlay(rows: 3)
         _ = overlay.handle(.next, pageHeight: 10)
@@ -129,7 +129,7 @@ struct SearchOverlayTests {
     }
 
     @Test func reopenSelectsTheQuery() {
-        var overlay = SearchOverlay()
+        var overlay = TextSearchOverlay()
         _ = overlay.handle(.character("a"), pageHeight: 10)
         _ = overlay.handle(.character("b"), pageHeight: 10)
         _ = overlay.handle(.character("c"), pageHeight: 10)
@@ -159,26 +159,26 @@ struct SearchOverlayTests {
 
     @Test func reopenedQueryClearsWithDeleteKeys() {
         for key in [PromptKey.backspace, .deleteWord, .deleteToStart] {
-            var overlay = SearchOverlay()
+            var overlay = TextSearchOverlay()
             _ = overlay.handle(.character("a"), pageHeight: 10)
             overlay.reopen()
             #expect(overlay.handle(.edit(key), pageHeight: 10) == .queryChanged(""))
         }
-        var overlay = SearchOverlay()
+        var overlay = TextSearchOverlay()
         _ = overlay.handle(.character("a"), pageHeight: 10)
         overlay.reopen()
         #expect(overlay.handle(.halfPageUp, pageHeight: 10) == .queryChanged(""))
     }
 
     @Test func pasteInserts() {
-        var overlay = SearchOverlay()
+        var overlay = TextSearchOverlay()
         #expect(overlay.paste("a\nb") == .queryChanged("a b"))
         #expect(overlay.paste("c\r\nd\re") == .queryChanged("a bc d e"))
         #expect(overlay.paste("") == nil)
     }
 
     @Test func pasteReplacesASelectedQuery() {
-        var overlay = SearchOverlay()
+        var overlay = TextSearchOverlay()
         _ = overlay.handle(.character("a"), pageHeight: 10)
         overlay.reopen()
         #expect(overlay.paste("zz") == .queryChanged("zz"))

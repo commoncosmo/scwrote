@@ -74,11 +74,12 @@ extension EditorWindowController {
         return view
     }
 
-    private func handle(_ action: SearchAction) {
+    private func handle(_ action: SearchAction<SearchMatch>) {
         switch action {
         case let .queryChanged(query): search(query)
         case let .open(match): open(match)
         case .close: closeSearch()
+        case .toggleHidden: break // quick open only
         }
     }
 

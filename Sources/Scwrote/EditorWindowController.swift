@@ -171,6 +171,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         case .moveLeft: moveToLeftPane(nil)
         case .moveRight: moveToRightPane(nil)
         case .search: toggleSearch(nil)
+        case .quickOpen: break // wired when quick open's UI lands
         }
     }
 

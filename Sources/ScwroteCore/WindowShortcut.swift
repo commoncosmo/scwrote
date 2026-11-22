@@ -13,6 +13,8 @@ public enum WindowShortcut: Equatable, Sendable {
     case moveRight
     /// Cmd+Shift+F: open or close the search overlay.
     case search
+    /// Cmd+Shift+O: open or close quick open.
+    case quickOpen
 
     public struct Modifiers: OptionSet, Sendable {
         public let rawValue: Int
@@ -40,8 +42,18 @@ public enum WindowShortcut: Equatable, Sendable {
         default:
             switch (characters?.lowercased(), modifiers) {
             case ("f", [.command, .shift]): self = .search
+            case ("o", [.command, .shift]): self = .quickOpen
             default: return nil
             }
         }
+    }
+}
+
+/// Keys that belong to the overlays rather than the window.
+public enum OverlayShortcut {
+    /// Cmd+Shift+. (quick open: show or hide hidden files). Matches the
+    /// physical period key, as Finder's does, on any layout.
+    public static func isHiddenFilesToggle(keyCode: UInt16, modifiers: WindowShortcut.Modifiers) -> Bool {
+        keyCode == 47 && modifiers == [.command, .shift]
     }
 }
