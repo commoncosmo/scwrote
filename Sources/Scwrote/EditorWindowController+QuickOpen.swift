@@ -153,6 +153,7 @@ extension EditorWindowController {
         case .toggleHidden:
             Self.showsHiddenFiles.toggle()
             rankQuickOpen()
+        case .sendToQuickfix: break // project search only
         }
     }
 

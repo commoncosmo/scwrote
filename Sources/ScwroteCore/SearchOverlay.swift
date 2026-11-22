@@ -12,6 +12,8 @@ public enum SearchKey: Equatable, Sendable {
     /// Ctrl-D, Ctrl-U.
     case halfPageDown, halfPageUp
     case enter, escape
+    /// Ctrl-Q: send every match to nvim's quickfix list.
+    case sendToQuickfix
 }
 
 /// What the overlay asks of whoever owns it.
@@ -21,6 +23,8 @@ public enum SearchAction<Item: Equatable & Sendable>: Equatable, Sendable {
     case close
     /// Quick open: show or hide hidden files.
     case toggleHidden
+    /// Project search: send every match to nvim's quickfix list.
+    case sendToQuickfix
 }
 
 /// Which of the overlay's two modes is active.
@@ -69,6 +73,8 @@ public struct SearchOverlay<List: OverlayList>: Equatable, Sendable {
             return nil
         case .enter:
             return results.selected.map(SearchAction<List.Item>.open)
+        case .sendToQuickfix:
+            return query.text.isEmpty ? nil : .sendToQuickfix
         case .escape:
             return escape()
         case .edit(let edit):
