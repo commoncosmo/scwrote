@@ -99,4 +99,32 @@ private func state(_ folder: String) -> WindowState {
         lock.release(pid: getpid() + 1)
         #expect(lock.holder() == getpid())
     }
+
+    @Test func aLiveHolderMakesTakeThrow() throws {
+        let t = try Temp()
+        let lock = SessionLock(path: t.base + "/lock")
+        try lock.take(pid: getppid())
+        #expect(throws: SessionLock.Held(pid: getppid())) { try lock.take(pid: getpid()) }
+        #expect(lock.holder() == getppid())
+    }
+
+    @Test func aStaleLockIsTakenOver() throws {
+        let t = try Temp()
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        try p.run()
+        p.waitUntilExit()
+        let lock = SessionLock(path: t.base + "/lock")
+        try lock.take(pid: p.processIdentifier)
+        try lock.take(pid: getpid())
+        #expect(lock.holder() == getpid())
+    }
+
+    @Test func takingTwiceIsFine() throws {
+        let t = try Temp()
+        let lock = SessionLock(path: t.base + "/lock")
+        try lock.take(pid: getpid())
+        try lock.take(pid: getpid())
+        #expect(lock.holder() == getpid())
+    }
 }

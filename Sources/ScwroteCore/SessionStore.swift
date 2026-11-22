@@ -72,11 +72,40 @@ public struct SessionLock: Sendable {
         return kill(pid, 0) == 0 || errno == EPERM ? pid : nil
     }
 
-    /// Records `pid` as the holder, replacing any other.
+    /// Another live process holds the lock.
+    public struct Held: Error, Equatable {
+        public let pid: pid_t
+        public init(pid: pid_t) { self.pid = pid }
+    }
+
+    /// Records `pid` as the holder. The file is created exclusively, so of two
+    /// windows racing for a folder only one succeeds: the other gets `Held`.
+    /// Succeeds if `pid` already holds it, and takes over a lock left by a
+    /// process that's gone.
     public func take(pid: pid_t) throws {
         try FileManager.default.createDirectory(
             atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-        try String(pid).write(toFile: path, atomically: true, encoding: .utf8)
+        if try create(pid) { return }
+        if let live = holder() {
+            if live == pid { return }
+            throw Held(pid: live)
+        }
+        try? FileManager.default.removeItem(atPath: path)
+        if try create(pid) { return }
+        if let live = holder(), live != pid { throw Held(pid: live) }
+    }
+
+    /// Creates the lock file holding `pid`; false if it already exists.
+    private func create(_ pid: pid_t) throws -> Bool {
+        let fd = open(path, O_CREAT | O_EXCL | O_WRONLY, 0o644)
+        if fd < 0 {
+            if errno == EEXIST { return false }
+            throw CocoaError(.fileWriteUnknown)
+        }
+        defer { close(fd) }
+        let bytes = Array(String(pid).utf8)
+        guard write(fd, bytes, bytes.count) == bytes.count else { throw CocoaError(.fileWriteUnknown) }
+        return true
     }
 
     /// Gives up the lock, but only if `pid` holds it.
