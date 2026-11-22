@@ -237,6 +237,7 @@ count says "1000+ matches"; type more to narrow it.
 | Key | Typing | List |
 |---|---|---|
 | characters | edit the query | — |
+| Cmd+V | paste (line breaks become spaces) | — |
 | Ctrl-J / ↓ | next match | next match |
 | Ctrl-K / ↑ | previous match | previous match |
 | `j` / `k` | (typed) | next / previous |
@@ -292,6 +293,9 @@ SCWROTE_DEBUG_KEYS='<D-2>{ohello<Esc>}' SCWROTE_DEBUG_SNAPSHOT=/tmp/p.png \
   `TerminalTheme()`; scwrote passes an empty one so your Ghostty theme wins.
 - The release binary is universal, but CI only launches its arm64 half. The
   Intel (x86_64) half is built but not launched in CI.
+- Cmd+Shift+F goes by the character the F key types, so it works on Dvorak
+  and Colemak. On a layout with no Latin "f", such as Cyrillic or Greek, it
+  may not fire. Choose View > Find in Folder instead.
 
 ## Build from source
 
@@ -390,15 +394,18 @@ and smoke-tests the archive and never publishes.
 
 ## License
 
-MIT, see `LICENSE`. The third-party code in the app binary and in the preview
-page has its own licenses, listed in `THIRD_PARTY_LICENSES` (installed beside
-the app as `share/scwrote/THIRD_PARTY_LICENSES`). Only the preview-page section
-is generated:
+MIT, see `LICENSE`. The third-party code in the app binary, in the bundled
+ripgrep (`share/scwrote/rg`) and in the preview page has its own licenses,
+listed in `THIRD_PARTY_LICENSES` (installed beside the app as
+`share/scwrote/THIRD_PARTY_LICENSES`). Only the preview-page section is
+generated:
 
 ```bash
 cd web && bun run licenses
 ```
 
-The rest of the file (the app binary: Ghostty, its dependencies, the C
-libraries, the fonts) is kept by hand. Recheck it whenever `Package.resolved`
-changes.
+The rest of the file is kept by hand: the app binary (Ghostty, its
+dependencies, the C libraries, the fonts) and ripgrep (its Rust crates, PCRE2,
+SLJIT and the Rust standard library). Recheck the app binary's part whenever
+`Package.resolved` changes, and ripgrep's whenever `scripts/fetch-ripgrep.sh`
+pins a new version.
