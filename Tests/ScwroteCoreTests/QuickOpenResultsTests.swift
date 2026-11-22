@@ -135,20 +135,31 @@ private let files = ["a/OneView.swift", "b/TwoView.swift", "docs/FileBrowserView
         #expect(shown.results == QuickOpenRanking.rank(.init("view"), root: "/r", files: hidden.sorted(), openFiles: [], history: [], showsHidden: true))
     }
 
-    // Regression guard only: debug builds measure about 1.1 s, release about 0.1 s (every path matches here).
+    // A speed guard where timing is reliable: release builds rank 33,000
+    // paths (every one matching) in about 0.1 s on an M5 Pro, against a 1 s
+    // budget for slower and busier machines. Debug builds run about ten times
+    // slower and, on CI, on shared runners, so they only check the result,
+    // on fewer paths to keep the suite quick.
     @Test func rankingThirtyThreeThousandPathsIsQuick() {
-        let paths = (0..<33_000).map { "Sources/Module\($0 % 40)/Sub\($0 % 7)/File\($0)Controller.swift" }.sorted()
+        #if DEBUG
+        let count = 3_000
+        #else
+        let count = 33_000
+        #endif
+        let paths = (0..<count).map { "Sources/Module\($0 % 40)/Sub\($0 % 7)/File\($0)Controller.swift" }.sorted()
         let query = QuickOpenQuery("fcon")
-        _ = QuickOpenRanking.rank(query, root: "/r", files: paths, openFiles: [], history: [], showsHidden: true)
+        let first = QuickOpenRanking.rank(query, root: "/r", files: paths, openFiles: [], history: [], showsHidden: true)
+        #expect(first.matchCount == count)
+        #if !DEBUG
         let clock = ContinuousClock()
         for _ in 0..<5 {
             var results: QuickOpenResults?
             let elapsed = clock.measure {
                 results = QuickOpenRanking.rank(query, root: "/r", files: paths, openFiles: [], history: [], showsHidden: true)
             }
-            print("ranked 33000 paths in \(elapsed)")
-            #expect(results?.matchCount == 33_000)
-            #expect(elapsed < .seconds(2))
+            #expect(results?.matchCount == count)
+            #expect(elapsed < .seconds(1))
         }
+        #endif
     }
 }
