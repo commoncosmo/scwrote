@@ -92,6 +92,13 @@ struct RipgrepJSONTests {
         #expect(match.ranges == [0..<2, 3..<5])
     }
 
+    @Test func crlfLineEndingIsTrimmed() throws {
+        let line = matchLine(lines: #"{"text":"  let a = b\r\n"}"#, submatches: [(6, 7)])
+        let match = try #require(RipgrepJSON.match(from: line, root: "/r"))
+        #expect(match.text == "let a = b")
+        #expect(match.ranges == [4..<5])
+    }
+
     @Test func keysSortByPathThenLine() {
         let keys = [
             SearchMatch.Key(path: "/b", line: 1), SearchMatch.Key(path: "/a", line: 10),

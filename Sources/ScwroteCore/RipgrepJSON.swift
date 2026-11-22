@@ -44,7 +44,8 @@ public enum RipgrepJSON {
     /// `matches` are UTF-8 byte ranges into `fullLine`, as ripgrep reports them.
     private static func display(_ fullLine: String, matches: [Range<Int>]) -> (String, [Range<Int>]) {
         var line = Substring(fullLine)
-        if line.hasSuffix("\n") { line = line.dropLast() }   // also the "\r\n" character
+        // "\r\n" is a single Character, so a bare "\n" check would miss CRLF.
+        if let last = line.last, last.isNewline { line = line.dropLast() }
         let body = line.drop { $0.isWhitespace }
         let trimmed = line.utf8.distance(from: line.startIndex, to: body.startIndex)
 
