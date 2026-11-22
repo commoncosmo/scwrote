@@ -116,6 +116,50 @@ struct LaunchRequestTests {
         #expect(resolve(["a.md"], cwd: "/p").restoresSession)
     }
 
+    // MARK: Layout flags leave nvim's session alone
+
+    /// A session rebuilds nvim's windows, so a launch that asks nvim for a
+    /// layout of its own (or a quickfix list, or a tag) keeps it: nvim's side
+    /// is neither loaded nor saved. The window side still is.
+    @Test(arguments: [
+        ["-d", "a.md", "b.md"], ["-o", "a.md", "b.md"], ["-O", "a.md", "b.md"], ["-p", "a.md", "b.md"],
+        ["-O3", "a.md", "b.md"], ["-o2", "a.md"], ["-p4", "a.md"], ["-d2", "a.md", "b.md"],
+        ["-q", "errors.txt"], ["-qerrors.txt"], ["-t", "main"], ["-tmain"],
+        ["--fresh", "-O", "a.md", "b.md"],
+    ])
+    func aLayoutFlagLeavesNvimsSessionAlone(arguments: [String]) {
+        #expect(!resolve(arguments, cwd: "/p").managesNvimSession)
+    }
+
+    @Test func aLayoutFlagStillRestoresTheWindowSide() {
+        let request = resolve(["-O", "a.md", "b.md"], cwd: "/p")
+
+        #expect(request.restoresSession)
+        #expect(request.nvimArguments == ["-O", "a.md", "b.md"])
+    }
+
+    @Test(arguments: [
+        ["+3", "a.md"], ["-R", "a.md"], ["-c", "set nu", "a.md"], ["a.md", "b.md"], ["--", "-O", "a.md"],
+        ["--startuptime", "log.txt", "a.md"], ["-", "a.md"],
+    ])
+    func otherFlagsKeepNvimsSession(arguments: [String]) {
+        #expect(resolve(arguments, cwd: "/p").managesNvimSession)
+    }
+
+    @Test func aFolderLaunchKeepsNvimsSession() {
+        #expect(resolve([], cwd: "/p").managesNvimSession)
+        #expect(resolve(["-R", "src"], cwd: "/p", dirs: "/p/src").managesNvimSession)
+    }
+
+    /// `-qerrors.txt` names no path, so it's a folder launch, but nvim still
+    /// opens the quickfix list a session would throw away.
+    @Test func aFolderLaunchWithALayoutFlagLeavesNvimsSessionAlone() {
+        let request = resolve(["-qerrors.txt"], cwd: "/p")
+
+        #expect(request.startsInBrowser)
+        #expect(!request.managesNvimSession)
+    }
+
     // MARK: The command Ghostty runs
 
     @Test func shellCommandListensOnASocketAndSingleQuotesEveryWord() {

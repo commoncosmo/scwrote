@@ -54,7 +54,10 @@ extension EditorWindowController {
     }
 
     /// Takes the folder's lock; with it, this window keeps nvim's side of
-    /// the session, loading it first unless the launch said `--fresh`. Once
+    /// the session, loading it first unless the launch said `--fresh`. A
+    /// launch whose nvim flags set up its windows (`-d`, `-O`, `-q`, …)
+    /// leaves nvim's side alone altogether: no lock, no load, no save, so
+    /// that layout is neither undone nor saved over the folder's. Once
     /// nvim has started: loads the session (keeping the editor pane blank
     /// meanwhile, at most `coverLimit`), then sets nvim to save it on exit,
     /// unless someone else's session was already loaded (checked with
@@ -64,6 +67,10 @@ extension EditorWindowController {
     /// nothing asked of nvim meanwhile (a file chosen in the browser) runs
     /// before the load and is then undone by it.
     func startNvimRestore(request: LaunchRequest) {
+        guard request.managesNvimSession else {
+            log("nvim's flags lay out its windows, so its session is left alone")
+            return
+        }
         do {
             try sessionLock.take(pid: getpid())
             savesNvim = true
