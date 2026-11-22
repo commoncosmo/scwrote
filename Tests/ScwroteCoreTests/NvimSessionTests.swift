@@ -390,6 +390,42 @@ final class NvimSessionTests {
         withExtendedLifetime(fresh) {}
     }
 
+    /// The same with the named file in the session's current window, where
+    /// the session sets that window's cursor itself.
+    @Test func aLineFlagWinsOverTheSessionsCurrentWindow() throws {
+        let a = try file("a.txt", numbered(100))
+        let b = try file("b.txt", numbered(10))
+        try client.edit(b)
+        try command(client, "vsplit " + escaped(a))
+        _ = try lua(client, "vim.api.nvim_win_set_cursor(0, { 50, 0 })")
+        try client.saveSession(to: sessionPath)
+
+        let (fresh, other) = try freshNvim(arguments: ["+3", a])
+        #expect(try other.restoreSession(from: sessionPath, namedFiles: [a]) == .restored)
+
+        #expect(try other.currentFile() == a)
+        #expect(try lua(other, "return vim.api.nvim_win_get_cursor(0)") == .array([.int(3), .int(0)]))
+        #expect(try lua(other, "return #vim.api.nvim_list_wins()") == .int(2))
+        withExtendedLifetime(fresh) {}
+    }
+
+    /// Without a flag that moves it, the named file keeps the session's cursor.
+    @Test func withoutALineFlagTheSessionsCursorStays() throws {
+        let a = try file("a.txt", numbered(100))
+        let b = try file("b.txt", numbered(10))
+        try client.edit(b)
+        try command(client, "vsplit " + escaped(a))
+        _ = try lua(client, "vim.api.nvim_win_set_cursor(0, { 50, 0 })")
+        try client.saveSession(to: sessionPath)
+
+        let (fresh, other) = try freshNvim(arguments: [a])
+        #expect(try other.restoreSession(from: sessionPath, namedFiles: [a]) == .restored)
+
+        #expect(try other.currentFile() == a)
+        #expect(try lua(other, "return vim.api.nvim_win_get_cursor(0)") == .array([.int(50), .int(0)]))
+        withExtendedLifetime(fresh) {}
+    }
+
     @Test func theFirstNamedFileNvimKnowsIsInFront() throws {
         let a = try file("a.txt", "a\n")
         let c = try file("c.txt", "c\n")

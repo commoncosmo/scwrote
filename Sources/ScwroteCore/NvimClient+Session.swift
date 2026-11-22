@@ -118,7 +118,10 @@ extension NvimClient {
     /// first of `namedFiles` that nvim has as a buffer is shown in the current
     /// window, the others nvim has are kept listed, and the argument list is
     /// exactly the ones nvim has, in order; entries nvim doesn't have are
-    /// ignored.
+    /// ignored. If that first file is the one nvim's startup had in the
+    /// current window and startup moved its cursor off the top (`+3`,
+    /// `+/pattern`, `-c`, the user's last-position autocommand), that cursor
+    /// and scroll win over the session's; otherwise the session's stay.
     public func restoreSession(from path: String, namedFiles: [String]) throws -> SessionRestore {
         let result = try request("nvim_exec_lua", [
             .string(Self.restoreLua),
@@ -206,6 +209,14 @@ extension NvimClient {
           "splitbelow", "splitright", "scrolloff", "sidescrolloff" }
         local users = {}
         for _, name in ipairs(names) do users[name] = vim.go[name] end
+        -- nvim's startup put the first named file in the current window. If
+        -- it moved the cursor off the top (+3, +/pattern, -c, the user's
+        -- last-position autocommand), that view wins over the one the
+        -- session saved for the file, as `nvim <files>` has it; otherwise
+        -- the session's stays.
+        local startup_buf = vim.api.nvim_get_current_buf()
+        local startup_view = vim.fn.winsaveview()
+        local startup_moved = startup_view.lnum ~= 1 or startup_view.col ~= 0
         local users_wmh, users_wmw = vim.go.winminheight, vim.go.winminwidth
         vim.go.winminheight = 0
         vim.go.winminwidth = 0
@@ -265,6 +276,7 @@ extension NvimClient {
         end
         if #known > 0 then
           vim.cmd.buffer(tostring(known[1]))
+          if known[1] == startup_buf and startup_moved then pcall(vim.fn.winrestview, startup_view) end
           -- The session empties the argument list; a launch on files has
           -- them as its arguments.
           vim.cmd("silent! %argdelete")
