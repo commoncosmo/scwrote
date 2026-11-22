@@ -25,9 +25,10 @@ curl -fsSL https://raw.githubusercontent.com/commoncosmo/scwrote/main/install.sh
 Requires macOS 26 or later and Neovim (`brew install neovim`).
 
 This downloads the latest release, checks it against its checksum, and puts
-the command at `~/.local/bin/scwrote` and the app (binary plus the resource
-folder libghostty loads from beside it) in `~/.local/share/scwrote/`. It never
-uses `sudo`, and if anything fails your previous install is left as it was.
+the command at `~/.local/bin/scwrote` and the app (binary, the resource folder
+libghostty loads from beside it, and the bundled ripgrep, `rg`, that project
+search runs) in `~/.local/share/scwrote/`. It never uses `sudo`, and if
+anything fails your previous install is left as it was.
 Make sure `~/.local/bin` is on your `PATH`, then check with `scwrote --version`.
 
 Two variables change what it does:
@@ -264,15 +265,17 @@ SCWROTE_DEBUG_KEYS='G<CR>' SCWROTE_DEBUG_SNAPSHOT=/tmp/shot.png scwrote ./
 
 Keys go to the browser; `<CR>` `<Esc>` `<Up>` `<Down>` `<Left>` `<Right>`
 `<C-d>` `<C-u>` are named keys. The window's own keys, `<D-1>` (Cmd+1),
-`<D-S-1>`, `<D-2>`, `<D-[>`, `<D-]>` and `<D-S-f>`, are posted as real key events, so they take
-the same path through the app as a keyboard's. While the search overlay is
-open, plain characters, `<CR>`, `<Esc>`, `<Up>` and `<Down>` go to it. Text in braces goes to nvim
-(`nvim_input`, in nvim's key notation), so `{ohello<Esc>}` opens a line, types
-"hello" and leaves insert mode. `SCWROTE_DEBUG_WIDTH=600` sets the window's
-content width in points first, to see which panes give way:
+`<D-S-1>`, `<D-2>`, `<D-[>`, `<D-]>` and `<D-S-f>`, are posted as real key
+events, so they take the same path through the app as a keyboard's. While the
+search overlay is open, plain characters, `<CR>`, `<Esc>`, `<Up>` and `<Down>`
+go to it. Text in braces goes to nvim (`nvim_input`, in nvim's key notation),
+so `{ohello<Esc>}` opens a line, types "hello" and leaves insert mode.
+`SCWROTE_DEBUG_WIDTH=600` sets the window's content width in points first, to
+see which panes give way:
 
 ```bash
-SCWROTE_DEBUG_KEYS='<D-2>{ohello<Esc>}' SCWROTE_DEBUG_SNAPSHOT=/tmp/p.png scwrote README.md
+SCWROTE_DEBUG_KEYS='<D-2>{ohello<Esc>}' SCWROTE_DEBUG_SNAPSHOT=/tmp/p.png \
+  scwrote README.md
 ```
 
 ## Known quirks
@@ -339,11 +342,14 @@ sh scripts/tests/install-test.sh    # the installer
   request; `release.yml` builds and publishes a release for each version tag.
 - `LICENSE`, `THIRD_PARTY_LICENSES`: scwrote's license, and the licenses of
   the third-party code in the app binary (Ghostty and its dependencies, the C
-  libraries, the fonts) and in the preview page.
+  libraries, the fonts), in the bundled ripgrep (its Rust crates, and PCRE2
+  with SLJIT) and in the preview page.
 - `Sources/ScwroteCore`: pure logic, unit tested: argument handling, Ghostty
   config loading, finding `nvim` on `PATH`, the file browser and its keys,
   pane show/hide/pin rules, MessagePack and the nvim RPC client (tested
-  against a real headless nvim).
+  against a real headless nvim), and project search: the ripgrep runner and
+  its JSON reader, the search over the folder and unsaved buffers, and the
+  overlay's results, query and keys.
 - `Sources/Scwrote`: the AppKit app: one window per process, hosting a
   libghostty surface ([libghostty-spm](https://github.com/Lakr233/libghostty-spm),
   pinned exactly because libghostty's API isn't stable yet).
@@ -360,7 +366,8 @@ sh scripts/tests/install-test.sh    # the installer
 ## Releasing
 
 Push a tag named `vX.Y.Z`. The Release workflow's build job builds the archive,
-installs it into a temporary prefix to check its version, and smoke-tests the
+installs it into a temporary prefix to check its version, checks that the
+installed `share/scwrote/rg` is the pinned ripgrep, and smoke-tests the
 installed app. Then, for tags only, its publish job records a build-provenance
 attestation and publishes the release with the archive and its checksum. Tag
 releases need the repository to be public for the provenance step (the
