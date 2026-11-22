@@ -9,6 +9,10 @@ import ScwroteCore
 extension EditorWindowController {
     /// How long the editor pane stays blank waiting for nvim's side to load.
     private static let coverLimit: Duration = .seconds(2)
+    /// How long a save before hanging up may wait for nvim to answer (and
+    /// to connect), so closing or quitting is never held up for long.
+    nonisolated private static let hangUpSaveTimeout: TimeInterval = 1
+    nonisolated private static let hangUpConnectTimeout: TimeInterval = 0.5
 
     // MARK: - Restoring
 
@@ -53,7 +57,8 @@ extension EditorWindowController {
     /// the session, loading it first unless the launch said `--fresh`. Once
     /// nvim has started: loads the session (keeping the editor pane blank
     /// meanwhile, at most `coverLimit`), then sets nvim to save it on exit,
-    /// unless someone else's session was already loaded. Loading before the
+    /// unless someone else's session was already loaded (checked with
+    /// `--fresh` too, where nothing is loaded). Loading before the
     /// saver goes in means an nvim quit before the load can't save an empty
     /// session over the folder's. All in one call on the nvim queue, so
     /// nothing asked of nvim meanwhile (a file chosen in the browser) runs
@@ -89,7 +94,9 @@ extension EditorWindowController {
     }
 
     private struct NvimSessionOutcome: Sendable {
-        /// nil if nvim couldn't be reached, or nothing was to be restored.
+        /// `.skipped` if someone else's session is loaded, whether or not the
+        /// launch restores; nil if nvim couldn't be reached, or a `--fresh`
+        /// launch found no session loaded.
         var restore: SessionRestore?
         /// nvim started and the restore, if any, returned.
         var isInPlace = false
@@ -111,6 +118,14 @@ extension EditorWindowController {
                         outcome.restore = try nvim.restoreSession(from: path, namedFiles: namedFiles)
                     } catch {
                         outcome.restore = .failed("\(error)")
+                    }
+                } else {
+                    do {
+                        if try nvim.isSessionLoaded() { outcome.restore = .skipped }
+                    } catch {
+                        // Not knowing, saving could write over the user's own.
+                        outcome.failure = "couldn't ask nvim whether a session is loaded, so it's left alone: \(error)"
+                        return outcome
                     }
                 }
                 outcome.isInPlace = true
@@ -136,6 +151,8 @@ extension EditorWindowController {
             // Someone else's session is loaded (the user's -S, a session
             // plugin): scwrote never writes over what it didn't load.
             savesNvim = false
+            isNvimSessionReady = false
+            return
         case let .failed(message):
             log("couldn't restore the session: \(message)")
         case .restored, .missing, nil:
@@ -152,8 +169,8 @@ extension EditorWindowController {
     /// Before hanging up on a running nvim (closing the window, quitting):
     /// asks nvim to save its side, if this window keeps it and it's in place.
     /// On a connection of its own, so it never waits behind the nvim queue,
-    /// with the client's usual timeouts; a failure is logged and closing
-    /// goes on.
+    /// giving up after about a second (nvim busy, or at a prompt); a failure
+    /// is logged and closing goes on.
     func saveSession() async {
         guard savesNvim, isNvimSessionReady, isNvimRunning else { return }
         let socket = nvimSocket
@@ -161,7 +178,10 @@ extension EditorWindowController {
         let failure: String? = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    try NvimClient(socketPath: socket).saveSession(to: path)
+                    try NvimClient(
+                        socketPath: socket, connectTimeout: Self.hangUpConnectTimeout,
+                        readTimeout: Self.hangUpSaveTimeout
+                    ).saveSession(to: path)
                     continuation.resume(returning: nil)
                 } catch {
                     continuation.resume(returning: "\(error)")
@@ -172,14 +192,20 @@ extension EditorWindowController {
     }
 
     /// Writes the window's side of the session: once, when the window closes
-    /// or the app quits with it open.
+    /// or the app quits with it open. A window in full screen keeps the frame
+    /// it had before (that run's, else the one saved last time, else none:
+    /// a zero frame, which comes back as the default centered window), so it
+    /// never comes back as a screen-sized ordinary window.
     func saveWindowSide() {
         guard !didSaveWindowSide, let window else { return }
         didSaveWindowSide = true
         let browser = browserView.browser
+        let frame = window.styleMask.contains(.fullScreen)
+            ? frameBeforeFullScreen ?? sessionFolder.readWindowState()?.frame ?? .zero
+            : window.frame
         let state = WindowState(
             folder: sessionFolder.root,
-            frame: window.frame,
+            frame: frame,
             panes: panes.saved,
             browserWidth: Double(layoutView.browserWidth),
             previewWidth: Double(layoutView.previewWidth),

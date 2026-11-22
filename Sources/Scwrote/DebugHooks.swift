@@ -24,18 +24,22 @@ import ScwroteCore
 ///       window, and log which view has the keyboard.
 ///   SCWROTE_DEBUG_WIDTH=600            before the keys, set the window's
 ///       content width in points (for checking which panes give way).
+///   SCWROTE_DEBUG_FULLSCREEN=1         before the keys, put the window in
+///       full screen.
 extension EditorWindowController {
     func runDebugHooks() {
         let environment = ProcessInfo.processInfo.environment
         let keys = environment["SCWROTE_DEBUG_KEYS"].map(Self.parseKeys) ?? []
         let snapshot = environment["SCWROTE_DEBUG_SNAPSHOT"]
         let width = environment["SCWROTE_DEBUG_WIDTH"].flatMap(Double.init)
-        guard !keys.isEmpty || snapshot != nil || width != nil else { return }
+        let fullScreen = environment["SCWROTE_DEBUG_FULLSCREEN"] != nil
+        guard !keys.isEmpty || snapshot != nil || width != nil || fullScreen else { return }
 
         Task {
             if let width, let window {
                 window.setContentSize(NSSize(width: width, height: window.contentLayoutRect.height))
             }
+            if fullScreen { window?.toggleFullScreen(nil) }
             try? await Task.sleep(for: .seconds(1)) // let nvim start
             var held: (keyCode: UInt16, characters: String, modifiers: NSEvent.ModifierFlags)?
             for key in keys {

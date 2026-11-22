@@ -368,14 +368,17 @@ the same path through the app as a keyboard's. While an overlay is open, plain c
 (`nvim_input`, in nvim's key notation), so `{ohello<Esc>}` opens a line, types
 "hello" and leaves insert mode.
 `SCWROTE_DEBUG_WIDTH=600` sets the window's content width in points first, to
-see which panes give way. `SCWROTE_SESSIONS_DIR=/tmp/sessions` keeps sessions
-there instead of in `~/Library/Application Support/scwrote/sessions`, so test
-runs leave yours alone:
+see which panes give way:
 
 ```bash
 SCWROTE_DEBUG_KEYS='<D-2>{ohello<Esc>}' SCWROTE_DEBUG_SNAPSHOT=/tmp/p.png \
   scwrote README.md
 ```
+
+`SCWROTE_DEBUG_FULLSCREEN=1` puts the window in full screen first.
+`SCWROTE_SESSIONS_DIR=/tmp/sessions` keeps sessions there instead of in
+`~/Library/Application Support/scwrote/sessions`, so test runs leave yours
+alone.
 
 ## Known quirks
 

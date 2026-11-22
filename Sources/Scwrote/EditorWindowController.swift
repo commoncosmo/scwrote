@@ -82,6 +82,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     var isNvimSessionReady = false
     var isSavingBeforeClose = false
     var didSaveWindowSide = false
+    /// The window's frame before it went full screen, saved in place of the
+    /// full-screen one.
+    var frameBeforeFullScreen: NSRect?
 
     /// `controller` carries the nvim command in its config (see
     /// `GhosttyConfig.editorConfig` for why it isn't a surface option).
@@ -374,6 +377,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             }
         }
         return false
+    }
+
+    func windowWillEnterFullScreen(_: Notification) {
+        frameBeforeFullScreen = window?.frame
+    }
+
+    func windowDidExitFullScreen(_: Notification) {
+        frameBeforeFullScreen = nil
     }
 
     /// However the window closes, its side of the session is saved, and
