@@ -31,6 +31,8 @@ enum MainMenu {
         viewMenu.addItem(.separator())
         let find = viewMenu.addItem(withTitle: "Find in Folder", action: #selector(EditorWindowController.toggleSearch(_:)), keyEquivalent: "f")
         find.keyEquivalentModifierMask = [.command, .shift]
+        let quickOpen = viewMenu.addItem(withTitle: "Quick Open", action: #selector(EditorWindowController.toggleQuickOpen(_:)), keyEquivalent: "o")
+        quickOpen.keyEquivalentModifierMask = [.command, .shift]
 
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")

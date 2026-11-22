@@ -5,17 +5,18 @@ import ScwroteCore
 ///
 ///   SCWROTE_DEBUG_KEYS="jj<CR><D-1>"   keys to press after launch, 0.4 s apart:
 ///       plain characters go to the browser; <CR>, <Esc>, <Up>, <Down>,
-///       <Left>, <Right>, <C-d>, <C-u> are browser keys. While the search
-///       overlay is open, plain characters, <CR>, <Esc>, <Up> and <Down> go to
-///       it instead. The window's own keys, <D-1> (Cmd+1), <D-S-1>, <D-2>,
-///       <D-[>, <D-]> and <D-S-f> (search), are posted as real key events,
-///       so they take the path a keyboard's would; so is <S-R> (Shift+R),
-///       for the preview's `R` when it has the keyboard, and the browser
-///       prompt's editing keys <BS>, <Del> (forward delete), <Home>, <End>,
-///       <C-a>, <C-e>, <C-w>, <C-h> and <D-v> (paste); <K-a>, <K-j> and <K-d>
-///       post plain `a` and `d`. <R> repeats the last posted key as
-///       if held down: a posted key is released only when the next key that
-///       isn't <R> comes. Text in
+///       <Left>, <Right>, <C-d>, <C-u> are browser keys. While an overlay
+///       (search, quick open) is open, plain characters, <CR>, <Esc>, <Up>
+///       and <Down> go to it instead. The window's own keys, <D-1> (Cmd+1),
+///       <D-S-1>, <D-2>, <D-[>, <D-]>, <D-S-f> (search) and <D-S-o> (quick
+///       open), are posted as real key events, so they take the path a
+///       keyboard's would; so are <D-S-.> (quick open's hidden files
+///       toggle), <S-R> (Shift+R), for the preview's `R` when it has the
+///       keyboard, and the browser prompt's editing keys <BS>, <Del>
+///       (forward delete), <Home>, <End>, <C-a>, <C-e>, <C-w>, <C-h> and
+///       <D-v> (paste); <K-a>, <K-j> and <K-d> post plain `a`, `j` and `d`.
+///       <R> repeats the last posted key as if held down: a posted key is
+///       released only when the next key that isn't <R> comes. Text in
 ///       braces goes to nvim with nvim_input, in nvim's key notation:
 ///       {ohello<Esc>} opens a line, types "hello" and leaves insert mode.
 ///   SCWROTE_DEBUG_SNAPSHOT=/path.png   afterwards, save a picture of the
@@ -45,8 +46,8 @@ extension EditorWindowController {
                 }
                 switch key {
                 case let .browser(browserKey):
-                    if isSearchOpen, let searchView {
-                        searchView.press(Self.searchKey(for: browserKey))
+                    if let overlay = layoutView.overlay as? OverlayKeyTarget {
+                        overlay.press(Self.searchKey(for: browserKey))
                     } else {
                         browserView.press(browserKey)
                     }
@@ -125,6 +126,8 @@ extension EditorWindowController {
             "<D-2>": .keyboard(19, "2", [.command]),
             "<D-[>": .keyboard(33, "[", [.command]), "<D-]>": .keyboard(30, "]", [.command]),
             "<D-S-f>": .keyboard(3, "F", [.command, .shift]),
+            "<D-S-o>": .keyboard(31, "O", [.command, .shift]),
+            "<D-S-.>": .keyboard(47, ">", [.command, .shift]),
             "<S-R>": .keyboard(15, "R", [.shift]),
             "<BS>": .keyboard(51, "\u{7f}", []),
             "<C-a>": .keyboard(0, "a", [.control]), "<C-e>": .keyboard(14, "e", [.control]),

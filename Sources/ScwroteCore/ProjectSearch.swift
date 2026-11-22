@@ -15,15 +15,18 @@ public struct UnsavedBuffer: Equatable, Sendable {
 /// Searches one folder. Create a new one when the root changes.
 ///
 /// Runs ripgrep over the folder, plus one stdin run per unsaved buffer whose
-/// file is in the folder's file list (`rg --files`, so a buffer counts by the
-/// same ignore rules as the disk). Results reach the main queue in batches.
+/// file is in the folder's `FolderFileList` and not hidden (so a buffer
+/// counts by the same rules as the disk search, which skips hidden files).
+/// Results reach the main queue in batches.
 ///
 /// Threading: `search` and `cancel` are called on the main thread; ripgrep
-/// callbacks arrive on background threads. All state is under `lock`. Nothing
-/// calls `RipgrepRun.cancel()` while holding `lock` (a run's callback may be
-/// waiting for it, and `cancel()` waits for that callback), and nothing here
-/// ever waits on the main thread: callbacks hop there with `async` only, and
-/// every delivery checks the generation so a cancelled search never delivers.
+/// and file list callbacks arrive on background threads. All state is under
+/// `lock`. Nothing calls `RipgrepRun.cancel()` while holding `lock` (a run's
+/// callback may be waiting for it, and `cancel()` waits for that callback),
+/// and nothing here ever waits on the main thread: callbacks hop there with
+/// `async` only, and every delivery checks the generation so a cancelled
+/// search never delivers. `files.whenReady` may be called under `lock`
+/// because it never runs its body on the caller's stack.
 public final class ProjectSearch: @unchecked Sendable {
     /// A batch goes to the main queue once it has this many matches...
     static let batchSize = 200
@@ -35,53 +38,37 @@ public final class ProjectSearch: @unchecked Sendable {
     private let ripgrep: String
     /// Resolved, so disk results are in nvim's path form.
     private let root: String
+    private let files: FolderFileList
     private let lock = NSLock()
 
     /// Bumped by every `search` and `cancel`; deliveries for older ones are dropped.
     private var generation = 0
     private var current: Search?
 
-    /// Paths in nvim's form, or nil until built (or after a change).
-    private var fileList: Set<String>?
-    private var listRun: RipgrepRun?
-    /// Names the latest list build, so a dropped build's late result is ignored.
-    private var listGeneration = 0
-    /// The folder changed while `listRun` was building: its list is fed to a
-    /// waiting search but not kept, and one new build starts when it ends.
-    private var listDirty = false
-
-    public init(ripgrep: String, root: String) {
+    /// Searches `files.root`, deciding by `files` which unsaved buffers to search.
+    public init(ripgrep: String, files: FolderFileList) {
         self.ripgrep = ripgrep
-        self.root = FileBrowser.realPath(root)
+        self.root = files.root
+        self.files = files
+    }
+
+    /// Searches `root` with a file list of its own.
+    public convenience init(ripgrep: String, root: String) {
+        self.init(ripgrep: ripgrep, files: FolderFileList(ripgrep: ripgrep, root: root))
     }
 
     deinit {
         cancel()
-        listRun?.cancel()
     }
 
     /// Builds the file list in the background if there isn't one.
     public func prepare() {
-        lock.lock()
-        defer { lock.unlock() }
-        if fileList == nil && listRun == nil { buildFileList() }
+        files.prepare()
     }
 
-    /// FolderWatcher saw a change. Drops the file list, so the next
-    /// prepare/search rebuilds it. A build already running is left to finish
-    /// rather than restarted: the watcher also fires for ignored output
-    /// (.build, node_modules), and restarting on every event would starve a
-    /// build slower than the gap between events, leaving a waiting search
-    /// unfinished. That build's moment-old list still feeds the waiting
-    /// search; changes during it coalesce into one rebuild after it.
+    /// FolderWatcher saw a change; see `FolderFileList.invalidate()`.
     public func invalidateFileList() {
-        lock.lock()
-        defer { lock.unlock() }
-        if listRun != nil {
-            listDirty = true
-        } else {
-            fileList = nil
-        }
+        files.invalidate()
     }
 
     /// Cancels the running search, then searches `query` (non-empty).
@@ -104,12 +91,8 @@ public final class ProjectSearch: @unchecked Sendable {
                   !bufferPaths.contains(match.path) else { return nil }
             return match
         }
-        if let fileList {
-            startBufferRuns(search, fileList: fileList)
-        } else {
-            search.awaitingList = true
-            if listRun == nil { buildFileList() }
-        }
+        search.awaitingList = true
+        files.whenReady { [weak self] paths in self?.listReady(paths, for: search) }
         finishIfDone(search)
         lock.unlock()
         previous.forEach { $0.cancel() }
@@ -134,51 +117,18 @@ public final class ProjectSearch: @unchecked Sendable {
         return search.runs
     }
 
-    private func buildFileList() {
-        listGeneration += 1
-        listDirty = false
-        let build = listGeneration
-        let root = root
-        let paths = PathCollector()
-        do {
-            listRun = try RipgrepRun(
-                executable: ripgrep, arguments: Ripgrep.fileListArguments, directory: root, stdin: nil,
-                // Both callbacks run on the run's one reader thread, one after the other.
-                onLine: { paths.items.insert(root + "/" + String(decoding: $0, as: UTF8.self)) },
-                onExit: { [weak self] in self?.fileListBuilt(paths.items, build: build) })
-        } catch {
-            // The list stays nil, so the next prepare/search tries again. A
-            // waiting search goes on without its buffers rather than never finishing.
-            listRun = nil
-            feedWaitingSearch([])
-        }
-    }
-
-    private func fileListBuilt(_ paths: Set<String>, build: Int) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard build == listGeneration else { return }
-        listRun = nil
-        feedWaitingSearch(paths)
-        if listDirty {
-            buildFileList()
-        } else {
-            fileList = paths
-        }
-    }
-
-    /// Starts the buffer runs of a search that was waiting for the list.
-    private func feedWaitingSearch(_ paths: Set<String>) {
-        guard let search = current, search.awaitingList, !search.isOver else { return }
-        search.awaitingList = false
-        startBufferRuns(search, fileList: paths)
-        finishIfDone(search)
+    /// Whether `buffer` is searched: listed (so not ignored, and saved at
+    /// least once) and not hidden, as the disk search skips hidden files.
+    private func searches(_ buffer: UnsavedBuffer, fileList: Set<String>) -> Bool {
+        // Listed paths are all `root + "/" + relative`.
+        guard fileList.contains(buffer.path) else { return false }
+        return !FolderFileList.isHidden(relativePath: String(buffer.path.dropFirst(root.count + 1)))
     }
 
     private func startBufferRuns(_ search: Search, fileList: Set<String>) {
         let root = root
         let arguments = Ripgrep.searchArguments(search.query, stdin: true)
-        for buffer in search.buffers where fileList.contains(buffer.path) {
+        for buffer in search.buffers where searches(buffer, fileList: fileList) {
             start(search, arguments: arguments, stdin: Data(buffer.text.utf8)) { line in
                 RipgrepJSON.match(from: line, root: root, label: buffer.path)
             }
@@ -232,7 +182,19 @@ public final class ProjectSearch: @unchecked Sendable {
         }
     }
 
-    // MARK: - From ripgrep callbacks (background threads)
+    // MARK: - From ripgrep and file list callbacks (background threads)
+
+    /// The file list arrived (empty if it couldn't be built, so the search
+    /// still finishes): starts the buffer runs, unless `search` is over or
+    /// superseded by then.
+    private func listReady(_ paths: Set<String>, for search: Search) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard search.generation == generation, search.awaitingList, !search.isOver else { return }
+        search.awaitingList = false
+        startBufferRuns(search, fileList: paths)
+        finishIfDone(search)
+    }
 
     private func received(_ match: SearchMatch, for search: Search) {
         lock.lock()
@@ -308,9 +270,4 @@ private final class Search: @unchecked Sendable {
         self.onBatch = onBatch
         self.onFinish = onFinish
     }
-}
-
-/// The file list as its run reads it; touched only on that run's reader thread.
-private final class PathCollector: @unchecked Sendable {
-    var items: Set<String> = []
 }

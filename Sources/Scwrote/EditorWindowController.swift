@@ -39,14 +39,29 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     var fileActions: FileActions
     /// Set while a `d` waits to hear from nvim about unsaved changes.
     var pendingDelete: UUID?
+    /// The browser's folder's files, listed once for search and quick open.
+    /// Held here: its pending deliveries go if it's let go.
+    var folderFiles: FolderFileList?
     /// Cmd+Shift+F (see EditorWindowController+Search): the overlay, kept
     /// while closed so it reopens on its last query; the search for the
     /// browser's folder; nvim's unsaved buffers, fetched as the overlay opens;
     /// and a count naming the latest query, so an older one's results never land.
     var searchView: SearchOverlayView?
     var projectSearch: ProjectSearch?
-    var searchBuffers: SearchBufferFetch?
+    var searchBuffers: OverlayFetch<[UnsavedBuffer]>?
     var searchGeneration = 0
+    /// Cmd+Shift+O (see EditorWindowController+QuickOpen): the overlay, kept
+    /// while closed so it reopens on its last query; `folderFiles`' latest
+    /// list as sorted relative paths; nvim's recent files and unsaved
+    /// buffers, fetched as it opens; the last ranking, for narrowing; a
+    /// count naming the latest ranking, so an older one never lands; and
+    /// whether the next ranking shown is an opening's first.
+    var quickOpenView: QuickOpenView?
+    var quickOpenFiles: [String]?
+    var quickOpenFetch: OverlayFetch<QuickOpenNvimState>?
+    var quickOpenRanked: QuickOpenRanked?
+    var quickOpenGeneration = 0
+    var quickOpenSelectsTop = false
 
     /// `controller` carries the nvim command in its config (see
     /// `GhosttyConfig.editorConfig` for why it isn't a surface option).
@@ -123,14 +138,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// Cmd+1 (View menu): show the browser and go to it, go to it, or hide it.
     @objc func toggleFileBrowser(_: Any?) {
         closePrompt()
-        closeSearch()
+        closeOverlay()
         change { $0.toggleBrowser() }
     }
 
     /// Cmd+Shift+1 (View menu).
     @objc func toggleFileBrowserPin(_: Any?) {
         closePrompt()
-        closeSearch()
+        closeOverlay()
         change { $0.togglePin() }
     }
 
@@ -138,7 +153,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// (also when the window has no room to show it).
     @objc func togglePreview(_: Any?) {
         closePrompt()
-        closeSearch()
+        closeOverlay()
         let squeezedOut = layoutView.gaveWay(for: panes).contains(.preview)
         change { $0.togglePreview(squeezedOut: squeezedOut) }
     }
@@ -146,14 +161,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// Cmd+[ (View menu): one pane to the left.
     @objc func moveToLeftPane(_: Any?) {
         closePrompt()
-        closeSearch()
+        closeOverlay()
         change { $0.moveLeft() }
     }
 
     /// Cmd+] (View menu): one pane to the right.
     @objc func moveToRightPane(_: Any?) {
         closePrompt()
-        closeSearch()
+        closeOverlay()
         change { $0.moveRight() }
     }
 
@@ -171,6 +186,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         case .moveLeft: moveToLeftPane(nil)
         case .moveRight: moveToRightPane(nil)
         case .search: toggleSearch(nil)
+        case .quickOpen: toggleQuickOpen(nil)
         }
     }
 
@@ -191,7 +207,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         if returnsToEditor { previewReturnedToEditor() }
     }
 
-    /// While the search overlay is open it keeps the keyboard: the panes
+    /// While an overlay is open it keeps the keyboard: the panes
     /// beneath can still change (one gives way, an open finishes late), and
     /// the pane in focus gets the keyboard back when it closes.
     func applyPanes() {
@@ -272,13 +288,17 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - Files on disk
 
     /// `-` moved the browser: actions follow the new root, a prompt opened
-    /// for the old one closes, and the next search makes a `ProjectSearch`
-    /// for the new root (the overlay has the keyboard while open, so it's
-    /// closed now).
+    /// for the old one closes, and the next search or quick open lists the
+    /// new root's files (an overlay has the keyboard while open, so none
+    /// should be open now; one that is closes, as it shows the old root).
     private func browserRootChanged(_ root: String) {
         closePrompt()
+        closeOverlay()
         fileActions = FileActions(root: root, fileSystem: LocalFileSystem())
         projectSearch = nil
+        folderFiles = nil
+        quickOpenFiles = nil
+        quickOpenRanked = nil
         watch(root)
     }
 
@@ -287,8 +307,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         watcher = FolderWatcher(path: root) { [weak self] in
             guard let self else { return }
             browserView.reload()
-            projectSearch?.invalidateFileList()
-            if isSearchOpen { projectSearch?.prepare() }
+            folderFiles?.invalidate()
+            if isSearchOpen || isQuickOpenOpen { folderFiles?.prepare() }
             if case .viewOnly = previewState.target {
                 if panes.isPreviewShown { previewView.reloadFromDisk() } else { isPreviewOutOfDate = true }
             }
@@ -316,6 +336,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         isClosing = true
         watcher?.stop()
         stopSearch()
+        stopQuickOpen()
         previewEvents.stop()
         onClose?()
     }
@@ -361,7 +382,7 @@ extension EditorWindowController: TerminalSurfaceTitleDelegate, TerminalSurfaceC
 }
 
 /// Catches the window's own keys (`WindowShortcut`: Cmd+1, Cmd+Shift+1,
-/// Cmd+2, Cmd+[, Cmd+], Cmd+Shift+F) before the terminal sees them: Ghostty binds Cmd+digit to
+/// Cmd+2, Cmd+[, Cmd+], Cmd+Shift+F, Cmd+Shift+O) before the terminal sees them: Ghostty binds Cmd+digit to
 /// tabs and Cmd+[ / Cmd+] to splits, neither of which scwrote has.
 @MainActor
 final class EditorWindow: NSWindow {
@@ -377,7 +398,7 @@ final class EditorWindow: NSWindow {
         return super.performKeyEquivalent(with: event)
     }
 
-    private static func modifiers(of event: NSEvent) -> WindowShortcut.Modifiers {
+    static func modifiers(of event: NSEvent) -> WindowShortcut.Modifiers {
         let flags = event.modifierFlags
         var modifiers: WindowShortcut.Modifiers = []
         if flags.contains(.command) { modifiers.insert(.command) }

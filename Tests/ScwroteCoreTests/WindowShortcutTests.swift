@@ -68,4 +68,17 @@ struct WindowShortcutTests {
         #expect(shortcut(20, "3", [.command]) == nil) // Cmd+3
         #expect(shortcut(keyF, nil, [.command, .shift]) == nil)
     }
+
+    @Test func cmdShiftOIsQuickOpen() {
+        #expect(shortcut(31, "O", [.command, .shift]) == .quickOpen)
+        #expect(shortcut(31, "o", [.command]) == nil)
+        // Dvorak: the key that types "o" is key code 1 (US "s")
+        #expect(shortcut(1, "O", [.command, .shift]) == .quickOpen)
+    }
+
+    @Test func cmdShiftPeriodTogglesHiddenFiles() {
+        #expect(OverlayShortcut.isHiddenFilesToggle(keyCode: 47, modifiers: [.command, .shift]))
+        #expect(!OverlayShortcut.isHiddenFilesToggle(keyCode: 47, modifiers: [.command]))
+        #expect(!OverlayShortcut.isHiddenFilesToggle(keyCode: 47, modifiers: [.command, .shift, .option]))
+    }
 }
