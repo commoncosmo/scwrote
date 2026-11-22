@@ -141,6 +141,7 @@ final class SearchOverlayView: NSView {
     /// A click selects a match, a double-click opens it, and a click outside
     /// the panel closes the overlay.
     override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
         let frames = frames
         guard frames.panel.contains(point) else {

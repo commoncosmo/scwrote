@@ -191,13 +191,18 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         if returnsToEditor { previewReturnedToEditor() }
     }
 
+    /// While the search overlay is open it keeps the keyboard: the panes
+    /// beneath can still change (one gives way, an open finishes late), and
+    /// the pane in focus gets the keyboard back when it closes.
     func applyPanes() {
         layoutView.panes = panes
         browserView.isPinned = panes.isPinned
-        let focused: NSView = switch panes.focus {
-        case .browser: browserView
-        case .editor: terminalView
-        case .preview: previewView
+        let focused: NSView = if let overlay = layoutView.overlay { overlay } else {
+            switch panes.focus {
+            case .browser: browserView
+            case .editor: terminalView
+            case .preview: previewView
+            }
         }
         if window?.firstResponder !== focused { window?.makeFirstResponder(focused) }
     }
