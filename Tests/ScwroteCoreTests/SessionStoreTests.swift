@@ -71,53 +71,27 @@ private func state(_ folder: String) -> WindowState {
         #expect(folder.readWindowState() == nil)
     }
 
-    @Test func lockHeldByThisProcessIsLive() throws {
+    @Test func takingIsExclusiveAcrossInstances() throws {
         let t = try Temp()
-        let lock = SessionLock(path: t.base + "/d/lock")
-        #expect(lock.holder() == nil)
-        try lock.take(pid: getpid())
-        #expect(lock.holder() == getpid())
-        lock.release(pid: getpid())
-        #expect(lock.holder() == nil)
+        let first = SessionLock(path: t.base + "/d/lock")
+        let second = SessionLock(path: t.base + "/d/lock")
+        try first.take(pid: getpid())
+        #expect(throws: SessionLock.Held(pid: getpid())) { try second.take(pid: getpid() + 1) }
     }
 
-    @Test func lockLeftByADeadProcessIsIgnored() throws {
+    @Test func releasingLetsAnotherTake() throws {
         let t = try Temp()
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/true")
-        try p.run()
-        p.waitUntilExit()
-        let lock = SessionLock(path: t.base + "/lock")
-        try lock.take(pid: p.processIdentifier)
-        #expect(lock.holder() == nil)
+        let first = SessionLock(path: t.base + "/lock")
+        let second = SessionLock(path: t.base + "/lock")
+        try first.take(pid: getpid())
+        first.release()
+        try second.take(pid: getpid())
     }
 
-    @Test func releaseOnlyRemovesItsOwnLock() throws {
+    @Test func aLockFileLeftBehindIsNotHeld() throws {
         let t = try Temp()
-        let lock = SessionLock(path: t.base + "/lock")
-        try lock.take(pid: getpid())
-        lock.release(pid: getpid() + 1)
-        #expect(lock.holder() == getpid())
-    }
-
-    @Test func aLiveHolderMakesTakeThrow() throws {
-        let t = try Temp()
-        let lock = SessionLock(path: t.base + "/lock")
-        try lock.take(pid: getppid())
-        #expect(throws: SessionLock.Held(pid: getppid())) { try lock.take(pid: getpid()) }
-        #expect(lock.holder() == getppid())
-    }
-
-    @Test func aStaleLockIsTakenOver() throws {
-        let t = try Temp()
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/true")
-        try p.run()
-        p.waitUntilExit()
-        let lock = SessionLock(path: t.base + "/lock")
-        try lock.take(pid: p.processIdentifier)
-        try lock.take(pid: getpid())
-        #expect(lock.holder() == getpid())
+        try "99999".write(toFile: t.base + "/lock", atomically: true, encoding: .utf8)
+        try SessionLock(path: t.base + "/lock").take(pid: getpid())
     }
 
     @Test func takingTwiceIsFine() throws {
@@ -125,6 +99,11 @@ private func state(_ folder: String) -> WindowState {
         let lock = SessionLock(path: t.base + "/lock")
         try lock.take(pid: getpid())
         try lock.take(pid: getpid())
-        #expect(lock.holder() == getpid())
+    }
+
+    @Test func droppingTheLockReleasesIt() throws {
+        let t = try Temp()
+        do { try SessionLock(path: t.base + "/lock").take(pid: getpid()) }
+        try SessionLock(path: t.base + "/lock").take(pid: getpid())
     }
 }

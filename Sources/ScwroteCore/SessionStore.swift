@@ -57,62 +57,53 @@ public struct SessionFolder: Sendable {
     }
 }
 
-/// A file holding the process ID of the window that has a folder open, so a
-/// second window on the same folder can tell.
-public struct SessionLock: Sendable {
-    private let path: String
-
-    public init(path: String) { self.path = path }
-
-    /// The process holding the lock, if it's still running.
-    public func holder() -> pid_t? {
-        guard let text = try? String(contentsOfFile: path, encoding: .utf8),
-            let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 0
-        else { return nil }
-        return kill(pid, 0) == 0 || errno == EPERM ? pid : nil
-    }
-
-    /// Another live process holds the lock.
+/// An OS lock (flock) on a file, held for as long as the window lives, so
+/// two windows can't have one folder open and a closed or crashed window never
+/// leaves a lock behind. Not thread-safe: use it from one actor.
+public final class SessionLock: @unchecked Sendable {
+    /// Another process holds the lock; `pid` is what it wrote, 0 if unreadable.
     public struct Held: Error, Equatable {
         public let pid: pid_t
         public init(pid: pid_t) { self.pid = pid }
     }
 
-    /// Records `pid` as the holder. The file is created exclusively, so of two
-    /// windows racing for a folder only one succeeds: the other gets `Held`.
-    /// Succeeds if `pid` already holds it, and takes over a lock left by a
-    /// process that's gone.
+    private let path: String
+    private var fd: Int32 = -1
+
+    public init(path: String) { self.path = path }
+
+    deinit { release() }
+
+    /// Takes the lock and writes `pid` into the file (for diagnostics only).
+    /// Throws `Held` if another open file description holds it. A no-op if this
+    /// instance already holds it. The file is never deleted, so everyone locks
+    /// the same inode.
     public func take(pid: pid_t) throws {
+        if fd >= 0 { return }
         try FileManager.default.createDirectory(
             atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-        if try create(pid) { return }
-        if let live = holder() {
-            if live == pid { return }
-            throw Held(pid: live)
+        let opened = open(path, O_CREAT | O_RDWR | O_CLOEXEC, 0o644)
+        guard opened >= 0 else { throw CocoaError(.fileWriteUnknown) }
+        if flock(opened, LOCK_EX | LOCK_NB) != 0 {
+            let reason = errno
+            var buffer = [UInt8](repeating: 0, count: 32)
+            let count = read(opened, &buffer, buffer.count)
+            close(opened)
+            guard reason == EWOULDBLOCK else { throw CocoaError(.fileWriteUnknown) }
+            let text = count > 0 ? String(decoding: buffer[0..<count], as: UTF8.self) : ""
+            throw Held(pid: pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0)
         }
-        try? FileManager.default.removeItem(atPath: path)
-        if try create(pid) { return }
-        if let live = holder(), live != pid { throw Held(pid: live) }
-    }
-
-    /// Creates the lock file holding `pid`; false if it already exists.
-    private func create(_ pid: pid_t) throws -> Bool {
-        let fd = open(path, O_CREAT | O_EXCL | O_WRONLY, 0o644)
-        if fd < 0 {
-            if errno == EEXIST { return false }
-            throw CocoaError(.fileWriteUnknown)
-        }
-        defer { close(fd) }
+        fd = opened
         let bytes = Array(String(pid).utf8)
-        guard write(fd, bytes, bytes.count) == bytes.count else { throw CocoaError(.fileWriteUnknown) }
-        return true
+        _ = ftruncate(fd, 0)
+        _ = pwrite(fd, bytes, bytes.count, 0)
     }
 
-    /// Gives up the lock, but only if `pid` holds it.
-    public func release(pid: pid_t) {
-        guard let text = try? String(contentsOfFile: path, encoding: .utf8),
-            pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)) == pid
-        else { return }
-        try? FileManager.default.removeItem(atPath: path)
+    /// Gives up the lock, if held.
+    public func release() {
+        guard fd >= 0 else { return }
+        flock(fd, LOCK_UN)
+        close(fd)
+        fd = -1
     }
 }
