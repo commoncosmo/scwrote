@@ -27,7 +27,7 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
     /// what's on disk.
     var unsaved: [String: String] = [:] {
         didSet {
-            previewLines.removeAll()
+            previewFiles.removeAll()
             needsDisplay = true
         }
     }
@@ -45,9 +45,10 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
     var onAction: ((SearchAction<Renderer.List.Item>) -> Void)?
 
     private let renderer = Renderer()
-    /// Files' lines for the preview, read once per opening (see `reopen()`);
-    /// nil for a file too large to preview.
-    private var previewLines: [String: [Substring]?] = [:]
+    /// Files as the preview shows them, read once per opening (see
+    /// `reopen()`); a file read only for its first lines is read again in
+    /// full when a line deeper in it is wanted.
+    private var previewFiles: [String: PreviewFile] = [:]
     /// First result row drawn; scrolls to keep the selection in view.
     private var topRow = 0
     /// Scrolling not yet worth a whole row, in rows.
@@ -58,7 +59,8 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
     /// Long lines are cut here before drawing; the preview clips them anyway.
     private let previewColumns = 400
     /// Larger files aren't previewed: they're read on the main thread while
-    /// drawing, and a huge log would stall typing.
+    /// drawing, and a huge log would stall typing. With no line to center
+    /// on, only the file's start is read (see `PreviewFile.read`).
     private let previewByteLimit = 8 * 1024 * 1024
 
     private var style: OverlayStyle { OverlayStyle(theme: theme) }
@@ -83,7 +85,7 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
     /// afresh for the preview.
     func reopen() {
         overlay.reopen()
-        previewLines.removeAll()
+        previewFiles.removeAll()
         needsDisplay = true
     }
 
@@ -346,7 +348,7 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
     /// The selected result's file: its name, then numbered lines, centered
     /// on the renderer's line (which is tinted) or from the top, with the
     /// renderer's highlights in the accent color. Tabs are 4 spaces; long
-    /// lines are clipped.
+    /// lines are clipped. A binary or too-large file says so instead.
     private func drawPreview(in area: NSRect, style: OverlayStyle) {
         guard let item = results.selected, area.height >= lineHeight else { return }
         let preview = renderer.preview(of: item, query: overlay.query.text)
@@ -356,10 +358,15 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
 
         let visible = Int((area.height - lineHeight) / lineHeight)
         guard visible > 0 else { return }
-        guard let lines = previewLines(for: preview.path) else {
-            let line = NSRect(x: area.minX, y: header.maxY, width: area.width, height: lineHeight)
-            let message = style.attributed("File too large to preview", color: theme.dim)
-            style.draw(message, x: area.minX + 6, line: line, width: area.width - 6)
+        let lines: [Substring]
+        switch previewFile(for: preview.path, whole: preview.line != nil) {
+        case let .text(text, _):
+            lines = text
+        case .binary:
+            drawPreviewMessage("Binary file", below: header, style: style)
+            return
+        case .tooLarge:
+            drawPreviewMessage("File too large to preview", below: header, style: style)
             return
         }
         guard !lines.isEmpty else { return }
@@ -387,29 +394,24 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
         }
     }
 
-    /// The unsaved buffer's lines if there is one, else the file's, read
-    /// once; nil past `previewByteLimit`.
-    private func previewLines(for path: String) -> [Substring]? {
-        if let known = previewLines[path] { return known }
-        let lines = previewText(of: path).map { text -> [Substring] in
-            guard !text.isEmpty else { return [] }
-            var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map { $0.hasSuffix("\r") ? $0.dropLast() : $0 }
-            if text.hasSuffix("\n") { lines.removeLast() }
-            return lines
-        }
-        previewLines[path] = .some(lines)
-        return lines
+    private func drawPreviewMessage(_ text: String, below header: NSRect, style: OverlayStyle) {
+        let line = NSRect(x: header.minX, y: header.maxY, width: header.width, height: lineHeight)
+        style.draw(style.attributed(text, color: theme.dim), x: line.minX + 6, line: line, width: line.width - 6)
     }
 
-    /// The unsaved buffer's text if there is one, else the file's ("" if it
-    /// can't be read), reading at most one byte past `previewByteLimit`;
-    /// nil past it.
-    private func previewText(of path: String) -> String? {
-        if let buffer = unsaved[path] { return buffer.utf8.count > previewByteLimit ? nil : buffer }
-        guard let handle = FileHandle(forReadingAtPath: path) else { return "" }
-        defer { try? handle.close() }
-        guard let data = try? handle.read(upToCount: previewByteLimit + 1) else { return "" }
-        return data.count > previewByteLimit ? nil : String(decoding: data, as: UTF8.self)
+    /// The unsaved buffer's lines if there is one, else the file's: all of
+    /// it when `whole` (to center on a line), else its start. Read once per
+    /// opening, and again in full if only the start was read before.
+    private func previewFile(for path: String, whole: Bool) -> PreviewFile {
+        if let known = previewFiles[path], !(whole && known.isPartial) { return known }
+        let file: PreviewFile
+        if let buffer = unsaved[path] {
+            file = buffer.utf8.count > previewByteLimit ? .tooLarge : .text(lines: PreviewFile.lines(of: buffer), isWhole: true)
+        } else {
+            file = PreviewFile.read(path, whole: whole, wholeLimit: previewByteLimit)
+        }
+        previewFiles[path] = file
+        return file
     }
 }
 
