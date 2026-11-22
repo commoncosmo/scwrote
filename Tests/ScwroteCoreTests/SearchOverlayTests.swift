@@ -184,4 +184,18 @@ struct SearchOverlayTests {
         #expect(overlay.paste("zz") == .queryChanged("zz"))
         #expect(!overlay.isQuerySelected)
     }
+
+    @Test func ctrlQSendsInBothModes() {
+        var overlay = TextSearchOverlay()
+        _ = overlay.handle(.character("n"), pageHeight: 10)
+        #expect(overlay.handle(.sendToQuickfix, pageHeight: 10) == .sendToQuickfix)
+        _ = overlay.handle(.escape, pageHeight: 10)
+        #expect(overlay.mode == .list)
+        #expect(overlay.handle(.sendToQuickfix, pageHeight: 10) == .sendToQuickfix)
+    }
+
+    @Test func ctrlQDoesNothingWithAnEmptyQuery() {
+        var overlay = TextSearchOverlay()
+        #expect(overlay.handle(.sendToQuickfix, pageHeight: 10) == nil)
+    }
 }

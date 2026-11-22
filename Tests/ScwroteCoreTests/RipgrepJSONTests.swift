@@ -24,6 +24,14 @@ struct RipgrepJSONTests {
         #expect(match?.key == SearchMatch.Key(path: "/r/Sources/a.swift", line: 12))
     }
 
+    @Test func lineTextIsTheWholeLine() throws {
+        let long = String(repeating: "a", count: 250) + "needle" + String(repeating: "b", count: 44)
+        let line = matchLine(lines: #"{"text":"\#(long)\r\n"}"#, submatches: [(250, 256)])
+        let match = try #require(RipgrepJSON.match(from: line, root: "/r"))
+        #expect(match.lineText == long)
+        #expect(match.text.count <= 200)
+    }
+
     @Test func absolutePathsAreKeptAsTheyAre() {
         let line = matchLine(path: #"{"text":"/abs/a.swift"}"#, lines: #"{"text":"x\n"}"#, submatches: [(0, 1)])
         #expect(RipgrepJSON.match(from: line, root: "/r")?.path == "/abs/a.swift")

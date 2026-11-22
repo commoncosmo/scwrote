@@ -122,16 +122,19 @@ final class ProjectSearchTests {
     }
 
     @MainActor
-    func start(_ search: ProjectSearch, _ query: String, buffers: [UnsavedBuffer] = []) -> Delivery {
+    func start(_ search: ProjectSearch, _ query: String, buffers: [UnsavedBuffer] = [],
+               limit: Int? = ProjectSearch.deliveryLimit) -> Delivery {
         let delivery = Delivery()
-        search.search(query, buffers: buffers, onBatch: { delivery.batch($0) }, onFinish: { delivery.finish() })
+        search.search(query, buffers: buffers, limit: limit,
+                      onBatch: { delivery.batch($0) }, onFinish: { delivery.finish() })
         return delivery
     }
 
     /// Runs one search to the end; nil if it didn't finish within 5 seconds.
     @MainActor
-    func results(_ search: ProjectSearch, _ query: String, buffers: [UnsavedBuffer] = []) async -> [SearchMatch]? {
-        let delivery = start(search, query, buffers: buffers)
+    func results(_ search: ProjectSearch, _ query: String, buffers: [UnsavedBuffer] = [],
+                 limit: Int? = ProjectSearch.deliveryLimit) async -> [SearchMatch]? {
+        let delivery = start(search, query, buffers: buffers, limit: limit)
         guard await delivery.finished() else { return nil }
         return delivery.matches.sorted { $0.key < $1.key }
     }
@@ -215,6 +218,21 @@ final class ProjectSearchTests {
         var shown = SearchResults()
         delivery.batches.forEach { shown.add($0) }
         #expect(shown.isCapped)
+    }
+
+    @Test @MainActor func uncappedSearchDeliversEveryMatch() async throws {
+        try write("big.txt", String(repeating: "needle\n", count: 1500))
+        let found = try #require(await results(makeSearch(), "needle", limit: nil))
+        #expect(found.count == 1500)
+        #expect(Set(found.map(\.key)).count == 1500)
+    }
+
+    @Test @MainActor func uncappedSearchUsesUnsavedBuffers() async throws {
+        try write("a.txt", "hay\nhay\nneedle on disk\nhay\n")
+        let buffer = UnsavedBuffer(path: resolved + "/a.txt", text: "hay\nhay\nhay\nhay\nhay\nhay\nneedle in the buffer\n")
+        let found = try #require(await results(makeSearch(), "needle", buffers: [buffer], limit: nil))
+        #expect(found.map(\.line) == [7])
+        #expect(found.first?.lineText == "needle in the buffer")
     }
 
     @Test @MainActor func fileListIsRebuiltAfterInvalidate() async throws {

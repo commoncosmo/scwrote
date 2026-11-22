@@ -49,6 +49,7 @@ extension EditorWindowController {
     func closeSearch() {
         guard isSearchOpen else { return }
         stopSearch()
+        searchView?.busyMessage = nil
         layoutView.overlay = nil
         applyPanes()
     }
@@ -78,6 +79,11 @@ extension EditorWindowController {
     private func makeSearchView() -> SearchOverlayView {
         let view = SearchOverlayView(theme: browserView.theme)
         view.onAction = { [weak self] in self?.handle($0) }
+        view.onCancelBusy = { [weak self, weak view] in
+            guard let self, let view else { return }
+            view.busyMessage = nil
+            search(view.overlay.query.text)
+        }
         searchView = view
         return view
     }
@@ -88,6 +94,7 @@ extension EditorWindowController {
         case let .open(match): open(match)
         case .close: closeSearch()
         case .toggleHidden: break // quick open only
+        case .sendToQuickfix: sendToQuickfix()
         }
     }
 
@@ -116,6 +123,57 @@ extension EditorWindowController {
         }
     }
 
+    /// Ctrl-Q: runs the query again without the overlay's cap, over the same
+    /// unsaved buffers, and hands every matching line to nvim as a new
+    /// quickfix list. The overlay says so meanwhile; Esc, or closing it,
+    /// cancels. A finished search with no matches sends nothing. Unlike the
+    /// overlay's own search, this waits as long as nvim takes to give its
+    /// unsaved buffers: a list for `:cfdo` must not quietly be the disk's.
+    private func sendToQuickfix() {
+        guard let view = searchView, let projectSearch, let fetch = searchBuffers else { return }
+        if view.results.isFinished, view.results.matches.isEmpty { return }
+        let query = view.overlay.query.text
+        searchGeneration += 1
+        let generation = searchGeneration
+        view.busyMessage = "Sending to quickfix…"
+        let collected = QuickfixMatches()
+        Task { [weak self] in
+            let buffers = await fetch.task.value
+            guard let self, generation == searchGeneration else { return }
+            projectSearch.search(query, buffers: buffers, limit: nil, onBatch: { [weak self] batch in
+                guard let self, generation == searchGeneration else { return }
+                collected.matches.append(contentsOf: batch)
+            }, onFinish: { [weak self] in
+                guard let self, generation == searchGeneration else { return }
+                handOver(collected.sorted, query: query)
+            })
+        }
+    }
+
+    /// Closes the overlay and gives nvim the list, then follows it to the
+    /// first match as opening one does.
+    private func handOver(_ matches: [SearchMatch], query: String) {
+        searchView?.busyMessage = nil
+        guard let first = matches.first else {
+            // The overlay's own search was replaced by this one before it
+            // finished: it found nothing either, so say so.
+            searchView?.results.finish()
+            return
+        }
+        closeSearch()
+        Task {
+            do {
+                try await nvimCall { try $0.sendToQuickfix(matches, query: query) }
+                window?.title = (first.path as NSString).lastPathComponent
+                change { $0.openedFile() }
+                browserView.reveal(first.path)
+            } catch {
+                NSSound.beep()
+                FileHandle.standardError.write(Data("scwrote: couldn't send the matches to nvim: \(error)\n".utf8))
+            }
+        }
+    }
+
     /// Opens the match in nvim at its line and column, with the query as the
     /// `/` pattern, the way the browser opens a file.
     private func open(_ match: SearchMatch) {
@@ -132,6 +190,18 @@ extension EditorWindowController {
                 FileHandle.standardError.write(Data("scwrote: couldn't open \(match.path) in nvim: \(error)\n".utf8))
             }
         }
+    }
+}
+
+/// The matches an uncapped search delivers, in arrival order until sorted.
+@MainActor
+private final class QuickfixMatches {
+    var matches: [SearchMatch] = []
+
+    /// File then line, one per line.
+    var sorted: [SearchMatch] {
+        var seen = Set<SearchMatch.Key>()
+        return matches.sorted { $0.key < $1.key }.filter { seen.insert($0.key).inserted }
     }
 }
 

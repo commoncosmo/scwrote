@@ -38,8 +38,8 @@ struct SearchMatchRenderer: OverlayRenderer {
 
     func footer(_ mode: SearchOverlayMode) -> String {
         mode == .typing
-            ? "⌃J/⌃K move · Esc → list (j/k) · ↩ open"
-            : "j/k move · Esc close · ↩ open · i back to typing"
+            ? "⌃J/⌃K move · Esc → list (j/k) · ↩ open · ⌃Q quickfix"
+            : "j/k move · Esc close · ↩ open · i back to typing · ⌃Q quickfix"
     }
 
     /// The match's text with the match in the accent color, and `path:line`

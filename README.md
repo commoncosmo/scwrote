@@ -245,8 +245,23 @@ count says "1000+ matches"; type more to narrow it.
 | `gg` / `G` | (typed) | first / last |
 | `i` or `/` | (typed) | back to typing |
 | Enter | open selected | open selected |
+| Ctrl-Q | send all to quickfix | send all to quickfix |
 | Esc | switch to list | close |
 | Cmd+Shift+F | close | close |
+
+Ctrl-Q sends every match to nvim's quickfix list: all of them, not only the
+first 1,000, with unsaved edits included as the overlay showed them. The
+overlay says "Sending to quickfix…" while it searches again (Esc cancels),
+then closes; nvim opens the quickfix window and goes to the first match.
+`:cnext` and `:cprev` move through the matches, `:colder` brings back earlier
+lists, and this replaces across the files, asking before each change:
+
+```vim
+:cfdo %s/oldName/newName/gc | update
+```
+
+nvim makes a buffer for each file in the list, so a list spanning tens of
+thousands of files can make it pause for a while before the window opens.
 
 A click selects a match, a double-click opens it, and a click outside the
 overlay closes it. Reopening brings back the last query, selected, so typing
@@ -299,9 +314,9 @@ SCWROTE_DEBUG_KEYS='G<CR>' SCWROTE_DEBUG_SNAPSHOT=/tmp/shot.png scwrote ./
 
 Keys go to the browser; `<CR>` `<Esc>` `<Up>` `<Down>` `<Left>` `<Right>`
 `<C-d>` `<C-u>` are named keys. The window's own keys, `<D-1>` (Cmd+1),
-`<D-S-1>`, `<D-2>`, `<D-[>`, `<D-]>`, `<D-S-f>` and `<D-S-o>`, and quick
-open's `<D-S-.>`, are posted as real key events, so they take the same path
-through the app as a keyboard's. While an overlay is open, plain characters,
+`<D-S-1>`, `<D-2>`, `<D-[>`, `<D-]>`, `<D-S-f>` and `<D-S-o>`, quick open's
+`<D-S-.>` and search's `<C-q>`, are posted as real key events, so they take
+the same path through the app as a keyboard's. While an overlay is open, plain characters,
 `<CR>`, `<Esc>`, `<Up>` and `<Down>` go to it. Text in braces goes to nvim
 (`nvim_input`, in nvim's key notation), so `{ohello<Esc>}` opens a line, types
 "hello" and leaves insert mode.

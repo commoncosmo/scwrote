@@ -44,6 +44,12 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
     /// the overlay asked to close.
     var onAction: ((SearchAction<Renderer.List.Item>) -> Void)?
 
+    /// Shown in place of the count while the owner works on the overlay's
+    /// behalf (search sending its matches to quickfix). Meanwhile Esc calls
+    /// `onCancelBusy` and other keys, paste and the mouse do nothing.
+    var busyMessage: String? { didSet { needsDisplay = true } }
+    var onCancelBusy: (() -> Void)?
+
     private let renderer = Renderer()
     /// Files as the preview shows them, read once per opening (see
     /// `reopen()`); a file read only for its first lines is read again in
@@ -92,6 +98,10 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
     /// A key, as the keyboard would send it (also for the debug hooks).
     /// Without ripgrep only Esc means anything: it closes.
     func press(_ key: SearchKey) {
+        if busyMessage != nil {
+            if key == .escape { onCancelBusy?() }
+            return
+        }
         if isMissingRipgrep {
             if key == .escape { onAction?(.close) }
             return
@@ -124,14 +134,14 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
         }
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         if flags == .command, event.charactersIgnoringModifiers?.lowercased() == "v" {
-            if !isMissingRipgrep, overlay.mode == .typing {
+            if !isMissingRipgrep, busyMessage == nil, overlay.mode == .typing {
                 send(overlay.paste(NSPasteboard.general.string(forType: .string) ?? ""))
             }
             return true
         }
         if Renderer.togglesHidden,
            OverlayShortcut.isHiddenFilesToggle(keyCode: event.keyCode, modifiers: EditorWindow.modifiers(of: event)) {
-            if !isMissingRipgrep, !event.isARepeat { send(overlay.toggleHidden()) }
+            if !isMissingRipgrep, busyMessage == nil, !event.isARepeat { send(overlay.toggleHidden()) }
             return true
         }
         return super.performKeyEquivalent(with: event)
@@ -156,6 +166,7 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
             case "k": return .previous
             case "d": return .halfPageDown
             case "u": return .halfPageUp
+            case "q": return .sendToQuickfix
             default: break
             }
         }
@@ -172,6 +183,7 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
     /// the panel closes the overlay.
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        guard busyMessage == nil else { return }
         let point = convert(event.locationInWindow, from: nil)
         let frames = frames
         guard frames.panel.contains(point) else {
@@ -189,7 +201,7 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
     /// Scrolling moves the selection a row at a time, so the list follows
     /// it as it does the keys.
     override func scrollWheel(with event: NSEvent) {
-        guard !isMissingRipgrep, results.count > 0 else { return }
+        guard !isMissingRipgrep, busyMessage == nil, results.count > 0 else { return }
         if event.phase == .began { scrollRemainder = 0 }
         // A trackpad reports points, a wheel lines; positive is toward the top.
         scrollRemainder += event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / lineHeight : event.scrollingDeltaY
@@ -303,7 +315,7 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
         var available = inner.width
         let query = overlay.query
         if listsQuery {
-            let count = style.attributed(results.countLine, color: theme.dim)
+            let count = style.attributed(busyMessage ?? results.countLine, color: theme.dim)
             let width = ceil(count.size().width)
             style.draw(count, x: inner.maxX - width, line: box, width: width)
             available -= width + gap * 2

@@ -34,6 +34,40 @@ extension NvimClient {
         ])
     }
 
+    /// Pushes `matches` (sorted, one per line) as a new quickfix list titled
+    /// `scwrote search "<query>"`, so `:colder` still reaches the user's
+    /// earlier lists; opens the quickfix window; and puts the cursor on the
+    /// first entry in the file's window, centered, with `query` as the `/`
+    /// pattern as `open` sets it. Quickfix columns are 1-based bytes, so each
+    /// entry's column is the match's byte offset plus one. No matches: nothing
+    /// changes.
+    public func sendToQuickfix(_ matches: [SearchMatch], query: String) throws {
+        guard !matches.isEmpty else { return }
+        let items: [MessagePackValue] = matches.map {
+            .array([.string($0.path), .int(Int64($0.line)), .int(Int64($0.column + 1)), .string($0.lineText)])
+        }
+        // nvim makes a buffer per file in the list, slowly past a few
+        // thousand files: worth waiting for rather than reporting a failure.
+        _ = try request("nvim_exec_lua", [
+            .string(Self.sendToQuickfixLua),
+            .array([.array(items), .string("scwrote search \"\(query)\""), .string(query)]),
+        ], waitingOutTimeouts: true)
+    }
+
+    private static let sendToQuickfixLua = #"""
+        local items, title, query = ...
+        local entries = {}
+        for _, item in ipairs(items) do
+          table.insert(entries, { filename = item[1], lnum = item[2], col = item[3], text = item[4] })
+        end
+        vim.fn.setqflist({}, " ", { title = title, items = entries })
+        if vim.bo.buftype == "quickfix" then vim.cmd("wincmd p") end
+        vim.cmd("cfirst")
+        vim.cmd("copen")
+        vim.cmd("wincmd p")
+        vim.cmd("normal! zz")
+        """# + setSearchPatternLua
+
     private static let unsavedBuffersLua = """
         local root = ...
         local found = {}
@@ -59,6 +93,12 @@ extension NvimClient {
           vim.api.nvim_win_set_cursor(0, { math.max(1, math.min(line, last)), 0 })
         end
         vim.cmd("normal! zz")
+        """# + setSearchPatternLua
+
+    /// `query` as the `/` pattern, literal and ignoring case, searching
+    /// forward, highlighted if the user highlights searches. Expects a local
+    /// `query`.
+    private static let setSearchPatternLua = #"""
         vim.fn.setreg("/", [[\V\c]] .. vim.fn.escape(query, [[\/]]))
         vim.v.searchforward = 1
         if vim.o.hlsearch then vim.v.hlsearch = 1 end
