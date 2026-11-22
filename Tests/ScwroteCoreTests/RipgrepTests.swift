@@ -94,23 +94,45 @@ final class RipgrepTests {
         var snapshot: (lines: Int, exits: Int) { lock.lock(); defer { lock.unlock() }; return (lineCount, exitCount) }
     }
 
-    @Test func cancelStopsCallbacks() throws {
-        for i in 0..<2000 { try write("f\(i).txt", "needle\n") }
+    @Test func cancelStopsCallbacksAndTheProcess() throws {
         let calls = Calls()
+        // Prints a line, then stalls, so it can't finish before cancel().
         let run = try RipgrepRun(
-            executable: rgPath!, arguments: Ripgrep.searchArguments("needle", stdin: false), directory: folder,
+            executable: "/bin/sh", arguments: ["-c", "echo line; exec sleep 30"], directory: folder,
             stdin: nil,
             onLine: { _ in if calls.line() == 1 { calls.first.signal() } },
             onExit: { calls.exited() })
         calls.first.wait()
         run.cancel()
-        let atCancel = calls.snapshot
         Thread.sleep(forTimeInterval: 0.5)
-        let later = calls.snapshot
-        // ripgrep may already have finished by the time we cancel; what must
-        // hold is that nothing is delivered once cancel() has returned.
-        #expect(later.lines == atCancel.lines)
-        #expect(later.exits == atCancel.exits)
+        #expect(calls.snapshot.lines == 1)
+        #expect(calls.snapshot.exits == 0)
+        #expect(kill(run.pid, 0) == -1 && errno == ESRCH)
+    }
+
+    @Test func childrenInheritOnlyStandardDescriptors() throws {
+        let lines = try collect("/bin/sh", ["-c", "ls /dev/fd"], stdin: Data("x".utf8))
+        let fds = lines.compactMap { Int(String(decoding: $0, as: UTF8.self)) }
+        // 0, 1, 2, and what ls itself opens to read /dev/fd (a plain shell shows 3 and 4).
+        #expect(!fds.isEmpty && fds.allSatisfy { $0 <= 4 })
+    }
+
+    func collect(_ executable: String, _ arguments: [String], stdin: Data? = nil) throws -> [Data] {
+        let lines = Lines()
+        let done = DispatchSemaphore(value: 0)
+        let run = try RipgrepRun(
+            executable: executable, arguments: arguments, directory: folder, stdin: stdin,
+            onLine: { lines.add($0) }, onExit: { done.signal() })
+        done.wait()
+        withExtendedLifetime(run) {}
+        return lines.all
+    }
+
+    final class Lines: @unchecked Sendable {
+        private let lock = NSLock()
+        private var items: [Data] = []
+        func add(_ line: Data) { lock.lock(); items.append(line); lock.unlock() }
+        var all: [Data] { lock.lock(); defer { lock.unlock() }; return items }
     }
 
     @Test func noMatchesStillExits() throws {
