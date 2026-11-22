@@ -262,23 +262,25 @@ it in nvim, without changing nvim's search pattern.
 
 Matching is fuzzy: the letters you type must appear in the path in order, not
 necessarily together, ignoring case. Matches in the file name beat matches in
-its folders, and letters at word starts (after `/`, `_`, `-`, `.` or a space,
-or a capital in `EditorWindow`) and runs of consecutive letters count most, so
-`ewc` puts `EditorWindowController.swift` on top. A `/` narrows by folder:
-`ui/view` wants `ui`, then a separator, then `view`. Spaces split the query
-into terms that must all match, in any order. Files open in nvim rank first
-among equal matches.
+its folders (the extension doesn't count as the name), and letters at word
+starts (the start of the path, after `/`, `_`, `-`, `.`, `+` or a space, or a
+capital in `EditorWindow`) and runs of consecutive letters count most, so
+`ewc` puts `EditorWindowController.swift` on top. Typing a file's whole name
+puts it above longer names that start the same: `theme` finds `Theme.swift`
+before `ThemeTests.swift`. A `/` narrows by folder: `ui/view` wants `ui`,
+then a separator, then `view`. Spaces split the query into terms that must
+all match, in any order. Files open in nvim rank first among equal matches.
 
 `name:42` opens the file at line 42, and the preview centers on it. With an
-empty query the list starts with the files open in nvim, then the ones you
-opened recently (nvim's history), then the rest in path order, so `:42` alone
-opens a recent file at line 42.
+empty query the list starts with the other files open in nvim, then the file
+you're in, then the ones you opened recently (nvim's history), then the rest
+in path order, so `:42` alone opens a recent file at line 42.
 
 It lists what ripgrep would, so files your `.gitignore` names stay out, but
 hidden files and folders (such as `.github/`) are listed. Cmd+Shift+. hides or
-shows them for the rest of the app's run; while they're hidden the count says
+shows them until the window closes; while they're hidden the count says
 "hidden off". Unsaved edits in nvim show in the preview instead of the file on
-disk.
+disk; a binary file's preview just says so.
 
 The keys and the mouse work as in search (see the table above), with
 Cmd+Shift+O closing it. Cmd+Shift+F switches to search and Cmd+Shift+O back;
@@ -300,8 +302,9 @@ Keys go to the browser; `<CR>` `<Esc>` `<Up>` `<Down>` `<Left>` `<Right>`
 `<D-S-1>`, `<D-2>`, `<D-[>`, `<D-]>`, `<D-S-f>` and `<D-S-o>`, and quick
 open's `<D-S-.>`, are posted as real key events, so they take the same path
 through the app as a keyboard's. While an overlay is open, plain characters,
-`<CR>`, `<Esc>`, `<Up>` and `<Down>` go to it. Text in braces goes to nvim (`nvim_input`, in nvim's key notation),
-so `{ohello<Esc>}` opens a line, types "hello" and leaves insert mode.
+`<CR>`, `<Esc>`, `<Up>` and `<Down>` go to it. Text in braces goes to nvim
+(`nvim_input`, in nvim's key notation), so `{ohello<Esc>}` opens a line, types
+"hello" and leaves insert mode.
 `SCWROTE_DEBUG_WIDTH=600` sets the window's content width in points first, to
 see which panes give way:
 
