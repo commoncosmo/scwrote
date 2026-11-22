@@ -12,19 +12,27 @@ public struct LaunchRequest: Equatable, Sendable {
     public var browserRoot: String
     /// Open with the file browser filling the window.
     public var startsInBrowser: Bool
+    /// False with `--fresh`: this launch doesn't reopen the last session.
+    public var restoresSession: Bool
+    /// Absolute paths of the files a file launch names, in order; empty for a folder launch.
+    public var namedFiles: [String]
 
     public init(
         workingDirectory: String,
         nvimArguments: [String],
         title: String,
         browserRoot: String,
-        startsInBrowser: Bool
+        startsInBrowser: Bool,
+        restoresSession: Bool = true,
+        namedFiles: [String] = []
     ) {
         self.workingDirectory = workingDirectory
         self.nvimArguments = nvimArguments
         self.title = title
         self.browserRoot = browserRoot
         self.startsInBrowser = startsInBrowser
+        self.restoresSession = restoresSession
+        self.namedFiles = namedFiles
     }
 
     /// No path, or a single folder, starts in the file browser on that folder,
@@ -36,6 +44,10 @@ public struct LaunchRequest: Equatable, Sendable {
         currentDirectory: String,
         isDirectory: (String) -> Bool
     ) -> LaunchRequest {
+        // `--fresh` is scwrote's own, so it's taken out before anything else.
+        let restoresSession = !arguments.contains("--fresh")
+        let arguments = arguments.filter { $0 != "--fresh" }
+
         let isFlag = { (argument: String) in argument.hasPrefix("+") || argument.hasPrefix("-") }
         let paths = arguments.filter { !isFlag($0) }
 
@@ -50,7 +62,8 @@ public struct LaunchRequest: Equatable, Sendable {
                 nvimArguments: arguments.filter(isFlag),
                 title: URL(fileURLWithPath: folder).lastPathComponent,
                 browserRoot: folder,
-                startsInBrowser: true
+                startsInBrowser: true,
+                restoresSession: restoresSession
             )
         }
         return LaunchRequest(
@@ -58,7 +71,9 @@ public struct LaunchRequest: Equatable, Sendable {
             nvimArguments: arguments,
             title: URL(fileURLWithPath: paths.first ?? currentDirectory).lastPathComponent,
             browserRoot: currentDirectory,
-            startsInBrowser: false
+            startsInBrowser: false,
+            restoresSession: restoresSession,
+            namedFiles: paths.map { absolute($0, from: currentDirectory) }
         )
     }
 

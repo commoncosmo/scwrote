@@ -81,6 +81,41 @@ struct LaunchRequestTests {
         #expect(request.title == "a.md")
     }
 
+    /// `resolve` with the folders in `dirs` as the only existing directories.
+    private func resolve(_ arguments: [String], cwd: String, dirs: String...) -> LaunchRequest {
+        LaunchRequest.resolve(arguments: arguments, currentDirectory: cwd, isDirectory: { Set(dirs).contains($0) })
+    }
+
+    // MARK: --fresh and the files a launch names
+
+    @Test func freshIsScwrotesOwn() {
+        let request = resolve(["--fresh", "a.md"], cwd: "/p")
+
+        #expect(!request.restoresSession)
+        #expect(request.nvimArguments == ["a.md"])
+        #expect(request.namedFiles == ["/p/a.md"])
+    }
+
+    @Test func freshAloneIsAFolderLaunch() {
+        let request = resolve(["--fresh"], cwd: "/p")
+
+        #expect(request.startsInBrowser)
+        #expect(request.browserRoot == "/p")
+        #expect(!request.restoresSession)
+    }
+
+    @Test func namedFilesAreAbsoluteAndSkipFlags() {
+        #expect(resolve(["+3", "a.md", "sub/b.md"], cwd: "/p").namedFiles == ["/p/a.md", "/p/sub/b.md"])
+    }
+
+    @Test func aFolderLaunchNamesNoFiles() {
+        #expect(resolve(["./"], cwd: "/p", dirs: "/p").namedFiles == [])
+    }
+
+    @Test func restoringIsTheDefault() {
+        #expect(resolve(["a.md"], cwd: "/p").restoresSession)
+    }
+
     // MARK: The command Ghostty runs
 
     @Test func shellCommandListensOnASocketAndSingleQuotesEveryWord() {
