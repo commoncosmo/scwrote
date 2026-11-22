@@ -254,11 +254,14 @@ first 1,000, with unsaved edits included as the overlay showed them. The
 overlay says "Sending to quickfix…" while it searches again (Esc cancels),
 then closes; nvim opens the quickfix window and goes to the first match.
 `:cnext` and `:cprev` move through the matches, `:colder` brings back earlier
-lists, and this replaces across the files, asking at each one:
+lists, and this replaces across the files, asking before each change:
 
 ```vim
 :cfdo %s/oldName/newName/gc | update
 ```
+
+nvim makes a buffer for each file in the list, so a list spanning tens of
+thousands of files can make it pause for a while before the window opens.
 
 A click selects a match, a double-click opens it, and a click outside the
 overlay closes it. Reopening brings back the last query, selected, so typing

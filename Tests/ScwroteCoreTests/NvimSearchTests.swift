@@ -177,6 +177,18 @@ final class NvimSearchTests {
         #expect(try client.currentFile() == odd)
     }
 
+    /// nvim can take longer than a call's read timeout to build a list over
+    /// thousands of files; sending waits it out instead of failing.
+    @Test func aSlowHandoverIsWaitedOut() throws {
+        let a = try file("a.txt", "needle\n")
+        try command("autocmd BufEnter * lua vim.wait(500)")
+        let impatient = NvimClient(socketPath: nvim.socketPath, queuesNotifications: false, readTimeout: 0.1)
+
+        try impatient.sendToQuickfix([match(a, 1, 0, "needle")], query: "needle")
+
+        #expect(try client.currentFile() == a)
+    }
+
     @Test func noMatchesChangesNothing() throws {
         try client.sendToQuickfix([], query: "needle")
 
@@ -186,8 +198,11 @@ final class NvimSearchTests {
 
     // MARK: - Helpers
 
-    private func match(_ path: String, _ line: Int, _ column: Int, _ text: String) -> SearchMatch {
-        SearchMatch(path: path, line: line, column: column, text: text, ranges: [], lineText: text)
+    /// A match whose overlay text differs from its whole line, as a long
+    /// line's does, so the tests show which one reaches quickfix.
+    private func match(_ path: String, _ line: Int, _ column: Int, _ lineText: String) -> SearchMatch {
+        SearchMatch(path: path, line: line, column: column, text: "…trimmed for the overlay…", ranges: [],
+                    lineText: lineText)
     }
 
     private func path(_ relative: String) -> String {

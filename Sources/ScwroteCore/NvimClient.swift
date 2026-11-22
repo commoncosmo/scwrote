@@ -34,6 +34,9 @@ public final class NvimClient: @unchecked Sendable {
     /// Whether a call waits as long as nvim takes to answer, rather than
     /// giving up after the socket's 5 s read timeout.
     private let waitsOutTimeouts: Bool
+    /// How long a read waits before a call gives up (unless it waits out
+    /// timeouts): 5 s; shorter in tests.
+    private let readTimeout: TimeInterval
 
     /// `connectTimeout` covers nvim still starting up when the first request
     /// is made: until then the socket file may not exist yet.
@@ -45,11 +48,13 @@ public final class NvimClient: @unchecked Sendable {
     /// `waitsOutTimeouts` makes calls wait however long nvim takes: it answers
     /// nothing until its startup is done, which plugins can stretch past 5 s.
     /// Either way a closed connection ends a call at once.
-    init(socketPath: String, connectTimeout: TimeInterval = 2, queuesNotifications: Bool, waitsOutTimeouts: Bool = false) {
+    init(socketPath: String, connectTimeout: TimeInterval = 2, queuesNotifications: Bool,
+         waitsOutTimeouts: Bool = false, readTimeout: TimeInterval = 5) {
         self.socketPath = socketPath
         self.connectTimeout = connectTimeout
         self.queuesNotifications = queuesNotifications
         self.waitsOutTimeouts = waitsOutTimeouts
+        self.readTimeout = readTimeout
     }
 
     /// How many notifications wait for `nextNotification()`, for tests.
@@ -60,6 +65,12 @@ public final class NvimClient: @unchecked Sendable {
     }
 
     public func request(_ method: String, _ params: [MessagePackValue]) throws -> MessagePackValue {
+        try request(method, params, waitingOutTimeouts: waitsOutTimeouts)
+    }
+
+    /// One call that may wait out read timeouts even on a client that
+    /// doesn't: for work nvim can take long over (a big quickfix list).
+    func request(_ method: String, _ params: [MessagePackValue], waitingOutTimeouts: Bool) throws -> MessagePackValue {
         lock.lock()
         defer { lock.unlock() }
         if socket < 0 { try connect() }
@@ -68,7 +79,7 @@ public final class NvimClient: @unchecked Sendable {
         nextRequestID += 1
         do {
             try send(MessagePackValue.array([.int(0), .int(id), .string(method), .array(params)]).encoded())
-            return try response(to: id)
+            return try response(to: id, waitingOutTimeouts: waitingOutTimeouts)
         } catch Failure.connectionLost {
             disconnect()
             throw Failure.connectionLost
@@ -139,7 +150,7 @@ public final class NvimClient: @unchecked Sendable {
     private func connect() throws {
         let deadline = Date().addingTimeInterval(connectTimeout)
         while true {
-            if let fd = Self.open(socketPath) {
+            if let fd = Self.open(socketPath, readTimeout: readTimeout) {
                 closeLock.lock()
                 defer { closeLock.unlock() }
                 guard !isClosed else {
@@ -157,7 +168,7 @@ public final class NvimClient: @unchecked Sendable {
         }
     }
 
-    private static func open(_ path: String) -> Int32? {
+    private static func open(_ path: String, readTimeout: TimeInterval) -> Int32? {
         var address = sockaddr_un()
         address.sun_family = sa_family_t(AF_UNIX)
         let pathBytes = Array(path.utf8)
@@ -182,7 +193,7 @@ public final class NvimClient: @unchecked Sendable {
         var on: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
         // Don't wait forever on an nvim that stopped answering.
-        var timeout = timeval(tv_sec: 5, tv_usec: 0)
+        var timeout = timeval(tv_sec: Int(readTimeout), tv_usec: Int32((readTimeout - readTimeout.rounded(.down)) * 1_000_000))
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         return fd
     }
@@ -209,13 +220,13 @@ public final class NvimClient: @unchecked Sendable {
     /// Reads messages until the response to `id` arrives. Notifications that
     /// come meanwhile are queued or dropped; anything else (requests to us,
     /// responses to calls that failed) is skipped.
-    private func response(to id: Int64) throws -> MessagePackValue {
+    private func response(to id: Int64, waitingOutTimeouts: Bool) throws -> MessagePackValue {
         while true {
             if let parts = receiveBuffered(until: { $0.count == 4 && $0[0] == .int(1) && $0[1] == .int(id) }) {
                 if parts[2] != .nil { throw Failure.nvim(Self.describe(parts[2])) }
                 return parts[3]
             }
-            try readMore(waitingOutTimeouts: waitsOutTimeouts)
+            try readMore(waitingOutTimeouts: waitingOutTimeouts)
         }
     }
 

@@ -46,10 +46,12 @@ extension NvimClient {
         let items: [MessagePackValue] = matches.map {
             .array([.string($0.path), .int(Int64($0.line)), .int(Int64($0.column + 1)), .string($0.lineText)])
         }
+        // nvim makes a buffer per file in the list, slowly past a few
+        // thousand files: worth waiting for rather than reporting a failure.
         _ = try request("nvim_exec_lua", [
             .string(Self.sendToQuickfixLua),
             .array([.array(items), .string("scwrote search \"\(query)\""), .string(query)]),
-        ])
+        ], waitingOutTimeouts: true)
     }
 
     private static let sendToQuickfixLua = #"""

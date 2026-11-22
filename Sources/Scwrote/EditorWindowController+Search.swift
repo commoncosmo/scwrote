@@ -126,7 +126,9 @@ extension EditorWindowController {
     /// Ctrl-Q: runs the query again without the overlay's cap, over the same
     /// unsaved buffers, and hands every matching line to nvim as a new
     /// quickfix list. The overlay says so meanwhile; Esc, or closing it,
-    /// cancels. A finished search with no matches sends nothing.
+    /// cancels. A finished search with no matches sends nothing. Unlike the
+    /// overlay's own search, this waits as long as nvim takes to give its
+    /// unsaved buffers: a list for `:cfdo` must not quietly be the disk's.
     private func sendToQuickfix() {
         guard let view = searchView, let projectSearch, let fetch = searchBuffers else { return }
         if view.results.isFinished, view.results.matches.isEmpty { return }
@@ -136,10 +138,9 @@ extension EditorWindowController {
         view.busyMessage = "Sending to quickfix…"
         let collected = QuickfixMatches()
         Task { [weak self] in
-            var buffers = fetch.value
-            if buffers == nil { buffers = await valueIfQuick(of: fetch.task, within: Self.searchBufferWait) }
+            let buffers = await fetch.task.value
             guard let self, generation == searchGeneration else { return }
-            projectSearch.search(query, buffers: buffers ?? fetch.value ?? [], limit: nil, onBatch: { [weak self] batch in
+            projectSearch.search(query, buffers: buffers, limit: nil, onBatch: { [weak self] batch in
                 guard let self, generation == searchGeneration else { return }
                 collected.matches.append(contentsOf: batch)
             }, onFinish: { [weak self] in
@@ -153,7 +154,12 @@ extension EditorWindowController {
     /// first match as opening one does.
     private func handOver(_ matches: [SearchMatch], query: String) {
         searchView?.busyMessage = nil
-        guard let first = matches.first else { return }
+        guard let first = matches.first else {
+            // The overlay's own search was replaced by this one before it
+            // finished: it found nothing either, so say so.
+            searchView?.results.finish()
+            return
+        }
         closeSearch()
         Task {
             do {
