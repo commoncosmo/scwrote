@@ -102,6 +102,39 @@ private let files = ["a/OneView.swift", "b/TwoView.swift", "docs/FileBrowserView
         #expect(r.selectedIndex == 0 && r.selected?.relativePath != ".hidden/view.txt")
     }
 
+    @Test func narrowingFromThePreviousMatchesRanksAsAFullRankDoes() {
+        // Over the row limit at "e", so the narrowed rankings need matches past the rows.
+        let many = ((0..<400).map { "Sources/E\($0)/Editor\($0)Window.swift" } + files + [".e/EditorWindowController.swift"]).sorted()
+        let open = ["Sources/E7/Editor7Window.swift"]
+        let history = ["z.txt"]
+        for showsHidden in [true, false] {
+            var previous: QuickOpenRanked?
+            for text in ["e", "ed", "edw", "edw ", "edw w", "edw wi", "edw wi:3"] {
+                let query = QuickOpenQuery(text)
+                let narrowed = QuickOpenRanking.rank(query, root: "/r", files: many, openFiles: open, history: history,
+                                                     showsHidden: showsHidden, narrowing: previous)
+                let full = QuickOpenRanking.rank(query, root: "/r", files: many, openFiles: open, history: history,
+                                                 showsHidden: showsHidden)
+                #expect(narrowed.results == full, "\(text) showsHidden \(showsHidden)")
+                previous = narrowed
+            }
+            #expect(previous?.results.matchCount ?? 0 > 0)
+        }
+    }
+
+    @Test func narrowingIsIgnoredWhenTheQueryDoesNotExtendOrHiddenChanged() {
+        let first = QuickOpenRanking.rank(.init("view"), root: "/r", files: files.sorted(), openFiles: [], history: [],
+                                          showsHidden: false, narrowing: nil)
+        let shorter = QuickOpenRanking.rank(.init("vie"), root: "/r", files: files.sorted(), openFiles: [], history: [],
+                                            showsHidden: false, narrowing: first)
+        #expect(shorter.results == QuickOpenRanking.rank(.init("vie"), root: "/r", files: files.sorted(), openFiles: [], history: [], showsHidden: false))
+        let hidden = [".v/view.txt"] + files
+        let shown = QuickOpenRanking.rank(.init("view"), root: "/r", files: hidden.sorted(), openFiles: [], history: [],
+                                          showsHidden: true, narrowing: QuickOpenRanking.rank(.init("vie"), root: "/r", files: hidden.sorted(), openFiles: [], history: [], showsHidden: false, narrowing: nil))
+        #expect(shown.results.rows.contains { $0.relativePath == ".v/view.txt" })
+        #expect(shown.results == QuickOpenRanking.rank(.init("view"), root: "/r", files: hidden.sorted(), openFiles: [], history: [], showsHidden: true))
+    }
+
     // Regression guard only: debug builds measure about 1.1 s, release about 0.1 s (every path matches here).
     @Test func rankingThirtyThreeThousandPathsIsQuick() {
         let paths = (0..<33_000).map { "Sources/Module\($0 % 40)/Sub\($0 % 7)/File\($0)Controller.swift" }.sorted()

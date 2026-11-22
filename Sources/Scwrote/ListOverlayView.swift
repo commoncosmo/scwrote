@@ -114,7 +114,8 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
 
     /// There's no Edit menu (Cmd+V is the terminal's), so paste is handled
     /// here: into the query while typing, nowhere in the list. Cmd+Shift+.
-    /// shows or hides hidden files, for a renderer that lists them.
+    /// shows or hides hidden files, for a renderer that lists them; held
+    /// down, it acts once, so the files don't flicker in and out.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard window?.firstResponder === self, event.type == .keyDown else {
             return super.performKeyEquivalent(with: event)
@@ -128,7 +129,7 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
         }
         if Renderer.togglesHidden,
            OverlayShortcut.isHiddenFilesToggle(keyCode: event.keyCode, modifiers: EditorWindow.modifiers(of: event)) {
-            if !isMissingRipgrep { send(overlay.toggleHidden()) }
+            if !isMissingRipgrep, !event.isARepeat { send(overlay.toggleHidden()) }
             return true
         }
         return super.performKeyEquivalent(with: event)

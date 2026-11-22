@@ -4,40 +4,39 @@ import ScwroteCore
 extension EditorWindowController {
     // MARK: - Search
 
-    var isSearchOpen: Bool { layoutView.overlay != nil }
+    var isSearchOpen: Bool { searchView.map { layoutView.overlay === $0 } ?? false }
 
     /// Cmd+Shift+F (View menu): open the search overlay over all the panes,
-    /// or close it. Without ripgrep it opens only to say how to get it.
+    /// or close it; from quick open, switch to it. Without ripgrep it opens
+    /// only to say how to get it.
     @objc func toggleSearch(_: Any?) {
         if isSearchOpen {
             closeSearch()
             return
         }
+        closeQuickOpen()
         closePrompt()
         let view = searchView ?? makeSearchView()
         let root = FileBrowser.realPath(browserView.browser.root)
         view.root = root
-        let ripgrep = Ripgrep.locate(
-            executableDirectory: Bundle.main.executableURL?.deletingLastPathComponent().path ?? "",
-            searchPath: ProcessInfo.processInfo.environment["PATH"] ?? ""
-        )
+        let ripgrep = locateRipgrep()
         view.isMissingRipgrep = ripgrep == nil
         layoutView.overlay = view
         window?.makeFirstResponder(view)
         guard let ripgrep else { return }
 
-        let projectSearch = projectSearch ?? ProjectSearch(ripgrep: ripgrep, root: root)
+        let projectSearch = projectSearch ?? ProjectSearch(ripgrep: ripgrep, files: sharedFolderFiles(ripgrep: ripgrep))
         self.projectSearch = projectSearch
         projectSearch.prepare()
         // The overlay has the keyboard, so nvim's buffers can't change while
         // it's open: fetched once per opening. A search that gave up waiting
         // for them (see `searchBufferWait`) searched the disk alone, so it
         // runs again once they come.
-        let fetch = SearchBufferFetch(task: Task { (try? await nvimCall { try $0.unsavedBuffers(under: root) }) ?? [] })
+        let fetch = OverlayFetch(task: Task { (try? await nvimCall { try $0.unsavedBuffers(under: root) }) ?? [] })
         searchBuffers = fetch
         Task {
             let buffers = await fetch.task.value
-            fetch.buffers = buffers
+            fetch.value = buffers
             guard searchBuffers === fetch else { return }
             view.unsaved = Dictionary(buffers.map { ($0.path, $0.text) }) { _, last in last }
             if fetch.wasMissed, !buffers.isEmpty { search(view.overlay.query.text) }
@@ -62,10 +61,19 @@ extension EditorWindowController {
         searchBuffers = nil
     }
 
-    /// How long a search waits for nvim's unsaved buffers. nvim at a
-    /// hit-enter or more prompt, a swap-file question or a long `:!cmd`
-    /// holds the request; past this the search goes to the disk alone.
+    /// How long a search waits for nvim's unsaved buffers (and quick open
+    /// for its recent files). nvim at a hit-enter or more prompt, a
+    /// swap-file question or a long `:!cmd` holds the request; past this the
+    /// search goes to the disk alone.
     static let searchBufferWait: Duration = .milliseconds(400)
+
+    /// The bundled ripgrep beside the app's executable, else one on PATH.
+    func locateRipgrep() -> String? {
+        Ripgrep.locate(
+            executableDirectory: Bundle.main.executableURL?.deletingLastPathComponent().path ?? "",
+            searchPath: ProcessInfo.processInfo.environment["PATH"] ?? ""
+        )
+    }
 
     private func makeSearchView() -> SearchOverlayView {
         let view = SearchOverlayView(theme: browserView.theme)
@@ -92,11 +100,11 @@ extension EditorWindowController {
         searchView?.results = SearchResults()
         guard !query.isEmpty, let projectSearch, let fetch = searchBuffers else { return }
         Task { [weak self] in
-            var buffers = fetch.buffers
+            var buffers = fetch.value
             if buffers == nil { buffers = await valueIfQuick(of: fetch.task, within: Self.searchBufferWait) }
             guard let self, generation == searchGeneration else { return }
             // The fetch may have landed while this waited to run.
-            buffers = buffers ?? fetch.buffers
+            buffers = buffers ?? fetch.value
             if buffers == nil { fetch.wasMissed = true }
             projectSearch.search(query, buffers: buffers ?? [], onBatch: { [weak self] batch in
                 guard let self, generation == searchGeneration else { return }
@@ -127,16 +135,17 @@ extension EditorWindowController {
     }
 }
 
-/// nvim's unsaved buffers for one opening of the search overlay.
+/// What one opening of an overlay asks nvim for: search's unsaved buffers,
+/// quick open's recent files and unsaved buffers.
 @MainActor
-final class SearchBufferFetch {
-    let task: Task<[UnsavedBuffer], Never>
+final class OverlayFetch<Value: Sendable> {
+    let task: Task<Value, Never>
     /// Set once `task` has finished.
-    var buffers: [UnsavedBuffer]?
-    /// A search went ahead without them, nvim being slow to answer.
+    var value: Value?
+    /// The overlay went ahead without it, nvim being slow to answer.
     var wasMissed = false
 
-    init(task: Task<[UnsavedBuffer], Never>) {
+    init(task: Task<Value, Never>) {
         self.task = task
     }
 }
@@ -144,7 +153,7 @@ final class SearchBufferFetch {
 /// `task`'s value, or nil if it takes longer than `limit`. Stops waiting at
 /// the limit; `task` itself keeps running for whoever else awaits it.
 @MainActor
-private func valueIfQuick<T: Sendable>(of task: Task<T, Never>, within limit: Duration) async -> T? {
+func valueIfQuick<T: Sendable>(of task: Task<T, Never>, within limit: Duration) async -> T? {
     let first = FirstResult<T>()
     return await withCheckedContinuation { continuation in
         first.continuation = continuation

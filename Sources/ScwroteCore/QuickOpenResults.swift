@@ -96,6 +96,18 @@ public struct QuickOpenResults: Equatable, Sendable {
     }
 }
 
+/// A ranking, and what it takes to rank a longer query from its matches
+/// alone (see `QuickOpenRanking.rank(_:root:files:openFiles:history:showsHidden:narrowing:)`).
+public struct QuickOpenRanked: Sendable {
+    public let results: QuickOpenResults
+    /// The query's name, which a narrowed ranking must extend.
+    let name: String
+    /// Every file the name matched, row limit or not, in the order of the
+    /// files ranked (path order); nil for an empty name, which matches all.
+    let matched: [String]?
+    let showsHidden: Bool
+}
+
 public enum QuickOpenRanking {
     /// Added to the score of a file that is open in a pane. About one more
     /// matched character at a word start in the file name: enough to settle
@@ -108,7 +120,22 @@ public enum QuickOpenRanking {
         _ query: QuickOpenQuery, root: String, files: [String], openFiles: [String], history: [String],
         showsHidden: Bool
     ) -> QuickOpenResults {
-        let files = showsHidden ? files : files.filter { !FolderFileList.isHidden(relativePath: $0) }
+        rank(query, root: root, files: files, openFiles: openFiles, history: history, showsHidden: showsHidden,
+             narrowing: nil).results
+    }
+
+    /// The same ranking, also keeping every match. With `previous` ranked
+    /// over the same `files`, and a `query` whose name extends `previous`'s
+    /// (more characters at the end) with the same `showsHidden`, only
+    /// `previous`'s matches are scored: every term of the longer name
+    /// contains one of the shorter's, so nothing else can match. Which files
+    /// match doesn't depend on `root`, `openFiles` or `history`, so those
+    /// may differ. The results are those of a full ranking. Otherwise
+    /// `previous` is ignored.
+    public static func rank(
+        _ query: QuickOpenQuery, root: String, files: [String], openFiles: [String], history: [String],
+        showsHidden: Bool, narrowing previous: QuickOpenRanked?
+    ) -> QuickOpenRanked {
         let prefix = root.hasSuffix("/") ? root : root + "/"
         func row(_ relative: String, _ ranges: [Range<Int>] = []) -> QuickOpenRow {
             QuickOpenRow(path: prefix + relative, relativePath: relative, ranges: ranges)
@@ -116,6 +143,7 @@ public enum QuickOpenRanking {
         let limit = QuickOpenResults.rowLimit
 
         if query.isEmpty {
+            let files = showsHidden ? files : files.filter { !FolderFileList.isHidden(relativePath: $0) }
             let listed = Set(files)
             var seen = Set<String>()
             var ordered: [String] = []
@@ -123,29 +151,46 @@ public enum QuickOpenRanking {
                 ordered.append(path)
             }
             for path in files where ordered.count < limit && !seen.contains(path) { ordered.append(path) }
-            return QuickOpenResults(
+            let results = QuickOpenResults(
                 rows: ordered.prefix(limit).map { row($0) }, matchCount: files.count, fileCount: files.count,
                 hidesHidden: !showsHidden, isEmptyQuery: true)
+            return QuickOpenRanked(results: results, name: query.name, matched: nil, showsHidden: showsHidden)
+        }
+
+        // Candidates: the previous matches when the query narrows them,
+        // else every file the hidden filter keeps.
+        let candidates: [String]
+        let fileCount: Int
+        if let previous, let matched = previous.matched, previous.showsHidden == showsHidden,
+           query.name.hasPrefix(previous.name) {
+            candidates = matched
+            fileCount = previous.results.fileCount
+        } else {
+            candidates = showsHidden ? files : files.filter { !FolderFileList.isHidden(relativePath: $0) }
+            fileCount = candidates.count
         }
 
         let pattern = FuzzyPattern(query.name)
         let open = Set(openFiles)
         var hits: [(score: Int, index: Int)] = []
-        for (index, path) in files.enumerated() {
+        for (index, path) in candidates.enumerated() {
             guard let match = FuzzyMatcher.match(pattern, in: path) else { continue }
             hits.append((match.score + (open.contains(path) ? openFileBonus : 0), index))
         }
-        // Higher score, then shorter path, then path order (the index).
+        let matched = hits.map { candidates[$0.index] }
+        // Higher score, then shorter path, then path order (the index, as
+        // candidates keep the files' order).
         hits.sort { a, b in
             if a.score != b.score { return a.score > b.score }
-            let (pa, pb) = (files[a.index].utf8.count, files[b.index].utf8.count)
+            let (pa, pb) = (candidates[a.index].utf8.count, candidates[b.index].utf8.count)
             return pa != pb ? pa < pb : a.index < b.index
         }
         let rows = hits.prefix(limit).map { hit in
-            row(files[hit.index], FuzzyMatcher.match(pattern, in: files[hit.index])?.ranges ?? [])
+            row(candidates[hit.index], FuzzyMatcher.match(pattern, in: candidates[hit.index])?.ranges ?? [])
         }
-        return QuickOpenResults(
-            rows: rows, matchCount: hits.count, fileCount: files.count, hidesHidden: !showsHidden,
+        let results = QuickOpenResults(
+            rows: rows, matchCount: hits.count, fileCount: fileCount, hidesHidden: !showsHidden,
             isEmptyQuery: false)
+        return QuickOpenRanked(results: results, name: query.name, matched: matched, showsHidden: showsHidden)
     }
 }

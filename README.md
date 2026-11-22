@@ -253,6 +253,37 @@ overlay closes it. Reopening brings back the last query, selected, so typing
 replaces it. Search needs ripgrep: release installs bundle it; from source,
 run `scripts/fetch-ripgrep.sh` or `brew install ripgrep`.
 
+## Quick open
+
+Cmd+Shift+O (View > Quick Open) finds a file in the browser's folder by a few
+letters of its name. An overlay like search's opens: the files that match as
+you type, best first, and below them the top of the selected one. Enter opens
+it in nvim, without changing nvim's search pattern.
+
+Matching is fuzzy: the letters you type must appear in the path in order, not
+necessarily together, ignoring case. Matches in the file name beat matches in
+its folders, and letters at word starts (after `/`, `_`, `-`, `.` or a space,
+or a capital in `EditorWindow`) and runs of consecutive letters count most, so
+`ewc` puts `EditorWindowController.swift` on top. A `/` narrows by folder:
+`ui/view` wants `ui`, then a separator, then `view`. Spaces split the query
+into terms that must all match, in any order. Files open in nvim rank first
+among equal matches.
+
+`name:42` opens the file at line 42, and the preview centers on it. With an
+empty query the list starts with the files open in nvim, then the ones you
+opened recently (nvim's history), then the rest in path order, so `:42` alone
+opens a recent file at line 42.
+
+It lists what ripgrep would, so files your `.gitignore` names stay out, but
+hidden files and folders (such as `.github/`) are listed. Cmd+Shift+. hides or
+shows them for the rest of the app's run; while they're hidden the count says
+"hidden off". Unsaved edits in nvim show in the preview instead of the file on
+disk.
+
+The keys and the mouse work as in search (see the table above), with
+Cmd+Shift+O closing it. Cmd+Shift+F switches to search and Cmd+Shift+O back;
+each keeps its own last query. Quick open needs ripgrep too.
+
 ## Debugging
 
 `SCWROTE_DEBUG=1 scwrote README.md` logs libghostty's lifecycle and actions to
@@ -266,10 +297,10 @@ SCWROTE_DEBUG_KEYS='G<CR>' SCWROTE_DEBUG_SNAPSHOT=/tmp/shot.png scwrote ./
 
 Keys go to the browser; `<CR>` `<Esc>` `<Up>` `<Down>` `<Left>` `<Right>`
 `<C-d>` `<C-u>` are named keys. The window's own keys, `<D-1>` (Cmd+1),
-`<D-S-1>`, `<D-2>`, `<D-[>`, `<D-]>` and `<D-S-f>`, are posted as real key
-events, so they take the same path through the app as a keyboard's. While the
-search overlay is open, plain characters, `<CR>`, `<Esc>`, `<Up>` and `<Down>`
-go to it. Text in braces goes to nvim (`nvim_input`, in nvim's key notation),
+`<D-S-1>`, `<D-2>`, `<D-[>`, `<D-]>`, `<D-S-f>` and `<D-S-o>`, and quick
+open's `<D-S-.>`, are posted as real key events, so they take the same path
+through the app as a keyboard's. While an overlay is open, plain characters,
+`<CR>`, `<Esc>`, `<Up>` and `<Down>` go to it. Text in braces goes to nvim (`nvim_input`, in nvim's key notation),
 so `{ohello<Esc>}` opens a line, types "hello" and leaves insert mode.
 `SCWROTE_DEBUG_WIDTH=600` sets the window's content width in points first, to
 see which panes give way:
@@ -293,9 +324,10 @@ SCWROTE_DEBUG_KEYS='<D-2>{ohello<Esc>}' SCWROTE_DEBUG_SNAPSHOT=/tmp/p.png \
   `TerminalTheme()`; scwrote passes an empty one so your Ghostty theme wins.
 - The release binary is universal, but CI only launches its arm64 half. The
   Intel (x86_64) half is built but not launched in CI.
-- Cmd+Shift+F goes by the character the F key types, so it works on Dvorak
-  and Colemak. On a layout with no Latin "f", such as Cyrillic or Greek, it
-  may not fire. Choose View > Find in Folder instead.
+- Cmd+Shift+F and Cmd+Shift+O go by the character the F and O keys type, so
+  they work on Dvorak and Colemak. On a layout with no Latin letters, such as
+  Cyrillic or Greek, they may not fire. Choose View > Find in Folder or View >
+  Quick Open instead.
 
 ## Build from source
 
@@ -353,10 +385,18 @@ sh scripts/tests/install-test.sh    # the installer
   pane show/hide/pin rules, MessagePack and the nvim RPC client (tested
   against a real headless nvim), and project search: the ripgrep runner and
   its JSON reader, the search over the folder and unsaved buffers, and the
-  overlay's results, query and keys.
+  overlay's results, query and keys; and quick open: the folder's file list
+  shared with search (`FolderFileList.swift`), the fuzzy matcher
+  (`FuzzyMatcher.swift`), the query's `:line` (`QuickOpenQuery.swift`), the
+  ranking (`QuickOpenResults.swift`) and nvim's recent files
+  (`NvimClient+QuickOpen.swift`).
 - `Sources/Scwrote`: the AppKit app: one window per process, hosting a
   libghostty surface ([libghostty-spm](https://github.com/Lakr233/libghostty-spm),
-  pinned exactly because libghostty's API isn't stable yet).
+  pinned exactly because libghostty's API isn't stable yet). The search and
+  quick open overlays are one view (`ListOverlayView.swift`) drawing either
+  kind of row (`OverlayRenderers.swift`), wired into the window by
+  `EditorWindowController+Search.swift` and
+  `EditorWindowController+QuickOpen.swift`.
 - `Sources/Scwrote/Preview/`: the preview pane: header, web views, image and
   PDF views.
 - `web/`: the preview's renderer page (TypeScript, built with Bun): markdown,
