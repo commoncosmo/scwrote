@@ -25,7 +25,8 @@ public struct SessionStore: Sendable {
 /// the lock.
 public struct SessionFolder: Sendable {
     public let path: String
-    private let root: String
+    /// The project folder's real path.
+    public let root: String
 
     init(path: String, root: String) {
         self.path = path

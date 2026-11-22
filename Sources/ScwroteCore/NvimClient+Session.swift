@@ -19,6 +19,26 @@ public enum SessionRestore: Equatable, Sendable {
 /// after nvim starts without overriding the user's options. Paths travel as
 /// Lua arguments, never spliced into a command.
 extension NvimClient {
+    /// Returns once nvim has finished starting (`v:vim_did_enter`): the user's
+    /// config ran and the files on its command line are loaded. nvim can
+    /// answer requests before that, whenever its startup lets events through
+    /// (a config's `:sleep`, a plugin manager waiting), so an answer alone
+    /// doesn't mean it's done. Asks every `interval`; a request that times out
+    /// (nvim busy in a long config) is asked again. Throws when nvim can't be
+    /// reached, e.g. because it exited.
+    public func waitUntilStarted(interval: TimeInterval = 0.05) throws {
+        while true {
+            do {
+                if case let .int(entered) = try request("nvim_get_vvar", [.string("vim_did_enter")]), entered != 0 {
+                    return
+                }
+            } catch Failure.connectionLost {
+                // Timed out (or the connection broke): try again, reconnecting.
+            }
+            Thread.sleep(forTimeInterval: interval)
+        }
+    }
+
     /// Installs a `ScwroteSession` augroup (replacing an earlier one) with a
     /// `VimLeavePre` autocommand that saves the session to `path`, as
     /// `saveSession(to:)` does. Errors then are dropped: a message at exit

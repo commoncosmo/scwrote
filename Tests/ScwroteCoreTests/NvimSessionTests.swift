@@ -353,6 +353,22 @@ final class NvimSessionTests {
     // MARK: - Helpers
 
     /// A second nvim, as a later launch would start, and a client for it.
+    @Test func waitsUntilNvimHasStarted() throws {
+        // `-c` runs after the files load and before VimEnter; its :sleep lets
+        // requests through, so nvim answers while it's still starting.
+        let (slow, other) = try freshNvim(arguments: ["-c", "sleep 1"])
+        let started = Date()
+        try other.waitUntilStarted()
+        #expect(Date().timeIntervalSince(started) > 0.5)
+        #expect(try other.request("nvim_get_vvar", [.string("vim_did_enter")]) == .int(1))
+        _ = slow
+    }
+
+    @Test func waitingForAnNvimThatIsGoneThrows() {
+        let gone = NvimClient(socketPath: folder + "/gone.sock", connectTimeout: 0.2)
+        #expect(throws: NvimClient.Failure.self) { try gone.waitUntilStarted() }
+    }
+
     private func freshNvim(arguments: [String] = []) throws -> (HeadlessNvim, NvimClient) {
         let fresh = try HeadlessNvim(arguments: arguments)
         return (fresh, NvimClient(socketPath: fresh.socketPath))
