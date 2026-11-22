@@ -1,15 +1,24 @@
 import AppKit
 import ScwroteCore
 
-/// Cmd+Shift+F's search overlay, drawn like the file browser (the theme's
-/// font and colors): the query with the count beside it, the matches, a
-/// preview of the selected one and the key hints. It covers the whole window,
-/// clear outside its panel, so a click anywhere outside the panel closes it.
+/// Takes overlay keys as the keyboard would send them: the debug hooks use
+/// it to reach whichever overlay is open.
 @MainActor
-final class SearchOverlayView: NSView {
-    private(set) var overlay = TextSearchOverlay()
+protocol OverlayKeyTarget: AnyObject {
+    func press(_ key: SearchKey)
+}
+
+/// The overlays (Cmd+Shift+F's search, Cmd+Shift+O's quick open), drawn like
+/// the file browser (the theme's font and colors): the query with the count
+/// beside it, the result rows, a preview of the selected one and the key
+/// hints. `Renderer` draws the rows and says what to preview and which hints
+/// to show. It covers the whole window, clear outside its panel, so a click
+/// anywhere outside the panel closes it.
+@MainActor
+final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget {
+    private(set) var overlay = SearchOverlay<Renderer.List>()
     let theme: Theme
-    /// The searched folder, resolved like the matches' paths, which show
+    /// The searched folder, resolved like the results' paths, which show
     /// relative to it.
     var root = "" { didSet { needsDisplay = true } }
     /// No ripgrep was found: the panel says how to get one, and nothing else.
@@ -23,7 +32,7 @@ final class SearchOverlayView: NSView {
         }
     }
 
-    var results: SearchResults {
+    var results: Renderer.List {
         get { overlay.results }
         set {
             overlay.results = newValue
@@ -31,9 +40,11 @@ final class SearchOverlayView: NSView {
         }
     }
 
-    /// The query changed, a match was chosen, or the overlay asked to close.
-    var onAction: ((SearchAction<SearchMatch>) -> Void)?
+    /// The query changed, a result was chosen, hidden files were toggled, or
+    /// the overlay asked to close.
+    var onAction: ((SearchAction<Renderer.List.Item>) -> Void)?
 
+    private let renderer = Renderer()
     /// Files' lines for the preview, read once per opening (see `reopen()`);
     /// nil for a file too large to preview.
     private var previewLines: [String: [Substring]?] = [:]
@@ -43,13 +54,15 @@ final class SearchOverlayView: NSView {
     private var scrollRemainder: CGFloat = 0
 
     private let padding: CGFloat = 10
-    private let gap: CGFloat = 8
     private let tab = "    "
     /// Long lines are cut here before drawing; the preview clips them anyway.
     private let previewColumns = 400
     /// Larger files aren't previewed: they're read on the main thread while
     /// drawing, and a huge log would stall typing.
     private let previewByteLimit = 8 * 1024 * 1024
+
+    private var style: OverlayStyle { OverlayStyle(theme: theme) }
+    private var gap: CGFloat { style.gap }
 
     init(theme: Theme) {
         self.theme = theme
@@ -84,7 +97,7 @@ final class SearchOverlayView: NSView {
         send(overlay.handle(key, pageHeight: frames.rows))
     }
 
-    private func send(_ action: SearchAction<SearchMatch>?) {
+    private func send(_ action: SearchAction<Renderer.List.Item>?) {
         scrollToSelection()
         if let action { onAction?(action) }
     }
@@ -94,20 +107,28 @@ final class SearchOverlayView: NSView {
     override func keyDown(with event: NSEvent) {
         guard let key = Self.searchKey(for: event) else { return }
         // A held Esc or Enter acts once: a repeat would close the list it
-        // just switched to, or open the match again.
+        // just switched to, or open the result again.
         if event.isARepeat, key == .escape || key == .enter { return }
         press(key)
     }
 
     /// There's no Edit menu (Cmd+V is the terminal's), so paste is handled
-    /// here: into the query while typing, nowhere in the list.
+    /// here: into the query while typing, nowhere in the list. Cmd+Shift+.
+    /// shows or hides hidden files, for a renderer that lists them.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard window?.firstResponder === self, event.type == .keyDown else {
+            return super.performKeyEquivalent(with: event)
+        }
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if window?.firstResponder === self, event.type == .keyDown, flags == .command,
-           event.charactersIgnoringModifiers?.lowercased() == "v" {
+        if flags == .command, event.charactersIgnoringModifiers?.lowercased() == "v" {
             if !isMissingRipgrep, overlay.mode == .typing {
                 send(overlay.paste(NSPasteboard.general.string(forType: .string) ?? ""))
             }
+            return true
+        }
+        if Renderer.togglesHidden,
+           OverlayShortcut.isHiddenFilesToggle(keyCode: event.keyCode, modifiers: EditorWindow.modifiers(of: event)) {
+            if !isMissingRipgrep { send(overlay.toggleHidden()) }
             return true
         }
         return super.performKeyEquivalent(with: event)
@@ -144,7 +165,7 @@ final class SearchOverlayView: NSView {
 
     // MARK: - Mouse
 
-    /// A click selects a match, a double-click opens it, and a click outside
+    /// A click selects a row, a double-click opens it, and a click outside
     /// the panel closes the overlay.
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
@@ -156,7 +177,7 @@ final class SearchOverlayView: NSView {
         }
         guard !isMissingRipgrep, frames.list.contains(point), let current = results.selectedIndex else { return }
         let row = topRow + Int((point.y - frames.list.minY) / lineHeight)
-        guard row < results.matches.count else { return }
+        guard row < results.count else { return }
         overlay.results.move(by: row - current)
         needsDisplay = true
         if event.clickCount == 2 { press(.enter) }
@@ -165,7 +186,7 @@ final class SearchOverlayView: NSView {
     /// Scrolling moves the selection a row at a time, so the list follows
     /// it as it does the keys.
     override func scrollWheel(with event: NSEvent) {
-        guard !isMissingRipgrep, !results.matches.isEmpty else { return }
+        guard !isMissingRipgrep, results.count > 0 else { return }
         if event.phase == .began { scrollRemainder = 0 }
         // A trackpad reports points, a wheel lines; positive is toward the top.
         scrollRemainder += event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / lineHeight : event.scrollingDeltaY
@@ -222,14 +243,21 @@ final class SearchOverlayView: NSView {
         if let selected = results.selectedIndex {
             if selected < topRow { topRow = selected } else if selected >= topRow + rows { topRow = selected - rows + 1 }
         }
-        topRow = min(max(topRow, 0), max(results.matches.count - rows, 0))
+        topRow = min(max(topRow, 0), max(results.count - rows, 0))
         needsDisplay = true
+    }
+
+    /// Rows and the count show once there's a query, or always for a
+    /// renderer that lists an empty one.
+    private var listsQuery: Bool {
+        Renderer.listsEmptyQuery || !overlay.query.text.isEmpty
     }
 
     // MARK: - Drawing
 
     override func draw(_: NSRect) {
         let frames = frames
+        let style = style
         let panel = NSBezierPath(roundedRect: frames.panel, xRadius: 10, yRadius: 10)
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
@@ -243,28 +271,25 @@ final class SearchOverlayView: NSView {
         panel.stroke()
 
         if isMissingRipgrep {
-            let message = attributed(
-                "Search needs ripgrep — run scripts/fetch-ripgrep.sh or brew install ripgrep", color: theme.warning)
-            draw(message, x: frames.query.minX, line: frames.query, width: frames.query.width)
+            let message = style.attributed(Renderer.missingRipgrepMessage, color: theme.warning)
+            style.draw(message, x: frames.query.minX, line: frames.query, width: frames.query.width)
             return
         }
-        drawQuery(in: frames.query)
-        drawRows(in: frames.list, rows: frames.rows)
+        drawQuery(in: frames.query, style: style)
+        drawRows(in: frames.list, rows: frames.rows, style: style)
         theme.divider.setFill()
         NSRect(x: frames.panel.minX, y: frames.list.maxY + gap, width: frames.panel.width, height: 1).fill()
-        drawPreview(in: frames.preview)
+        drawPreview(in: frames.preview, style: style)
         theme.divider.setFill()
         NSRect(x: frames.panel.minX, y: frames.footer.minY - gap / 2, width: frames.panel.width, height: 1).fill()
-        let footer = overlay.mode == .typing
-            ? "⌃J/⌃K move · Esc → list (j/k) · ↩ open"
-            : "j/k move · Esc close · ↩ open · i back to typing"
-        draw(attributed(footer, color: theme.dim), x: frames.footer.minX, line: frames.footer, width: frames.footer.width)
+        let footer = style.attributed(renderer.footer(overlay.mode), color: theme.dim)
+        style.draw(footer, x: frames.footer.minX, line: frames.footer, width: frames.footer.width)
     }
 
     /// The query in a field, the count at its right. While typing, a bar
     /// marks the cursor; a reopened query is drawn selected. Text too long
     /// for the field slides left so the cursor stays in view.
-    private func drawQuery(in box: NSRect) {
+    private func drawQuery(in box: NSRect, style: OverlayStyle) {
         let field = NSBezierPath(roundedRect: box, xRadius: 6, yRadius: 6)
         theme.selectionInactive.setFill()
         field.fill()
@@ -274,10 +299,10 @@ final class SearchOverlayView: NSView {
         let inner = box.insetBy(dx: 8, dy: 0)
         var available = inner.width
         let query = overlay.query
-        if !query.text.isEmpty {
-            let count = attributed(results.countLine, color: theme.dim)
+        if listsQuery {
+            let count = style.attributed(results.countLine, color: theme.dim)
             let width = ceil(count.size().width)
-            draw(count, x: inner.maxX - width, line: box, width: width)
+            style.draw(count, x: inner.maxX - width, line: box, width: width)
             available -= width + gap * 2
         }
 
@@ -285,67 +310,61 @@ final class SearchOverlayView: NSView {
         NSRect(x: inner.minX, y: box.minY, width: max(available, 0), height: box.height).clip()
         defer { NSGraphicsContext.restoreGraphicsState() }
         let beforeCursor = String(Array(query.text)[..<query.cursor])
-        let cursorX = ceil(attributed(beforeCursor, color: theme.foreground).size().width)
+        let cursorX = ceil(style.attributed(beforeCursor, color: theme.foreground).size().width)
         let x = inner.minX - max(0, cursorX + 2 - available)
-        let text = attributed(query.text, color: theme.foreground, truncation: .byClipping)
+        let text = style.attributed(query.text, color: theme.foreground, truncation: .byClipping)
         let textWidth = ceil(text.size().width)
-        let glyphs = glyphRect(in: box)
+        let glyphs = style.glyphRect(in: box)
         if overlay.isQuerySelected, !query.text.isEmpty {
             theme.selection.setFill()
             NSRect(x: x, y: glyphs.minY, width: textWidth, height: glyphs.height).fill()
         }
-        draw(text, x: x, line: box, width: textWidth + 2)
+        style.draw(text, x: x, line: box, width: textWidth + 2)
         if overlay.mode == .typing, !overlay.isQuerySelected {
             theme.folder.setFill()
             NSRect(x: x + cursorX, y: glyphs.minY, width: 2, height: glyphs.height).fill()
         }
     }
 
-    /// One row per match: its text with the match in the accent color, and
-    /// `path:line` at the right. The path gives way first, cut from the
-    /// start, down to 45% of the row.
-    private func drawRows(in list: NSRect, rows: Int) {
-        guard !overlay.query.text.isEmpty else { return }
-        let matches = results.matches
+    /// The visible rows, the selected one highlighted; the renderer draws
+    /// each row's contents.
+    private func drawRows(in list: NSRect, rows: Int, style: OverlayStyle) {
+        guard listsQuery else { return }
+        let results = results
         let selected = results.selectedIndex
-        let rootPrefix = root == "/" ? "/" : root + "/"
-        for index in topRow ..< min(matches.count, topRow + rows) {
-            let match = matches[index]
+        for index in topRow ..< min(results.count, topRow + rows) {
             let row = NSRect(x: list.minX, y: list.minY + CGFloat(index - topRow) * lineHeight, width: list.width, height: lineHeight)
             if index == selected {
                 theme.selection.setFill()
                 NSBezierPath(roundedRect: row, xRadius: 4, yRadius: 4).fill()
             }
-            let inner = row.insetBy(dx: 6, dy: 0)
-            let path = match.path.hasPrefix(rootPrefix) ? String(match.path.dropFirst(rootPrefix.count)) : match.path
-            let location = attributed("\(path):\(match.line)", color: theme.dim, truncation: .byTruncatingHead)
-            let room = inner.width - gap
-            let locationWidth = min(ceil(location.size().width), room * 0.45)
-            draw(location, x: inner.maxX - locationWidth, line: row, width: locationWidth)
-            let text = highlighted(attributed(match.text, color: theme.foreground), match.ranges.map { NSRange($0) })
-            draw(text, x: inner.minX, line: row, width: room - locationWidth)
+            renderer.drawRow(results[index], in: row.insetBy(dx: 6, dy: 0), root: root, style: style)
         }
     }
 
-    /// The selected match's file: its name, then numbered lines centered on
-    /// the match, the match's line tinted and every occurrence of the query
-    /// in the accent color. Tabs are 4 spaces; long lines are clipped.
-    private func drawPreview(in area: NSRect) {
-        guard let match = results.selected, area.height >= lineHeight else { return }
+    /// The selected result's file: its name, then numbered lines, centered
+    /// on the renderer's line (which is tinted) or from the top, with the
+    /// renderer's highlights in the accent color. Tabs are 4 spaces; long
+    /// lines are clipped.
+    private func drawPreview(in area: NSRect, style: OverlayStyle) {
+        guard let item = results.selected, area.height >= lineHeight else { return }
+        let preview = renderer.preview(of: item, query: overlay.query.text)
         let header = NSRect(x: area.minX, y: area.minY, width: area.width, height: lineHeight)
-        draw(attributed((match.path as NSString).lastPathComponent, color: theme.dim), x: area.minX, line: header, width: area.width)
+        let name = style.attributed((preview.path as NSString).lastPathComponent, color: theme.dim)
+        style.draw(name, x: area.minX, line: header, width: area.width)
 
         let visible = Int((area.height - lineHeight) / lineHeight)
         guard visible > 0 else { return }
-        guard let lines = previewLines(for: match.path) else {
+        guard let lines = previewLines(for: preview.path) else {
             let line = NSRect(x: area.minX, y: header.maxY, width: area.width, height: lineHeight)
-            draw(attributed("File too large to preview", color: theme.dim), x: area.minX + 6, line: line, width: area.width - 6)
+            let message = style.attributed("File too large to preview", color: theme.dim)
+            style.draw(message, x: area.minX + 6, line: line, width: area.width - 6)
             return
         }
         guard !lines.isEmpty else { return }
-        let first = max(1, min(match.line - visible / 2, lines.count - visible + 1))
+        let first = preview.line.map { max(1, min($0 - visible / 2, lines.count - visible + 1)) } ?? 1
         let last = min(lines.count, first + visible - 1)
-        let numberWidth = ceil(attributed(String(last), color: theme.dim).size().width)
+        let numberWidth = ceil(style.attributed(String(last), color: theme.dim).size().width)
         let textX = area.minX + 6 + numberWidth + gap
 
         NSGraphicsContext.saveGraphicsState()
@@ -353,16 +372,17 @@ final class SearchOverlayView: NSView {
         area.clip()
         for number in first ... last {
             let line = NSRect(x: area.minX, y: header.maxY + CGFloat(number - first) * lineHeight, width: area.width, height: lineHeight)
-            if number == match.line {
+            if number == preview.line {
                 theme.selectionInactive.setFill()
                 NSBezierPath(roundedRect: line, xRadius: 4, yRadius: 4).fill()
             }
-            let label = attributed(String(number), color: theme.dim)
+            let label = style.attributed(String(number), color: theme.dim)
             let labelWidth = ceil(label.size().width)
-            draw(label, x: textX - gap - labelWidth, line: line, width: labelWidth)
+            style.draw(label, x: textX - gap - labelWidth, line: line, width: labelWidth)
             let content = lines[number - 1].prefix(previewColumns).replacingOccurrences(of: "\t", with: tab)
-            let text = highlighted(attributed(content, color: theme.foreground, truncation: .byClipping), occurrences(of: overlay.query.text, in: content))
-            draw(text, x: textX, line: line, width: area.maxX - textX)
+            let text = style.highlighted(
+                style.attributed(content, color: theme.foreground, truncation: .byClipping), preview.highlights(content))
+            style.draw(text, x: textX, line: line, width: area.maxX - textX)
         }
     }
 
@@ -390,23 +410,29 @@ final class SearchOverlayView: NSView {
         guard let data = try? handle.read(upToCount: previewByteLimit + 1) else { return "" }
         return data.count > previewByteLimit ? nil : String(decoding: data, as: UTF8.self)
     }
+}
 
-    /// Where `query` appears in `line`, ignoring case, as UTF-16 ranges.
-    private func occurrences(of query: String, in line: String) -> [NSRange] {
-        guard !query.isEmpty else { return [] }
-        let line = line as NSString
-        var found: [NSRange] = []
-        var start = 0
-        while true {
-            let range = line.range(of: query, options: .caseInsensitive, range: NSRange(location: start, length: line.length - start))
-            guard range.location != NSNotFound else { return found }
-            found.append(range)
-            start = range.upperBound
-        }
+/// The overlay's drawing helpers, for its renderers too: text in the theme's
+/// font, highlighted ranges, and drawing within a row.
+@MainActor
+struct OverlayStyle {
+    let theme: Theme
+    /// Space between parts of a line.
+    let gap: CGFloat = 8
+
+    /// `string` in the theme's font, one line, cut at `truncation`.
+    func attributed(
+        _ string: String, color: NSColor, truncation: NSLineBreakMode = .byTruncatingTail
+    ) -> NSAttributedString {
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = truncation
+        return NSAttributedString(string: string, attributes: [
+            .font: theme.font, .foregroundColor: color, .paragraphStyle: style,
+        ])
     }
 
     /// `text` with `ranges` (clipped to it) in the accent color, bold.
-    private func highlighted(_ text: NSAttributedString, _ ranges: [NSRange]) -> NSAttributedString {
+    func highlighted(_ text: NSAttributedString, _ ranges: [NSRange]) -> NSAttributedString {
         let marked = NSMutableAttributedString(attributedString: text)
         let bold = NSFontManager.shared.convert(theme.font, toHaveTrait: .boldFontMask)
         let whole = NSRange(location: 0, length: marked.length)
@@ -418,25 +444,14 @@ final class SearchOverlayView: NSView {
         return marked
     }
 
-    /// `string` in the theme's font, one line, cut at `truncation`.
-    private func attributed(
-        _ string: String, color: NSColor, truncation: NSLineBreakMode = .byTruncatingTail
-    ) -> NSAttributedString {
-        let style = NSMutableParagraphStyle()
-        style.lineBreakMode = truncation
-        return NSAttributedString(string: string, attributes: [
-            .font: theme.font, .foregroundColor: color, .paragraphStyle: style,
-        ])
-    }
-
     /// The glyphs' box within a line, centered vertically.
-    private func glyphRect(in line: NSRect) -> NSRect {
+    func glyphRect(in line: NSRect) -> NSRect {
         let glyphHeight = theme.font.ascender - theme.font.descender
         return NSRect(x: line.minX, y: line.minY + (line.height - glyphHeight) / 2, width: line.width, height: glyphHeight)
     }
 
     /// Draws text in `line` from `x`, at most `width` wide.
-    private func draw(_ text: NSAttributedString, x: CGFloat, line: NSRect, width: CGFloat) {
+    func draw(_ text: NSAttributedString, x: CGFloat, line: NSRect, width: CGFloat) {
         // Taller than the glyphs: text that doesn't fit its rect isn't drawn.
         let height = ceil(theme.font.ascender - theme.font.descender + theme.font.leading) + 2
         text.draw(in: NSRect(x: x, y: glyphRect(in: line).minY, width: max(width, 0), height: height))

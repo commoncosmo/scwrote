@@ -5,9 +5,9 @@ import ScwroteCore
 ///
 ///   SCWROTE_DEBUG_KEYS="jj<CR><D-1>"   keys to press after launch, 0.4 s apart:
 ///       plain characters go to the browser; <CR>, <Esc>, <Up>, <Down>,
-///       <Left>, <Right>, <C-d>, <C-u> are browser keys. While the search
-///       overlay is open, plain characters, <CR>, <Esc>, <Up> and <Down> go to
-///       it instead. The window's own keys, <D-1> (Cmd+1), <D-S-1>, <D-2>,
+///       <Left>, <Right>, <C-d>, <C-u> are browser keys. While an overlay
+///       (search, quick open) is open, plain characters, <CR>, <Esc>, <Up>
+///       and <Down> go to it instead. The window's own keys, <D-1> (Cmd+1), <D-S-1>, <D-2>,
 ///       <D-[>, <D-]> and <D-S-f> (search), are posted as real key events,
 ///       so they take the path a keyboard's would; so is <S-R> (Shift+R),
 ///       for the preview's `R` when it has the keyboard, and the browser
@@ -45,8 +45,8 @@ extension EditorWindowController {
                 }
                 switch key {
                 case let .browser(browserKey):
-                    if isSearchOpen, let searchView {
-                        searchView.press(Self.searchKey(for: browserKey))
+                    if let overlay = layoutView.overlay as? OverlayKeyTarget {
+                        overlay.press(Self.searchKey(for: browserKey))
                     } else {
                         browserView.press(browserKey)
                     }

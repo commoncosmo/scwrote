@@ -378,7 +378,7 @@ final class EditorWindow: NSWindow {
         return super.performKeyEquivalent(with: event)
     }
 
-    private static func modifiers(of event: NSEvent) -> WindowShortcut.Modifiers {
+    static func modifiers(of event: NSEvent) -> WindowShortcut.Modifiers {
         let flags = event.modifierFlags
         var modifiers: WindowShortcut.Modifiers = []
         if flags.contains(.command) { modifiers.insert(.command) }
