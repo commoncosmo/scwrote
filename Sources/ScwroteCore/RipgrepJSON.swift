@@ -25,8 +25,11 @@ public enum RipgrepJSON {
             return start..<end
         }
         let (text, ranges) = display(fullLine, matches: offsets)
+        var lineText = Substring(fullLine)
+        // "\r\n" is one Character, so this drops either line ending.
+        while lineText.last?.isNewline == true { lineText.removeLast() }
         return SearchMatch(path: path, line: lineNumber, column: offsets.first?.lowerBound ?? 0,
-                           text: text, ranges: ranges)
+                           text: text, ranges: ranges, lineText: String(lineText))
     }
 
     /// A ripgrep text field: `{"text": ...}` when valid UTF-8, otherwise

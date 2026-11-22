@@ -33,7 +33,7 @@ public final class ProjectSearch: @unchecked Sendable {
     /// ...or this long after its first match arrived.
     static let batchDelay: DispatchTimeInterval = .milliseconds(50)
     /// One past the cap, so `SearchResults` sees the overflow and says "1000+".
-    static let deliveryLimit = SearchResults.cap + 1
+    public static let deliveryLimit = SearchResults.cap + 1
 
     private let ripgrep: String
     /// Resolved, so disk results are in nvim's path form.
@@ -75,12 +75,15 @@ public final class ProjectSearch: @unchecked Sendable {
     /// Disk results for any path in `buffers` are dropped. Each buffer whose
     /// path is in the file list is searched from its text, once the list is ready.
     /// `onBatch` and `onFinish` run on the main queue, only for this search.
+    /// `limit` caps the matching lines delivered (the overlay's cap plus one,
+    /// by default); nil delivers them all, as sending to quickfix needs.
     public func search(_ query: String, buffers: [UnsavedBuffer],
+                       limit: Int? = ProjectSearch.deliveryLimit,
                        onBatch: @escaping @MainActor ([SearchMatch]) -> Void,
                        onFinish: @escaping @MainActor () -> Void) {
         lock.lock()
         let previous = stopCurrent()
-        let search = Search(generation: generation, query: query, buffers: buffers,
+        let search = Search(generation: generation, query: query, buffers: buffers, limit: limit,
                             onBatch: onBatch, onFinish: onFinish)
         current = search
 
@@ -203,7 +206,7 @@ public final class ProjectSearch: @unchecked Sendable {
             return
         }
         search.pending.append(match)
-        if search.seen.count >= Self.deliveryLimit {
+        if let limit = search.limit, search.seen.count >= limit {
             end(search)
             let runs = search.runs
             lock.unlock()
@@ -246,6 +249,8 @@ private final class Search: @unchecked Sendable {
     let generation: Int
     let query: String
     let buffers: [UnsavedBuffer]
+    /// Matching lines to deliver before ending; nil for all.
+    let limit: Int?
     let onBatch: @MainActor ([SearchMatch]) -> Void
     let onFinish: @MainActor () -> Void
 
@@ -261,12 +266,13 @@ private final class Search: @unchecked Sendable {
     var pending: [SearchMatch] = []
     var flushScheduled = false
 
-    init(generation: Int, query: String, buffers: [UnsavedBuffer],
+    init(generation: Int, query: String, buffers: [UnsavedBuffer], limit: Int?,
          onBatch: @escaping @MainActor ([SearchMatch]) -> Void,
          onFinish: @escaping @MainActor () -> Void) {
         self.generation = generation
         self.query = query
         self.buffers = buffers
+        self.limit = limit
         self.onBatch = onBatch
         self.onFinish = onFinish
     }

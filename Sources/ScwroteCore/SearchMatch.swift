@@ -24,14 +24,19 @@ public struct SearchMatch: Equatable, Hashable, Sendable {
     /// Matches within `text`, as UTF-16 offsets so AppKit can draw them as
     /// `NSRange`s. Clipped to what `text` shows.
     public let ranges: [Range<Int>]
+    /// The whole matching line, untrimmed, without its line ending: what a
+    /// quickfix entry shows, where `text` is cut to fit the overlay's row.
+    public let lineText: String
 
     public var key: Key { Key(path: path, line: line) }
 
-    public init(path: String, line: Int, column: Int, text: String, ranges: [Range<Int>]) {
+    public init(path: String, line: Int, column: Int, text: String, ranges: [Range<Int>],
+                lineText: String? = nil) {
         self.path = path
         self.line = line
         self.column = column
         self.text = text
         self.ranges = ranges
+        self.lineText = lineText ?? text
     }
 }
