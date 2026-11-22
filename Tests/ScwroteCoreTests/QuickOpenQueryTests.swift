@@ -22,6 +22,6 @@ struct QuickOpenQueryTests {
     }
     @Test func spacesOnlyIsAnEmptyName() {
         #expect(QuickOpenQuery("   ").isEmpty)
-        #expect(QuickOpenQuery("  ewc ").name.trimmingCharacters(in: .whitespaces) == "ewc")
+        #expect(QuickOpenQuery("  ewc ").name == "  ewc ")
     }
 }

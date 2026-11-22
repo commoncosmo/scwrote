@@ -63,4 +63,25 @@ struct FuzzyMatcherTests {
         #expect(FuzzyMatcher.match("語", in: "日本語.txt")!.ranges == [2..<3])
         #expect(FuzzyMatcher.match("ab", in: "😀a/b.txt")!.ranges == [2..<3, 4..<5])
     }
+
+    @Test func gapCostsFiveThenOneMore() {
+        // Against the run, a one-character gap loses the run bonus (8) and pays 5; two pay one more.
+        let run = FuzzyMatcher.match("ab", in: "ab")!.score
+        let one = FuzzyMatcher.match("ab", in: "axb")!.score
+        let two = FuzzyMatcher.match("ab", in: "axxb")!.score
+        #expect(run - one == 8 + 5)
+        #expect(one - two == 1)
+    }
+    @Test func fileNameHitBeatsWordStartInAFolder() {
+        // "x" is a word start in the folder "a/x_y/", only mid-word in the file name "zxz.md".
+        let folder = FuzzyMatcher.match("x", in: "a/x_y/zzz.md")!.score
+        let file = FuzzyMatcher.match("x", in: "a/q_y/zxz.md")!.score
+        #expect(file > folder)
+    }
+    @Test func aPreparedPatternMatchesLikeTheName() {
+        let pattern = FuzzyPattern("ewc s")
+        for path in repo {
+            #expect(FuzzyMatcher.match(pattern, in: path) == FuzzyMatcher.match("ewc s", in: path))
+        }
+    }
 }
