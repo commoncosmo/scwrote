@@ -13,6 +13,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     private(set) var isClosing = false
 
     let terminalView = EditorTerminalView(frame: .zero)
+    /// The terminal's pane, which can cover it while a session loads.
+    let editorContainer: TerminalContainerView
     let browserView: FileBrowserView
     let previewView: PreviewPaneView
     let layoutView: EditorLayoutView
@@ -31,6 +33,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
     /// nvim's RPC socket. Calls block, so they run on `nvimQueue`.
     private let nvim: NvimClient
+    /// Where `nvim` connects, for a one-off connection that mustn't wait
+    /// behind `nvimQueue` (see EditorWindowController+Session).
+    let nvimSocket: String
     private let nvimQueue = DispatchQueue(label: "scwrote.nvim")
     /// A second connection that only listens, for the preview.
     let previewEvents: NvimEventListener
@@ -63,9 +68,30 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     var quickOpenGeneration = 0
     var quickOpenSelectsTop = false
 
+    /// Reopening the folder where it was left (see
+    /// EditorWindowController+Session): its saved session; the lock that
+    /// makes this window the one keeping nvim's side, held for the window's
+    /// life if it got it; whether this window loads and saves nvim's side;
+    /// whether nvim's side is in place (restored, or nothing to restore), so
+    /// a save before hanging up can't save a half-started nvim over it; a
+    /// save before closing in progress; the window side saved already.
+    let sessionFolder: SessionFolder
+    let sessionLock: SessionLock
+    var restoresNvim = false
+    var savesNvim = false
+    var isNvimSessionReady = false
+    var isSavingBeforeClose = false
+    var didSaveWindowSide = false
+
     /// `controller` carries the nvim command in its config (see
     /// `GhosttyConfig.editorConfig` for why it isn't a surface option).
-    init(request: LaunchRequest, controller: TerminalController, nvimSocket: String, theme: Theme) {
+    /// A launch that restores brings back `session`'s window side: frame,
+    /// panes, dividers and browser (see EditorWindowController+Session).
+    init(
+        request: LaunchRequest, session: SessionFolder, controller: TerminalController, nvimSocket: String,
+        theme: Theme
+    ) {
+        let saved = request.restoresSession ? session.readWindowState() : nil
         let window = EditorWindow(
             contentRect: NSRect(x: 0, y: 0, width: 960, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -81,19 +107,24 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window.appearance = theme.appearance
         window.contentMinSize = NSSize(width: 360, height: 200)
 
-        browserView = FileBrowserView(browser: FileBrowser(root: request.browserRoot), theme: theme)
+        let browser = Self.browser(restoring: saved, launchRoot: request.browserRoot)
+        browserView = FileBrowserView(browser: browser, theme: theme)
         previewView = PreviewPaneView(theme: theme)
-        panes = PaneLayout(startsInBrowser: request.startsInBrowser)
+        panes = Self.panes(restoring: saved, request: request)
+        editorContainer = TerminalContainerView(terminalView: terminalView, background: theme.background)
         layoutView = EditorLayoutView(
             browserView: browserView,
-            editorView: TerminalContainerView(terminalView: terminalView),
+            editorView: editorContainer,
             previewView: previewView,
             panes: panes,
             dividerColor: theme.divider
         )
         nvim = NvimClient(socketPath: nvimSocket)
+        self.nvimSocket = nvimSocket
         previewEvents = NvimEventListener(socketPath: nvimSocket)
-        fileActions = FileActions(root: request.browserRoot, fileSystem: LocalFileSystem())
+        fileActions = FileActions(root: browser.root, fileSystem: LocalFileSystem())
+        sessionFolder = session
+        sessionLock = SessionLock(path: session.lock)
         super.init(window: window)
 
         window.delegate = self
@@ -117,9 +148,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         connectPreview()
 
         window.contentView = layoutView
-        window.center()
-        watch(request.browserRoot)
+        if let saved { restoreWindowSide(from: saved) } else { window.center() }
+        watch(browser.root)
         applyPanes()
+        if panes.isPreviewShown { previewAppeared() }
+        startNvimRestore(request: request)
     }
 
     @available(*, unavailable)
@@ -317,23 +350,38 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: - Window
 
+    /// Closing on a running nvim asks first; "Close" saves nvim's side of
+    /// the session before hanging up on it (a hang-up may not run nvim's own
+    /// save on exit).
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard isNvimRunning else { return true }
+        guard !isSavingBeforeClose else { return false }
         let alert = NSAlert()
         alert.messageText = "Close this window?"
         alert.informativeText = "nvim is still running. Any unsaved changes will be lost."
         alert.addButton(withTitle: "Close")
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: sender) { [weak self] response in
-            guard response == .alertFirstButtonReturn else { return }
-            self?.isNvimRunning = false
-            sender.close()
+            guard response == .alertFirstButtonReturn, let self else { return }
+            isSavingBeforeClose = true
+            Task {
+                await self.saveSession()
+                self.isSavingBeforeClose = false
+                // nvim may have exited meanwhile, closing the window.
+                guard !self.isClosing else { return }
+                self.isNvimRunning = false
+                sender.close()
+            }
         }
         return false
     }
 
+    /// However the window closes, its side of the session is saved, and
+    /// another window may then keep the folder's nvim session.
     func windowWillClose(_: Notification) {
         isClosing = true
+        saveWindowSide()
+        sessionLock.release()
         watcher?.stop()
         stopSearch()
         stopQuickOpen()
@@ -421,12 +469,23 @@ final class EditorTerminalView: TerminalView {
     }
 }
 
-/// Keeps the terminal filling its pane and its grid sized to match.
-private final class TerminalContainerView: NSView {
+/// Keeps the terminal filling its pane and its grid sized to match, and can
+/// hold it blank under a cover while nvim's side of a session loads.
+@MainActor
+final class TerminalContainerView: NSView {
     private let terminalView: TerminalView
+    private let cover: CoverView
 
-    init(terminalView: TerminalView) {
+    /// Shows a plain view in the theme's background over the terminal. It
+    /// never takes the keyboard or clicks: those still reach the terminal.
+    var isCovered: Bool {
+        get { !cover.isHidden }
+        set { cover.isHidden = !newValue }
+    }
+
+    init(terminalView: TerminalView, background: NSColor) {
         self.terminalView = terminalView
+        cover = CoverView(color: background)
         super.init(frame: .zero)
         terminalView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(terminalView)
@@ -436,6 +495,10 @@ private final class TerminalContainerView: NSView {
             terminalView.trailingAnchor.constraint(equalTo: trailingAnchor),
             terminalView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+        cover.isHidden = true
+        cover.autoresizingMask = [.width, .height]
+        cover.frame = bounds
+        addSubview(cover) // above the terminal
     }
 
     @available(*, unavailable)
@@ -446,5 +509,22 @@ private final class TerminalContainerView: NSView {
     override func layout() {
         super.layout()
         terminalView.fitToSize()
+    }
+
+    /// Layer-backed, so it stays above the terminal's Metal layer.
+    private final class CoverView: NSView {
+        init(color: NSColor) {
+            super.init(frame: .zero)
+            wantsLayer = true
+            layer?.backgroundColor = color.cgColor
+        }
+
+        @available(*, unavailable)
+        required init?(coder _: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override var acceptsFirstResponder: Bool { false }
+        override func hitTest(_: NSPoint) -> NSView? { nil }
     }
 }

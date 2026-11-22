@@ -168,6 +168,10 @@ extension EditorWindowController {
         if let terminal = terminalView.snapshotImage() {
             terminal.draw(in: layoutView.convert(terminalView.bounds, from: terminalView))
         }
+        if editorContainer.isCovered { // while a session loads
+            browserView.theme.background.setFill()
+            layoutView.convert(editorContainer.bounds, from: editorContainer).fill()
+        }
         if !browserView.isHidden, let rep = browserView.bitmapImageRepForCachingDisplay(in: browserView.bounds) {
             browserView.cacheDisplay(in: browserView.bounds, to: rep)
             rep.draw(in: layoutView.convert(browserView.bounds, from: browserView))

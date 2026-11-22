@@ -8,13 +8,16 @@ A native macOS editor shell: a Ghostty-rendered window running your nvim.
 scwrote README.md
 scwrote ./
 scwrote notes/today.md
+scwrote --fresh ./
 ```
 
 `scwrote <files>` behaves like `nvim <files>` typed in the same shell: same
 arguments, same working directory, same environment (`PATH` and all). With a
 folder, or no argument, it opens a file browser on that folder instead, and the
 folder becomes nvim's working directory. The window uses your Ghostty config
-(font, theme) and closes when nvim exits.
+(font, theme) and closes when nvim exits. Opening a folder again brings its
+window back the way you left it; `--fresh` starts it fresh instead (see
+[Coming back to a folder](#coming-back-to-a-folder)).
 
 ## Install
 
@@ -301,6 +304,50 @@ The keys and the mouse work as in search (see the table above), with
 Cmd+Shift+O closing it. Cmd+Shift+F switches to search and Cmd+Shift+O back;
 each keeps its own last query. Quick open needs ripgrep too.
 
+## Coming back to a folder
+
+Open a folder you've worked in before and its window comes back as it was when
+it closed:
+
+- the window's size and position (moved onto a screen if its own is gone);
+- the panes: the browser shown, hidden or pinned, the preview shown or hidden,
+  both dividers where you left them, and the keyboard in the pane that had it;
+- the browser: its folder, the folders you had open and the selected row;
+- nvim: the same files, in the same splits and tabs, each window at its cursor
+  and scroll position.
+
+Not kept: unsaved changes (closing a window on a running nvim still loses
+them), undo history (unless your nvim keeps it with `'undofile'`), folds, and
+search's and quick open's queries.
+
+Starting on a file, `scwrote notes/today.md`, brings back the session of the
+folder you're in (the shell's, which is nvim's working directory), with that
+file in front. `scwrote --fresh ./` (or `--fresh` with files) skips bringing
+anything back for that launch; when that window closes, what it had is saved
+as usual and replaces the old session.
+
+nvim's side is saved when nvim exits, or when you close the window or quit
+while it runs; the window's side is saved when the window closes. Sessions
+live in `~/Library/Application Support/scwrote/sessions`, one folder per
+project (a folder reached through a symlink shares its session): `window.json`
+for the window and `session.vim`, written by nvim's `:mksession`, for nvim.
+Nothing is written into the project. Delete a session's folder to forget it.
+
+- **Two windows on one folder:** the second gets the window's layout back but
+  none of nvim's files (they're open in the first), and it never saves nvim's
+  session. Whichever window closes last leaves its layout behind.
+- **Your own session manager wins:** if nvim already has a session loaded as
+  it starts (`scwrote -S Session.vim`, your config ran `:source` on one, or a
+  plugin such as auto-session or persistence.nvim restored one), scwrote
+  leaves it alone and doesn't save nvim's side for that window.
+- **Your nvim options always win:** the session holds no options, mappings or
+  variables, and the few global options a session file sets anyway are put
+  back to yours after it loads.
+
+While nvim's side loads, the editor pane stays blank (for at most 2 seconds),
+so nvim appears with your files already in place. A session that fails to
+load in part keeps what did load; the error goes to the log.
+
 ## Debugging
 
 `SCWROTE_DEBUG=1 scwrote README.md` logs libghostty's lifecycle and actions to
@@ -321,7 +368,9 @@ the same path through the app as a keyboard's. While an overlay is open, plain c
 (`nvim_input`, in nvim's key notation), so `{ohello<Esc>}` opens a line, types
 "hello" and leaves insert mode.
 `SCWROTE_DEBUG_WIDTH=600` sets the window's content width in points first, to
-see which panes give way:
+see which panes give way. `SCWROTE_SESSIONS_DIR=/tmp/sessions` keeps sessions
+there instead of in `~/Library/Application Support/scwrote/sessions`, so test
+runs leave yours alone:
 
 ```bash
 SCWROTE_DEBUG_KEYS='<D-2>{ohello<Esc>}' SCWROTE_DEBUG_SNAPSHOT=/tmp/p.png \

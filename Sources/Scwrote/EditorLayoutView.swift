@@ -38,8 +38,14 @@ final class EditorLayoutView: NSView {
             window?.invalidateCursorRects(for: self)
         }
     }
-    private var browserWidth = CGFloat(PaneFrames.defaultBrowserWidth)
-    private var previewWidth = CGFloat(PaneFrames.defaultPreviewWidth)
+    /// The side panes' widths as last set by dragging their dividers (or
+    /// restored); `PaneFrames` applies the minimums when laying out.
+    var browserWidth = CGFloat(PaneFrames.defaultBrowserWidth) {
+        didSet { if browserWidth != oldValue { needsLayout = true } }
+    }
+    var previewWidth = CGFloat(PaneFrames.defaultPreviewWidth) {
+        didSet { if previewWidth != oldValue { needsLayout = true } }
+    }
     private var frames: PaneFrames?
     private var dragging: PaneLayout.Pane?
     private let grabWidth: CGFloat = 4

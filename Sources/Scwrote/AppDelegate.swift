@@ -59,8 +59,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             return
         }
+        // The session folder is keyed by the folder nvim starts in: the
+        // folder for a folder launch, the shell's for a file launch.
+        let sessions = SessionStore(environment: environment, home: NSHomeDirectory())
         let editor = EditorWindowController(
             request: request,
+            session: sessions.folder(for: request.workingDirectory),
             controller: controller,
             nvimSocket: nvimSocket,
             theme: Theme.load(configContents: config)
@@ -84,15 +88,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
-    /// Quitting hangs up on every nvim, so ask first if any are still running.
+    /// Quitting hangs up on every nvim, so ask first if any are still running;
+    /// "Quit" has each save nvim's side of its session first (a hang-up may
+    /// not run nvim's own save on exit).
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
-        guard editors.contains(where: \.isNvimRunning) else { return .terminateNow }
+        let running = editors.filter(\.isNvimRunning)
+        guard !running.isEmpty else { return .terminateNow }
         let alert = NSAlert()
         alert.messageText = "Quit scwrote?"
         alert.informativeText = "nvim is still running. Any unsaved changes will be lost."
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Cancel")
-        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+        guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+        Task {
+            for editor in running { await editor.saveSession() }
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
+    /// Windows still open as the app quits don't get `windowWillClose`, so
+    /// their side of the session is saved here.
+    func applicationWillTerminate(_: Notification) {
+        for editor in editors { editor.saveWindowSide() }
     }
 
     /// Uses the user's own Ghostty config so the window looks like their Ghostty,
