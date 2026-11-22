@@ -154,6 +154,23 @@ public struct FileBrowser {
         return String(cString: resolved)
     }
 
+    /// The folders the user has open, sorted, for saving.
+    public var expandedFolders: [String] { expanded.sorted() }
+
+    /// Brings back saved open folders and selection. Folders that no longer
+    /// exist under the root are dropped; the selection is kept only if it's a
+    /// visible row, else the cursor stays at the top.
+    public mutating func restore(expanded folders: [String], selected: String?) {
+        var isDirectory: ObjCBool = false
+        expanded = Set(folders.filter { folder in
+            folder.hasPrefix(root == "/" ? "/" : root + "/")
+                && FileManager.default.fileExists(atPath: folder, isDirectory: &isDirectory)
+                && isDirectory.boolValue
+        })
+        cursor = 0
+        rebuildRows(keeping: selected)
+    }
+
     /// Selects a row directly, as a mouse click does.
     public mutating func select(row: Int) {
         guard rows.indices.contains(row) else { return }

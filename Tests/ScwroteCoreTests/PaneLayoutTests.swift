@@ -310,3 +310,59 @@ struct PaneLayoutEmptyFolderTests {
         #expect(layout.mode == .editorOnly && layout.focus == .editor)
     }
 }
+
+struct PaneLayoutSavedTests {
+    @Test func savedPanesRoundTrip() {
+        var layout = PaneLayout(startsInBrowser: false)
+        layout.togglePin()
+        layout.togglePreview()
+        #expect(layout.mode == .split && layout.focus == .preview)
+
+        let restored = PaneLayout(restoring: layout.saved, isFileLaunch: false)
+
+        #expect(restored == layout)
+    }
+
+    @Test func aFileLaunchGivesTheEditorTheKeyboard() {
+        let saved = PaneLayout.Saved(mode: "split", focus: "browser", isPinned: true, isPreviewShown: false)
+
+        let layout = PaneLayout(restoring: saved, isFileLaunch: true)
+
+        #expect(layout.focus == .editor)
+        #expect(layout.mode == .split)
+        #expect(layout.isPinned)
+    }
+
+    @Test func aFileLaunchOverASavedBrowserOnlyStillShowsTheEditor() {
+        let saved = PaneLayout.Saved(mode: "browserOnly", focus: "browser", isPinned: false, isPreviewShown: false)
+
+        let layout = PaneLayout(restoring: saved, isFileLaunch: true)
+
+        #expect(layout.focus == .editor)
+        #expect(layout.mode == .editorOnly)
+        #expect(layout.editorHasFile)
+    }
+
+    @Test func aFolderLaunchKeepsTheSavedBrowserOnlyLayout() {
+        let saved = PaneLayout.Saved(mode: "browserOnly", focus: "browser", isPinned: false, isPreviewShown: false)
+
+        let layout = PaneLayout(restoring: saved, isFileLaunch: false)
+
+        #expect(layout == PaneLayout(startsInBrowser: true))
+    }
+
+    @Test func focusOnAHiddenPaneIsMovedToAShownOne() {
+        let hiddenBrowser = PaneLayout.Saved(mode: "editorOnly", focus: "browser", isPinned: false, isPreviewShown: false)
+        #expect(PaneLayout(restoring: hiddenBrowser, isFileLaunch: false).focus == .editor)
+
+        let hiddenPreview = PaneLayout.Saved(mode: "split", focus: "preview", isPinned: false, isPreviewShown: false)
+        #expect(PaneLayout(restoring: hiddenPreview, isFileLaunch: false).focus == .editor)
+    }
+
+    @Test func unknownSavedValuesFallBack() {
+        let saved = PaneLayout.Saved(mode: "sideways", focus: "up", isPinned: true, isPreviewShown: true)
+
+        #expect(PaneLayout(restoring: saved, isFileLaunch: false) == PaneLayout(startsInBrowser: true))
+        #expect(PaneLayout(restoring: saved, isFileLaunch: true) == PaneLayout(startsInBrowser: false))
+    }
+}

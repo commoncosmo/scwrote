@@ -20,6 +20,68 @@ public struct PaneLayout: Equatable, Sendable {
         editorHasFile = !startsInBrowser
     }
 
+    /// The part of the layout worth saving.
+    public var saved: Saved {
+        Saved(
+            mode: Self.name(of: mode), focus: Self.name(of: focus),
+            isPinned: isPinned, isPreviewShown: isPreviewShown
+        )
+    }
+
+    /// A layout brought back from a saved one. The saved panes win over the
+    /// launch's defaults; a file launch gives the editor the keyboard (and a
+    /// browser-only layout then shows the editor too, as opening a file does).
+    /// Focus on a pane that isn't shown moves to one that is. Unknown names
+    /// fall back to the launch's defaults.
+    public init(restoring saved: Saved, isFileLaunch: Bool) {
+        guard let savedMode = Self.mode(named: saved.mode), let savedFocus = Self.pane(named: saved.focus) else {
+            let fallback = PaneLayout(startsInBrowser: !isFileLaunch)
+            mode = fallback.mode
+            focus = fallback.focus
+            editorHasFile = fallback.editorHasFile
+            return
+        }
+        isPinned = saved.isPinned
+        isPreviewShown = saved.isPreviewShown
+        editorHasFile = isFileLaunch || savedMode != .browserOnly
+        if isFileLaunch {
+            mode = savedMode == .browserOnly ? (isPinned ? .split : .editorOnly) : savedMode
+            focus = .editor
+            return
+        }
+        mode = savedMode
+        switch savedFocus {
+        case .browser where savedMode == .editorOnly: focus = .editor
+        case .editor where savedMode == .browserOnly: focus = .browser
+        case .preview where !saved.isPreviewShown: focus = editorHasFile ? .editor : .browser
+        default: focus = savedFocus
+        }
+    }
+
+    private static func name(of mode: Mode) -> String {
+        switch mode {
+        case .browserOnly: "browserOnly"
+        case .split: "split"
+        case .editorOnly: "editorOnly"
+        }
+    }
+
+    private static func mode(named name: String) -> Mode? {
+        [Mode.browserOnly, .split, .editorOnly].first { Self.name(of: $0) == name }
+    }
+
+    private static func name(of pane: Pane) -> String {
+        switch pane {
+        case .browser: "browser"
+        case .editor: "editor"
+        case .preview: "preview"
+        }
+    }
+
+    private static func pane(named name: String) -> Pane? {
+        [Pane.browser, .editor, .preview].first { Self.name(of: $0) == name }
+    }
+
     /// Cmd+1: show the browser and go to it; go to it if it's showing; hide it
     /// if you're in it.
     public mutating func toggleBrowser() {
