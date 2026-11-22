@@ -9,7 +9,10 @@ public enum Ripgrep {
             + (stdin ? ["-"] : [])
     }
 
-    public static let fileListArguments = ["--files", "--no-config", "--no-require-git"]
+    /// `--hidden` alone would list `.git` too; the glob drops it at any depth
+    /// (and a worktree's `.git` file). Quick open wants hidden files;
+    /// `ProjectSearch` leaves them out, as its disk search does.
+    public static let fileListArguments = ["--files", "--hidden", "--glob", "!.git", "--no-config", "--no-require-git"]
 
     /// The bundled `rg` beside the app binary, else `.build/ripgrep/rg` in the
     /// nearest ancestor folder named `.build`, else `rg` on `searchPath`.

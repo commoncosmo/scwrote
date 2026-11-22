@@ -45,7 +45,8 @@ final class RipgrepTests {
             == ["--json", "--no-config", "--no-require-git", "--fixed-strings", "--ignore-case", "--", "x"])
         #expect(Ripgrep.searchArguments("x", stdin: true)
             == ["--json", "--no-config", "--no-require-git", "--fixed-strings", "--ignore-case", "--", "x", "-"])
-        #expect(Ripgrep.fileListArguments == ["--files", "--no-config", "--no-require-git"])
+        #expect(Ripgrep.fileListArguments
+            == ["--files", "--hidden", "--glob", "!.git", "--no-config", "--no-require-git"])
     }
 
     @Test func respectsGitignoreOutsideARepo() throws {
@@ -58,7 +59,7 @@ final class RipgrepTests {
         #expect(found.contains("keep.txt"))
         #expect(!found.contains("skip.txt"))
         let files = try runCollecting(Ripgrep.fileListArguments, in: folder).map { String(decoding: $0, as: UTF8.self) }
-        #expect(files == ["keep.txt"])
+        #expect(files.sorted() == [".gitignore", "keep.txt"])
     }
 
     @Test func skipsBinaryAndHidden() throws {
