@@ -14,7 +14,8 @@ under its own license. Their license texts follow, in this order:
   Fonts embedded in libghostty
     JetBrains Mono, Symbols Nerd Font and each of its icon sets
   ripgrep
-    ripgrep, and the Rust crates compiled into it
+    ripgrep, the Rust crates and the Rust standard library compiled into it,
+    and PCRE2 with SLJIT
   Inside mermaid's prebuilt browser file (mermaid.min.js)
     regenerator-runtime and Underscore.js, and the small pieces Cytoscape.js
     embeds (DOMPurify, Lodash and Cytoscape.js themselves are in the generated
@@ -3442,9 +3443,12 @@ Source: https://github.com/BurntSushi/ripgrep
 
 ripgrep is dual-licensed under MIT and the Unlicense (public domain); the MIT
 license is used. The binary is built from ripgrep's own workspace crates
-(ripgrep, grep, grep-cli, grep-matcher, grep-printer, grep-regex,
+(ripgrep, grep, grep-cli, grep-matcher, grep-pcre2, grep-printer, grep-regex,
 grep-searcher, globset and ignore), which carry the same license, and the Rust
-crates in the next section.
+crates in the next section. ripgrep's release build turns on PCRE2
+(`--features pcre2`, with PCRE2_SYS_STATIC=1), so the PCRE2 C library and its
+SLJIT compiler are compiled into the binary too; their licenses are in the
+sections after the crates.
 
 The MIT License (MIT)
 
@@ -3472,40 +3476,73 @@ THE SOFTWARE.
 
 ---- Rust crates compiled into ripgrep ----
 
-The crates in ripgrep 15.2.0's Cargo.lock that the macOS build links, without
-the ones used only on other platforms or only for tests. Each is used under the
-MIT license below, except where the line says more.
+The crates in ripgrep 15.2.0's Cargo.lock that the macOS release build links.
+ripgrep's release workflow builds with `--profile release-lto --features
+pcre2`; this list is what `cargo tree -e normal --features pcre2` gives for
+both aarch64-apple-darwin and x86_64-apple-darwin. Left out are crates used
+only on other platforms, only for tests, or only while building: cc,
+find-msvc-tools, jobserver, pkg-config and shlex compile PCRE2 but are not
+linked into rg. Each is used under the MIT license below, except where the line
+says more. Under each line is the copyright notice from the crate's LICENSE-MIT
+(or LICENSE) file.
 
 aho-corasick 1.1.4 — Unlicense OR MIT (used under MIT) — https://github.com/BurntSushi/aho-corasick
+  Copyright (c) 2015 Andrew Gallant
 anyhow 1.0.103 — MIT OR Apache-2.0 (used under MIT) — https://github.com/dtolnay/anyhow
+  (its LICENSE-MIT has no copyright line; authors per its Cargo.toml: David Tolnay)
 bstr 1.13.0 — MIT OR Apache-2.0 (used under MIT) — https://github.com/BurntSushi/bstr
+  Copyright (c) 2018-2019 Andrew Gallant
 cfg-if 1.0.4 — MIT OR Apache-2.0 (used under MIT) — https://github.com/rust-lang/cfg-if
+  Copyright (c) 2014 Alex Crichton
 crossbeam-deque 0.8.7 — MIT OR Apache-2.0 (used under MIT) — https://github.com/crossbeam-rs/crossbeam
+  Copyright (c) 2019 The Crossbeam Project Developers
 crossbeam-epoch 0.9.20 — MIT OR Apache-2.0 (used under MIT) — https://github.com/crossbeam-rs/crossbeam
+  Copyright (c) 2019 The Crossbeam Project Developers
 crossbeam-utils 0.8.22 — MIT OR Apache-2.0 (used under MIT) — https://github.com/crossbeam-rs/crossbeam
+  Copyright (c) 2019 The Crossbeam Project Developers
 encoding_rs 0.8.35 — (Apache-2.0 OR MIT) AND BSD-3-Clause (used under MIT, plus BSD-3-Clause for the WHATWG-derived data) — https://github.com/hsivonen/encoding_rs
+  Copyright Mozilla Foundation
 encoding_rs_io 0.1.7 — MIT OR Apache-2.0 (used under MIT) — https://github.com/BurntSushi/encoding_rs_io
+  Copyright (c) 2015 Andrew Gallant
 itoa 1.0.18 — MIT OR Apache-2.0 (used under MIT) — https://github.com/dtolnay/itoa
+  (its LICENSE-MIT has no copyright line; authors per its Cargo.toml: David Tolnay)
 lexopt 0.3.2 — MIT — https://github.com/blyxxyz/lexopt
+  Copyright (c) 2021 Jan Verbeek
 libc 0.2.186 — MIT OR Apache-2.0 (used under MIT) — https://github.com/rust-lang/libc
+  Copyright (c) The Rust Project Developers
 log 0.4.33 — MIT OR Apache-2.0 (used under MIT) — https://github.com/rust-lang/log
+  Copyright (c) 2014 The Rust Project Developers
 memchr 2.8.3 — Unlicense OR MIT (used under MIT) — https://github.com/BurntSushi/memchr
+  Copyright (c) 2015 Andrew Gallant
 memmap2 0.9.11 — MIT OR Apache-2.0 (used under MIT) — https://github.com/RazrFalcon/memmap2-rs
+  Copyright (c) 2020 Yevhenii Reizner
+  Copyright (c) 2015 Dan Burkert
+pcre2 0.2.11 — Unlicense OR MIT (used under MIT) — https://github.com/BurntSushi/rust-pcre2
+  Copyright (c) 2017 Andrew Gallant
+pcre2-sys 0.2.10 — Unlicense OR MIT (used under MIT; the PCRE2 sources it compiles are under PCRE2's own license, below) — https://github.com/BurntSushi/rust-pcre2
+  Copyright (c) 2017 Andrew Gallant
 regex-automata 0.4.15 — MIT OR Apache-2.0 (used under MIT) — https://github.com/rust-lang/regex
+  Copyright (c) 2014 The Rust Project Developers
 regex-syntax 0.8.11 — MIT OR Apache-2.0 (used under MIT) — https://github.com/rust-lang/regex
+  Copyright (c) 2014 The Rust Project Developers
 same-file 1.0.6 — Unlicense OR MIT (used under MIT) — https://github.com/BurntSushi/same-file
+  Copyright (c) 2017 Andrew Gallant
 serde 1.0.228 — MIT OR Apache-2.0 (used under MIT) — https://github.com/serde-rs/serde
+  (its LICENSE-MIT has no copyright line; authors per its Cargo.toml: Erick Tryzelaar and David Tolnay)
 serde_core 1.0.228 — MIT OR Apache-2.0 (used under MIT) — https://github.com/serde-rs/serde
+  (its LICENSE-MIT has no copyright line; authors per its Cargo.toml: Erick Tryzelaar and David Tolnay)
 serde_json 1.0.150 — MIT OR Apache-2.0 (used under MIT) — https://github.com/serde-rs/json
+  (its LICENSE-MIT has no copyright line; authors per its Cargo.toml: Erick Tryzelaar and David Tolnay)
 termcolor 1.4.1 — Unlicense OR MIT (used under MIT) — https://github.com/BurntSushi/termcolor
+  Copyright (c) 2015 Andrew Gallant
 textwrap 0.16.2 — MIT — https://github.com/mgeisler/textwrap
+  Copyright (c) 2016 Martin Geisler
 walkdir 2.5.0 — Unlicense OR MIT (used under MIT) — https://github.com/BurntSushi/walkdir
+  Copyright (c) 2015 Andrew Gallant
 zmij 1.0.23 — MIT — https://github.com/dtolnay/zmij
-
-Copyright holders: Andrew Gallant, the Rust Project Developers, Alex Crichton,
-The Crossbeam Project Developers, Mozilla Foundation, Jan Verbeek, Dan Burkert,
-Yevhenii Reizner, Martin Geisler, David Tolnay and the serde developers, and
-other contributors, as stated in each crate's repository above.
+  (its LICENSE-MIT has no copyright line; authors per its Cargo.toml: David Tolnay)
+Rust standard library (std, core, alloc and the crates the toolchain builds them from), linked statically by the Rust compiler — MIT OR Apache-2.0 (used under MIT) — https://github.com/rust-lang/rust
+  Copyright (c) The Rust Project Contributors
 
 MIT License
 
@@ -3559,6 +3596,158 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+---- PCRE2 (BSD-3-Clause WITH PCRE2-exception) ----
+
+What ships: the PCRE2 library, compiled statically into share/scwrote/rg with
+its just-in-time compiler (ripgrep's -P/--pcre2 engine).
+Source: https://github.com/PCRE2Project/pcre2
+
+pcre2-sys 0.2.10 compiles the PCRE2 sources it vendors, which are PCRE2 10.46:
+the library inside the binary identifies itself as "10.46 2025-08-27".
+`rg --version` prints "PCRE2 10.45" because it reads the version from
+pcre2-sys's generated Rust bindings, which date from 10.45. PCRE2's LICENCE.md
+is the same in 10.45 and 10.46; it follows exactly.
+
+PCRE2 License
+=============
+
+| SPDX-License-Identifier: | BSD-3-Clause WITH PCRE2-exception |
+|---------|-------|
+
+PCRE2 is a library of functions to support regular expressions whose syntax
+and semantics are as close as possible to those of the Perl 5 language.
+
+Releases 10.00 and above of PCRE2 are distributed under the terms of the "BSD"
+licence, as specified below, with one exemption for certain binary
+redistributions. The documentation for PCRE2, supplied in the "doc" directory,
+is distributed under the same terms as the software itself. The data in the
+testdata directory is not copyrighted and is in the public domain.
+
+The basic library functions are written in C and are freestanding. Also
+included in the distribution is a just-in-time compiler that can be used to
+optimize pattern matching. This is an optional feature that can be omitted when
+the library is built.
+
+
+COPYRIGHT
+---------
+
+### The basic library functions
+
+    Written by:       Philip Hazel
+    Email local part: Philip.Hazel
+    Email domain:     gmail.com
+
+    Retired from University of Cambridge Computing Service,
+    Cambridge, England.
+
+    Copyright (c) 1997-2007 University of Cambridge
+    Copyright (c) 2007-2024 Philip Hazel
+    All rights reserved.
+
+### PCRE2 Just-In-Time compilation support
+
+    Written by:       Zoltan Herczeg
+    Email local part: hzmester
+    Email domain:     freemail.hu
+
+    Copyright (c) 2010-2024 Zoltan Herczeg
+    All rights reserved.
+
+### Stack-less Just-In-Time compiler
+
+    Written by:       Zoltan Herczeg
+    Email local part: hzmester
+    Email domain:     freemail.hu
+
+    Copyright (c) 2009-2024 Zoltan Herczeg
+    All rights reserved.
+
+### All other contributions
+
+Many other contributors have participated in the authorship of PCRE2. As PCRE2
+has never required a Contributor Licensing Agreement, or other copyright
+assignment agreement, all contributions have copyright retained by each
+original contributor or their employer.
+
+
+THE "BSD" LICENCE
+-----------------
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notices,
+  this list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright
+  notices, this list of conditions and the following disclaimer in the
+  documentation and/or other materials provided with the distribution.
+
+* Neither the name of the University of Cambridge nor the names of any
+  contributors may be used to endorse or promote products derived from this
+  software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+
+EXEMPTION FOR BINARY LIBRARY-LIKE PACKAGES
+------------------------------------------
+
+The second condition in the BSD licence (covering binary redistributions) does
+not apply all the way down a chain of software. If binary package A includes
+PCRE2, it must respect the condition, but if package B is software that
+includes package A, the condition is not imposed on package B unless it uses
+PCRE2 independently.
+
+End
+
+
+---- SLJIT (BSD-2-Clause) ----
+
+What ships: SLJIT, the stack-less just-in-time compiler that PCRE2 bundles in
+deps/sljit and its JIT is built on, compiled into share/scwrote/rg.
+Source: https://github.com/zherczeg/sljit
+
+The bundled copy has no separate license file; its notice is the comment at
+the head of sljit_src/sljitLir.h (the same in PCRE2 10.45 and 10.46), quoted
+here without the comment markers:
+
+   Stack-less Just-In-Time compiler
+
+   Copyright Zoltan Herczeg (hzmester@freemail.hu). All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are
+permitted provided that the following conditions are met:
+
+  1. Redistributions of source code must retain the above copyright notice, this list of
+     conditions and the following disclaimer.
+
+  2. Redistributions in binary form must reproduce the above copyright notice, this list
+     of conditions and the following disclaimer in the documentation and/or other materials
+     provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER(S) AND CONTRIBUTORS ``AS IS'' AND ANY
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+SHALL THE COPYRIGHT HOLDER(S) OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 
