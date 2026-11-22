@@ -364,6 +364,30 @@ final class NvimSessionTests {
         _ = slow
     }
 
+    @Test func knowsWhetherASessionIsLoaded() throws {
+        #expect(try client.isSessionLoaded() == false)
+        let mine = try file("mine.vim", "")
+        _ = try lua(client, "vim.v.this_session = ...", [.string(mine)])
+        #expect(try client.isSessionLoaded() == true)
+    }
+
+    @Test func aShortReadTimeoutGivesUpSoon() throws {
+        // One connection keeps nvim busy for 2 s; another, with a 0.3 s read
+        // timeout, gives up long before nvim gets to it.
+        let busy = NvimClient(socketPath: nvim.socketPath)
+        let started = Date()
+        let busyDone = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            _ = try? busy.request("nvim_exec_lua", [.string("vim.uv.sleep(2000)"), .array([])])
+            busyDone.signal()
+        }
+        Thread.sleep(forTimeInterval: 0.2)
+        let quick = NvimClient(socketPath: nvim.socketPath, connectTimeout: 0.5, readTimeout: 0.3)
+        #expect(throws: NvimClient.Failure.connectionLost) { try quick.isSessionLoaded() }
+        #expect(Date().timeIntervalSince(started) < 1.5)
+        busyDone.wait()
+    }
+
     @Test func waitingForAnNvimThatIsGoneThrows() {
         let gone = NvimClient(socketPath: folder + "/gone.sock", connectTimeout: 0.2)
         #expect(throws: NvimClient.Failure.self) { try gone.waitUntilStarted() }

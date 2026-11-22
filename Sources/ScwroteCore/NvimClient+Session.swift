@@ -39,6 +39,15 @@ extension NvimClient {
         }
     }
 
+    /// Whether a session is already loaded (`v:this_session` is set): the
+    /// user's `-S`, or a session plugin's. scwrote doesn't save over it.
+    public func isSessionLoaded() throws -> Bool {
+        guard case let .string(session) = try request("nvim_get_vvar", [.string("this_session")]) else {
+            return false
+        }
+        return !session.isEmpty
+    }
+
     /// Installs a `ScwroteSession` augroup (replacing an earlier one) with a
     /// `VimLeavePre` autocommand that saves the session to `path`, as
     /// `saveSession(to:)` does. Errors then are dropped: a message at exit

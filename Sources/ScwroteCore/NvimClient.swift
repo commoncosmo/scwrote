@@ -44,6 +44,15 @@ public final class NvimClient: @unchecked Sendable {
         self.init(socketPath: socketPath, connectTimeout: connectTimeout, queuesNotifications: false)
     }
 
+    /// A client whose calls give up after `readTimeout` without an answer
+    /// (instead of 5 s), for a call that mustn't hold anything up for long,
+    /// such as saving before hanging up on nvim.
+    public convenience init(socketPath: String, connectTimeout: TimeInterval, readTimeout: TimeInterval) {
+        self.init(
+            socketPath: socketPath, connectTimeout: connectTimeout, queuesNotifications: false,
+            readTimeout: readTimeout)
+    }
+
     /// `queuesNotifications` keeps notifications for `nextNotification()`.
     /// `waitsOutTimeouts` makes calls wait however long nvim takes: it answers
     /// nothing until its startup is done, which plugins can stretch past 5 s.
