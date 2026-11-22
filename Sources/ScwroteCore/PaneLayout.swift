@@ -50,11 +50,16 @@ public struct PaneLayout: Equatable, Sendable {
             return
         }
         mode = savedMode
+        let isShown: Bool
         switch savedFocus {
-        case .browser where savedMode == .editorOnly: focus = .editor
-        case .editor where savedMode == .browserOnly: focus = .browser
-        case .preview where !saved.isPreviewShown: focus = editorHasFile ? .editor : .browser
-        default: focus = savedFocus
+        case .browser: isShown = savedMode != .editorOnly
+        case .editor: isShown = savedMode != .browserOnly
+        case .preview: isShown = saved.isPreviewShown && savedMode != .browserOnly
+        }
+        if isShown {
+            focus = savedFocus
+        } else {
+            focus = savedMode == .editorOnly || editorHasFile ? .editor : .browser
         }
     }
 

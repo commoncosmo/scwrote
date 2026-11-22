@@ -359,6 +359,11 @@ struct PaneLayoutSavedTests {
         #expect(PaneLayout(restoring: hiddenPreview, isFileLaunch: false).focus == .editor)
     }
 
+    @Test func focusOnAPreviewThatIsNotShownIsMovedToAShownPane() {
+        let overBrowserOnly = PaneLayout.Saved(mode: "browserOnly", focus: "preview", isPinned: false, isPreviewShown: true)
+        #expect(PaneLayout(restoring: overBrowserOnly, isFileLaunch: false).focus == .browser)
+    }
+
     @Test func unknownSavedValuesFallBack() {
         let saved = PaneLayout.Saved(mode: "sideways", focus: "up", isPinned: true, isPreviewShown: true)
 

@@ -396,8 +396,10 @@ struct FileBrowserRestoreTests {
     }
 
     @Test func vanishedPathsAreDropped() throws {
-        let root = try makeTree(["a/x.md"])
+        let root = try makeTree(["a/x.md", "b.md"])
         var browser = FileBrowser(root: root)
+        _ = browser.type("j")
+        #expect(browser.cursor == 1)
 
         browser.restore(expanded: ["\(root)/a", "\(root)/gone"], selected: "\(root)/gone/x")
 
