@@ -9,7 +9,7 @@ public enum SessionRestore: Equatable, Sendable {
     /// A session was already loaded (the user's `-S`, or a session plugin),
     /// so scwrote left nvim alone.
     case skipped
-    /// The session errored; nvim was reset to one window and one tab.
+    /// The session loaded with an error; whatever loaded stays.
     case failed(String)
 }
 
@@ -34,8 +34,8 @@ extension NvimClient {
     /// nvim. If no listed buffer has a file name, deletes `path` instead (no
     /// error if it's missing), so an empty session never replaces a real one.
     /// Otherwise `:mksession!` with `'sessionoptions'` set, for the write
-    /// only, to `buffers,tabpages,winsize`; the user's value is put back even
-    /// if the write fails.
+    /// only, to `buffers,tabpages,winsize`; the user's value, and
+    /// `v:this_session`, are put back even if the write fails.
     public func saveSession(to path: String) throws {
         _ = try request("nvim_exec_lua", [
             .string(Self.saveFunctionLua + "save(...)"),
@@ -46,17 +46,21 @@ extension NvimClient {
     /// Loads the session at `path` right after nvim starts. `.skipped` if
     /// `v:this_session` is already set (someone else's session is loaded:
     /// scwrote doesn't stack a second one on it); `.missing` if there's no
-    /// file. Otherwise `:source` it under `pcall`, with the global options a
-    /// session file sets as they were at save time put back to the user's
-    /// values after. On an error: one window, one tab, `v:this_session`
-    /// cleared, and `.failed` with nvim's message.
+    /// file. Otherwise `:silent! source` it, so an error (the session's, or a
+    /// plugin's autocommand as a file loads) doesn't stop the rest loading,
+    /// with the global options a session file sets as they were at save time
+    /// put back to the user's values after. Whatever loaded stays; an error
+    /// makes the result `.failed` with nvim's (last) message, for logging.
+    /// `v:this_session` is left empty either way, so nothing of the user's
+    /// writes over scwrote's file.
     ///
     /// After a load either way: unmodified listed buffers whose file no longer
     /// exists are wiped, unless named in `namedFiles` (the launch's named
     /// files, absolute; they may include values of nvim's flags). Then the
     /// first of `namedFiles` that nvim has as a buffer is shown in the current
-    /// window, and the others nvim has are kept listed; entries nvim doesn't
-    /// have are ignored.
+    /// window, the others nvim has are kept listed, and the argument list is
+    /// exactly the ones nvim has, in order; entries nvim doesn't have are
+    /// ignored.
     public func restoreSession(from path: String, namedFiles: [String]) throws -> SessionRestore {
         let result = try request("nvim_exec_lua", [
             .string(Self.restoreLua),
@@ -89,10 +93,15 @@ extension NvimClient {
             os.remove(path)
             return
           end
+          -- :mksession points v:this_session at the file it writes; left so,
+          -- the user's own "save to v:this_session" code would write over
+          -- scwrote's file with the user's full 'sessionoptions'.
           local users = vim.o.sessionoptions
+          local this_session = vim.v.this_session
           vim.o.sessionoptions = "buffers,tabpages,winsize"
           local ok, err = pcall(vim.cmd.mksession, { vim.fn.fnameescape(path), bang = true })
           vim.o.sessionoptions = users
+          vim.v.this_session = this_session
           if not ok then error(err, 0) end
         end
 
@@ -127,7 +136,15 @@ extension NvimClient {
         vim.go.winminheight = 0
         vim.go.winminwidth = 0
 
-        local ok, err = pcall(vim.cmd.source, vim.fn.fnameescape(path))
+        -- silent!: an error (the session's, or a plugin's autocommand while a
+        -- file loads) doesn't stop the rest of the session loading. v:errmsg
+        -- then holds the last one.
+        local users_errmsg = vim.v.errmsg
+        vim.v.errmsg = ""
+        local ok, err = pcall(vim.cmd, { cmd = "source", args = { vim.fn.fnameescape(path) },
+          mods = { emsg_silent = true } })
+        if ok and vim.v.errmsg ~= "" then ok, err = false, vim.v.errmsg end
+        if ok then vim.v.errmsg = users_errmsg end
 
         pcall(function() vim.go.winminheight = 0 end)
         pcall(function() vim.go.winminwidth = 0 end)
@@ -137,14 +154,12 @@ extension NvimClient {
         pcall(function() vim.go.winminheight = users_wmh end)
         pcall(function() vim.go.winminwidth = users_wmw end)
 
-        if not ok then
-          vim.cmd("silent! only")
-          vim.cmd("silent! tabonly")
-          vim.v.this_session = ""
-          -- Set while a session loads, for plugins; the session's last line
-          -- clears it.
-          vim.g.SessionLoad = nil
-        end
+        -- The session points v:this_session at scwrote's file; left so, the
+        -- user's own "save to v:this_session" code would write over it.
+        vim.v.this_session = ""
+        -- Set while a session loads, for plugins; the session's last line
+        -- clears it, unless it never got there.
+        vim.g.SessionLoad = nil
 
         -- Named files: as given and in nvim's full form.
         local is_named = {}
@@ -166,15 +181,23 @@ extension NvimClient {
           end
         end
 
-        local front
+        local known = {}
         for _, name in ipairs(named) do
           local buf = by_name[name] or by_name[vim.fn.fnamemodify(name, ":p")]
           if buf and vim.api.nvim_buf_is_valid(buf) then
             vim.bo[buf].buflisted = true
-            front = front or buf
+            table.insert(known, buf)
           end
         end
-        if front then vim.cmd.buffer(tostring(front)) end
+        if #known > 0 then
+          vim.cmd.buffer(tostring(known[1]))
+          -- The session empties the argument list; a launch on files has
+          -- them as its arguments.
+          vim.cmd("silent! %argdelete")
+          for _, buf in ipairs(known) do
+            vim.cmd.argadd(vim.fn.fnameescape(vim.api.nvim_buf_get_name(buf)))
+          end
+        end
 
         if ok then return { "restored" } end
         return { "failed", tostring(err) }

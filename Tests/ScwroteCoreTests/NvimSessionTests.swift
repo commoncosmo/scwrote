@@ -168,15 +168,82 @@ final class NvimSessionTests {
 
     @Test func aBrokenSessionLeavesNvimUsable() throws {
         try Data("edit /nope\nthis is not vimscript".utf8).write(to: URL(fileURLWithPath: sessionPath))
-        try command(client, "tabnew")
-        try command(client, "vsplit")
 
         let result = try client.restoreSession(from: sessionPath, namedFiles: [])
 
         guard case .failed = result else { Issue.record("expected .failed, got \(result)"); return }
-        #expect(try lua(client, "return #vim.api.nvim_list_tabpages()") == .int(1))
-        #expect(try lua(client, "return #vim.api.nvim_list_wins()") == .int(1))
+        try command(client, "enew")
+        _ = try lua(client, "vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'still works' })")
+        #expect(try lua(client, "return vim.api.nvim_get_current_line()") == .string("still works"))
+        #expect(try lua(client, "return vim.fn.bufexists('/nope')") == .int(0))
         #expect(try lua(client, "return vim.v.this_session") == .string(""))
+        #expect(try lua(client, "return vim.g.SessionLoad") == .nil)
+    }
+
+    @Test func aNoisyAutocommandDoesntCostTheLayout() throws {
+        let a = try file("a.txt", "a\n")
+        let b = try file("b.txt", "b\n")
+        let c = try file("c.txt", "c\n")
+        try client.edit(a)
+        try command(client, "vsplit " + escaped(b))
+        try command(client, "tabnew " + escaped(c))
+        try client.saveSession(to: sessionPath)
+
+        let (fresh, other) = try freshNvim()
+        try command(other, "autocmd BufReadPost */b.txt echoerr 'plugin oops'")
+        let result = try other.restoreSession(from: sessionPath, namedFiles: [])
+
+        guard case let .failed(message) = result else { Issue.record("expected .failed, got \(result)"); return }
+        #expect(message.contains("plugin oops"))
+        #expect(try lua(other, "return #vim.api.nvim_list_tabpages()") == .int(2))
+        #expect(try lua(other, "return #vim.api.nvim_list_wins()") == .int(3))
+        #expect(Set(try listedFiles(other)) == [a, b, c])
+        #expect(try lua(other, "return vim.v.this_session") == .string(""))
+        #expect(try lua(other, "return vim.g.SessionLoad") == .nil)
+        withExtendedLifetime(fresh) {}
+    }
+
+    @Test func savingLeavesThisSessionAlone() throws {
+        let a = try file("a.txt", "a\n")
+        try client.edit(a)
+
+        try client.saveSession(to: sessionPath)
+        #expect(try lua(client, "return vim.v.this_session") == .string(""))
+
+        _ = try lua(client, "vim.v.this_session = '/the users session.vim'")
+        try client.saveSession(to: sessionPath)
+        #expect(try lua(client, "return vim.v.this_session") == .string("/the users session.vim"))
+
+        let failing = folder + "/no such folder/session.vim"
+        #expect(throws: NvimClient.Failure.self) { try self.client.saveSession(to: failing) }
+        #expect(try lua(client, "return vim.v.this_session") == .string("/the users session.vim"))
+    }
+
+    @Test func aRestoredSessionLeavesThisSessionEmpty() throws {
+        let a = try file("a.txt", "a\n")
+        try client.edit(a)
+        try client.saveSession(to: sessionPath)
+
+        let (fresh, other) = try freshNvim()
+        #expect(try other.restoreSession(from: sessionPath, namedFiles: []) == .restored)
+
+        #expect(try lua(other, "return vim.v.this_session") == .string(""))
+        withExtendedLifetime(fresh) {}
+    }
+
+    @Test func theNamedFilesAreTheArgumentList() throws {
+        let a = try file("a.txt", "a\n")
+        let c = try file("c.txt", "c\n")
+        let d = try file("d.txt", "d\n")
+        try client.edit(a)
+        try client.saveSession(to: sessionPath)
+
+        let (fresh, other) = try freshNvim(arguments: [c, d])
+        #expect(try other.restoreSession(from: sessionPath, namedFiles: [folder + "/echo", c, d]) == .restored)
+
+        #expect(try lua(other, "return vim.fn.argv()") == .array([.string(c), .string(d)]))
+        #expect(try other.currentFile() == c)
+        withExtendedLifetime(fresh) {}
     }
 
     @Test func aBrokenSessionStillPutsTheOptionsBackAndShowsTheNamedFile() throws {
@@ -279,6 +346,7 @@ final class NvimSessionTests {
 
         #expect(try other.currentFile() == b)
         #expect(Set(try listedFiles(other)) == [a, b])
+        #expect(try lua(other, "return vim.fn.argv()") == .array([.string(b)]))
         withExtendedLifetime(fresh) {}
     }
 
