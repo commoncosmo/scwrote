@@ -7,7 +7,7 @@ import Foundation
 /// Threading: any method may be called from any thread; ripgrep callbacks
 /// arrive on a background thread. All state is under `lock`. Nothing here
 /// calls `RipgrepRun.cancel()` or a caller's closure while holding `lock`:
-/// `whenReady` bodies and `onBuilt` are always dispatched to a background
+/// `whenReady` bodies, `onBuilt` and `onFailed` are always dispatched to a background
 /// queue, never run on the caller's stack, so a caller may ask for the list
 /// while holding its own lock without deadlocking.
 public final class FolderFileList: @unchecked Sendable {
@@ -30,6 +30,7 @@ public final class FolderFileList: @unchecked Sendable {
     /// Bodies waiting for the running build. Non-empty only while `listRun` runs.
     private var waiters: [@Sendable (Set<String>) -> Void] = []
     private var builtHandler: (@Sendable (Set<String>) -> Void)?
+    private var failedHandler: (@Sendable () -> Void)?
 
     public init(ripgrep: String, root: String) {
         self.ripgrep = ripgrep
@@ -44,6 +45,14 @@ public final class FolderFileList: @unchecked Sendable {
     public var onBuilt: (@Sendable (Set<String>) -> Void)? {
         get { lock.lock(); defer { lock.unlock() }; return builtHandler }
         set { lock.lock(); defer { lock.unlock() }; builtHandler = newValue }
+    }
+
+    /// Called when a build can't start (ripgrep is there but won't run), on
+    /// a background queue, outside the lock. No list is built then, so
+    /// `onBuilt` isn't called; the next `prepare` or `whenReady` tries again.
+    public var onFailed: (@Sendable () -> Void)? {
+        get { lock.lock(); defer { lock.unlock() }; return failedHandler }
+        set { lock.lock(); defer { lock.unlock() }; failedHandler = newValue }
     }
 
     /// The last list built, or nil before the first build finishes. Kept
@@ -117,6 +126,7 @@ public final class FolderFileList: @unchecked Sendable {
             let fed = waiters
             waiters = []
             Self.deliver([], to: fed)
+            if let failedHandler { DispatchQueue.global().async { failedHandler() } }
         }
     }
 

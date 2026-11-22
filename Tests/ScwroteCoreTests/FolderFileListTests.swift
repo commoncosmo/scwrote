@@ -134,8 +134,11 @@ final class FolderFileListTests {
         let path = tools + "/rg"
         // No ripgrep there yet, so the build can't start.
         let files = FolderFileList(ripgrep: path, root: folder)
+        let failed = Box<Bool>()
+        files.onFailed = { failed.put(true) }
         #expect(await list(of: files) == [])
         #expect(files.latest == nil)
+        #expect(await failed.value() == true)
 
         try FileManager.default.createSymbolicLink(atPath: path, withDestinationPath: rgPath!)
         #expect(await list(of: files) == [resolved + "/a.txt"])

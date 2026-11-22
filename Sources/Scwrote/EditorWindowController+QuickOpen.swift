@@ -4,8 +4,9 @@ import ScwroteCore
 extension EditorWindowController {
     // MARK: - Quick open
 
-    /// Whether quick open lists hidden files (Cmd+Shift+. in the overlay):
-    /// for the rest of the app's run, in every window.
+    /// Whether quick open lists hidden files (Cmd+Shift+. in the overlay).
+    /// scwrote runs one window per process, so the choice lasts until the
+    /// window closes.
     static var showsHiddenFiles = true
 
     var isQuickOpenOpen: Bool { quickOpenView.map { layoutView.overlay === $0 } ?? false }
@@ -49,19 +50,18 @@ extension EditorWindowController {
         quickOpenFetch = fetch
         quickOpenSelectsTop = true
         view.reopen()
-        if quickOpenFiles == nil { view.results = QuickOpenResults() }
-        // The first ranking waits a moment for nvim's recent files, so the
-        // list doesn't show in path order and then jump; if nvim is slow it
-        // goes ahead and ranks again when they come.
+        // The last opening's selection goes at once, so Enter can't open it:
+        // its ranking's rows stand in, the top one selected, while the query
+        // is ranked again now with the list as it is (nvim's open and recent
+        // files take a moment), and again when nvim answers, keeping the top
+        // row selected unless the user has moved. Before the first list:
+        // "Listing files…".
+        view.results = quickOpenRanked?.results ?? QuickOpenResults()
+        rankQuickOpen()
         Task {
-            let quick = await valueIfQuick(of: fetch.task, within: Self.searchBufferWait)
+            let state = await fetch.task.value
             guard quickOpenFetch === fetch else { return }
-            if let quick { land(quick, from: fetch) } else { fetch.wasMissed = true }
-            rankQuickOpen()
-            guard fetch.wasMissed else { return }
-            let late = await fetch.task.value
-            guard quickOpenFetch === fetch else { return }
-            land(late, from: fetch)
+            land(state, from: fetch)
             rankQuickOpen()
         }
     }
@@ -86,9 +86,13 @@ extension EditorWindowController {
     func sharedFolderFiles(ripgrep: String) -> FolderFileList {
         if let folderFiles { return folderFiles }
         let files = FolderFileList(ripgrep: ripgrep, root: browserView.browser.root)
+        let sorted = SortedSource()
         files.onBuilt = { [weak self, weak files] _ in
             guard let files else { return }
-            Self.sortFiles(of: files) { [weak self] paths in self?.folderFilesSorted(paths, from: files) }
+            Self.sortFiles(of: files, last: sorted) { [weak self] paths in self?.folderFilesSorted(paths, from: files) }
+        }
+        files.onFailed = { [weak self, weak files] in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.folderFilesFailed(files) } }
         }
         folderFiles = files
         return files
@@ -96,12 +100,16 @@ extension EditorWindowController {
 
     /// Sorts `files`' newest list into relative paths on a serial queue and
     /// hands them to `done` on the main thread. Each sort reads the newest
-    /// list as it starts, so a late one never brings back an older list.
+    /// list as it starts, so a late one never brings back an older list. A
+    /// list equal to the `last` one sorted (the folder watcher also fires for
+    /// ignored build output) is dropped: nothing is sorted or ranked again,
+    /// and narrowing carries on.
     private nonisolated static func sortFiles(
-        of files: FolderFileList, then done: @escaping @MainActor @Sendable ([String]) -> Void
+        of files: FolderFileList, last: SortedSource, then done: @escaping @MainActor @Sendable ([String]) -> Void
     ) {
         sortQueue.async {
-            guard let latest = files.latest else { return }
+            guard let latest = files.latest, latest != last.paths else { return }
+            last.paths = latest
             let prefix = files.root.hasSuffix("/") ? files.root : files.root + "/"
             let paths = latest.compactMap { $0.hasPrefix(prefix) ? String($0.dropFirst(prefix.count)) : nil }.sorted()
             DispatchQueue.main.async { MainActor.assumeIsolated { done(paths) } }
@@ -115,6 +123,17 @@ extension EditorWindowController {
     private func folderFilesSorted(_ paths: [String], from files: FolderFileList) {
         guard files === folderFiles else { return }
         quickOpenFiles = paths
+        quickOpenRanked = nil
+        if isQuickOpenOpen { rankQuickOpen() }
+    }
+
+    /// The list couldn't be built: ripgrep is there but won't run. A quick
+    /// open with no list yet says "No files" rather than listing forever;
+    /// the next opening tries again, and a list built then replaces it.
+    private func folderFilesFailed(_ files: FolderFileList?) {
+        guard let files, files === folderFiles, quickOpenFiles == nil else { return }
+        FileHandle.standardError.write(Data("scwrote: couldn't run ripgrep to list \(files.root)\n".utf8))
+        quickOpenFiles = []
         quickOpenRanked = nil
         if isQuickOpenOpen { rankQuickOpen() }
     }
@@ -197,6 +216,11 @@ extension EditorWindowController {
             }
         }
     }
+}
+
+/// The list a folder's last sort started from; touched only on the sort queue.
+private final class SortedSource: @unchecked Sendable {
+    var paths: Set<String>?
 }
 
 /// What quick open asks nvim for as it opens: its open and remembered files
