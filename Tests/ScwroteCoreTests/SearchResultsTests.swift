@@ -75,7 +75,11 @@ struct SearchResultsTests {
 
         var single = SearchResults()
         single.add([match("a", 1)])
-        #expect(single.countLine == "1 matches · 1 files")
+        #expect(single.countLine == "1 match · 1 file")
+
+        var oneFile = SearchResults()
+        oneFile.add([match("a", 1), match("a", 2), match("a", 3)])
+        #expect(oneFile.countLine == "3 matches · 1 file")
     }
 
     @Test func moveClampsAndHandlesEmpty() {

@@ -65,6 +65,18 @@ final class NvimSearchTests {
         #expect(try lua("return vim.api.nvim_win_get_cursor(0)[1]") == .int(4))
     }
 
+    @Test func nAfterOpenGoesForwardEvenAfterABackwardSearch() throws {
+        let a = try file("a.txt", "needle\nx\nneedle\nx\nneedle\n")
+        try client.edit(a)
+        try command("execute \"normal! G?needle\\<CR>\"")
+        #expect(try lua("return vim.v.searchforward") == .int(0))
+
+        try client.open(a, line: 3, column: 0, query: "needle")
+
+        try command("normal! n")
+        #expect(try lua("return vim.api.nvim_win_get_cursor(0)[1]") == .int(5))
+    }
+
     @Test func openKeepsTheCurrentBufferWhenAlreadyThere() throws {
         let a = try file("a.txt", "one\ntwo\n")
         try client.edit(a)

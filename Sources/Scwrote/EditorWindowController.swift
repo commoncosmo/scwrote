@@ -45,7 +45,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// and a count naming the latest query, so an older one's results never land.
     var searchView: SearchOverlayView?
     var projectSearch: ProjectSearch?
-    var searchBuffers: Task<[UnsavedBuffer], Never>?
+    var searchBuffers: SearchBufferFetch?
     var searchGeneration = 0
 
     /// `controller` carries the nvim command in its config (see
@@ -315,7 +315,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_: Notification) {
         isClosing = true
         watcher?.stop()
-        projectSearch?.cancel()
+        stopSearch()
         previewEvents.stop()
         onClose?()
     }
@@ -368,7 +368,9 @@ final class EditorWindow: NSWindow {
     var onShortcut: ((WindowShortcut) -> Void)?
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if let shortcut = WindowShortcut(keyCode: event.keyCode, modifiers: Self.modifiers(of: event)) {
+        if let shortcut = WindowShortcut(
+            keyCode: event.keyCode, characters: event.charactersIgnoringModifiers,
+            modifiers: Self.modifiers(of: event)) {
             onShortcut?(shortcut)
             return true
         }

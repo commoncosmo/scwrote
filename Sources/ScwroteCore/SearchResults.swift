@@ -71,7 +71,11 @@ public struct SearchResults: Equatable, Sendable {
     public var countLine: String {
         if isCapped { return "\(Self.cap)+ matches" }
         if matches.isEmpty { return isFinished ? "No matches" : "Searching…" }
-        return "\(matches.count) matches · \(fileCount) files"
+        return "\(Self.counted(matches.count, "match", "matches")) · \(Self.counted(fileCount, "file", "files"))"
+    }
+
+    private static func counted(_ count: Int, _ one: String, _ many: String) -> String {
+        "\(count) \(count == 1 ? one : many)"
     }
 
     /// Where `key` is, or would go, in `matches`.

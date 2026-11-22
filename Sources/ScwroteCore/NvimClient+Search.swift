@@ -25,7 +25,8 @@ extension NvimClient {
     /// never block the jump), puts the cursor at `line` (1-based) and byte
     /// `column`, centers it (`zz`), and sets the `/` register to `\V\c` +
     /// query with `\` and `/` escaped, so `n` finds the query literally and
-    /// ignoring case. A line the file no longer has lands on the last line.
+    /// ignoring case, and forward even after a `?` search. A line the file no
+    /// longer has lands on the last line.
     public func open(_ path: String, line: Int, column: Int, query: String) throws {
         _ = try request("nvim_exec_lua", [
             .string(Self.openLua),
@@ -59,6 +60,7 @@ extension NvimClient {
         end
         vim.cmd("normal! zz")
         vim.fn.setreg("/", [[\V\c]] .. vim.fn.escape(query, [[\/]]))
+        vim.v.searchforward = 1
         if vim.o.hlsearch then vim.v.hlsearch = 1 end
         """#
 }

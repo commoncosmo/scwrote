@@ -34,16 +34,22 @@ final class SearchOverlayView: NSView {
     /// The query changed, a match was chosen, or the overlay asked to close.
     var onAction: ((SearchAction) -> Void)?
 
-    /// Files' lines for the preview, read once per opening (see `reopen()`).
-    private var previewLines: [String: [Substring]] = [:]
+    /// Files' lines for the preview, read once per opening (see `reopen()`);
+    /// nil for a file too large to preview.
+    private var previewLines: [String: [Substring]?] = [:]
     /// First result row drawn; scrolls to keep the selection in view.
     private var topRow = 0
+    /// Scrolling not yet worth a whole row, in rows.
+    private var scrollRemainder: CGFloat = 0
 
     private let padding: CGFloat = 10
     private let gap: CGFloat = 8
     private let tab = "    "
     /// Long lines are cut here before drawing; the preview clips them anyway.
     private let previewColumns = 400
+    /// Larger files aren't previewed: they're read on the main thread while
+    /// drawing, and a huge log would stall typing.
+    private let previewByteLimit = 8 * 1024 * 1024
 
     init(theme: Theme) {
         self.theme = theme
@@ -154,6 +160,20 @@ final class SearchOverlayView: NSView {
         overlay.results.move(by: row - current)
         needsDisplay = true
         if event.clickCount == 2 { press(.enter) }
+    }
+
+    /// Scrolling moves the selection a row at a time, so the list follows
+    /// it as it does the keys.
+    override func scrollWheel(with event: NSEvent) {
+        guard !isMissingRipgrep, !results.matches.isEmpty else { return }
+        if event.phase == .began { scrollRemainder = 0 }
+        // A trackpad reports points, a wheel lines; positive is toward the top.
+        scrollRemainder += event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / lineHeight : event.scrollingDeltaY
+        let rows = Int(scrollRemainder.rounded(.towardZero))
+        guard rows != 0 else { return }
+        scrollRemainder -= CGFloat(rows)
+        overlay.results.move(by: -rows)
+        scrollToSelection()
     }
 
     // MARK: - Layout
@@ -315,9 +335,14 @@ final class SearchOverlayView: NSView {
         let header = NSRect(x: area.minX, y: area.minY, width: area.width, height: lineHeight)
         draw(attributed((match.path as NSString).lastPathComponent, color: theme.dim), x: area.minX, line: header, width: area.width)
 
-        let lines = previewLines(for: match.path)
         let visible = Int((area.height - lineHeight) / lineHeight)
-        guard !lines.isEmpty, visible > 0 else { return }
+        guard visible > 0 else { return }
+        guard let lines = previewLines(for: match.path) else {
+            let line = NSRect(x: area.minX, y: header.maxY, width: area.width, height: lineHeight)
+            draw(attributed("File too large to preview", color: theme.dim), x: area.minX + 6, line: line, width: area.width - 6)
+            return
+        }
+        guard !lines.isEmpty else { return }
         let first = max(1, min(match.line - visible / 2, lines.count - visible + 1))
         let last = min(lines.count, first + visible - 1)
         let numberWidth = ceil(attributed(String(last), color: theme.dim).size().width)
@@ -341,16 +366,29 @@ final class SearchOverlayView: NSView {
         }
     }
 
-    /// The unsaved buffer's lines if there is one, else the file's, read once.
-    private func previewLines(for path: String) -> [Substring] {
+    /// The unsaved buffer's lines if there is one, else the file's, read
+    /// once; nil past `previewByteLimit`.
+    private func previewLines(for path: String) -> [Substring]? {
         if let known = previewLines[path] { return known }
-        var lines: [Substring] = []
-        if let text = unsaved[path] ?? FileManager.default.contents(atPath: path).map({ String(decoding: $0, as: UTF8.self) }) {
-            lines = text.split(separator: "\n", omittingEmptySubsequences: false).map { $0.hasSuffix("\r") ? $0.dropLast() : $0 }
+        let lines = previewText(of: path).map { text -> [Substring] in
+            guard !text.isEmpty else { return [] }
+            var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map { $0.hasSuffix("\r") ? $0.dropLast() : $0 }
             if text.hasSuffix("\n") { lines.removeLast() }
+            return lines
         }
-        previewLines[path] = lines
+        previewLines[path] = .some(lines)
         return lines
+    }
+
+    /// The unsaved buffer's text if there is one, else the file's ("" if it
+    /// can't be read), reading at most one byte past `previewByteLimit`;
+    /// nil past it.
+    private func previewText(of path: String) -> String? {
+        if let buffer = unsaved[path] { return buffer.utf8.count > previewByteLimit ? nil : buffer }
+        guard let handle = FileHandle(forReadingAtPath: path) else { return "" }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: previewByteLimit + 1) else { return "" }
+        return data.count > previewByteLimit ? nil : String(decoding: data, as: UTF8.self)
     }
 
     /// Where `query` appears in `line`, ignoring case, as UTF-16 ranges.

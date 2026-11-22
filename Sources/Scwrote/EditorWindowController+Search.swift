@@ -30,13 +30,17 @@ extension EditorWindowController {
         self.projectSearch = projectSearch
         projectSearch.prepare()
         // The overlay has the keyboard, so nvim's buffers can't change while
-        // it's open: fetched once, and every search waits for them.
-        let fetch = Task { (try? await nvimCall { try $0.unsavedBuffers(under: root) }) ?? [] }
+        // it's open: fetched once per opening. A search that gave up waiting
+        // for them (see `searchBufferWait`) searched the disk alone, so it
+        // runs again once they come.
+        let fetch = SearchBufferFetch(task: Task { (try? await nvimCall { try $0.unsavedBuffers(under: root) }) ?? [] })
         searchBuffers = fetch
         Task {
-            let buffers = await fetch.value
-            guard searchBuffers == fetch else { return }
+            let buffers = await fetch.task.value
+            fetch.buffers = buffers
+            guard searchBuffers === fetch else { return }
             view.unsaved = Dictionary(buffers.map { ($0.path, $0.text) }) { _, last in last }
+            if fetch.wasMissed, !buffers.isEmpty { search(view.overlay.query.text) }
         }
         view.reopen()
         search(view.overlay.query.text)
@@ -45,12 +49,23 @@ extension EditorWindowController {
     /// Cancels the search and gives the keyboard back to the pane that had it.
     func closeSearch() {
         guard isSearchOpen else { return }
-        searchGeneration += 1
-        projectSearch?.cancel()
-        searchBuffers = nil
+        stopSearch()
         layoutView.overlay = nil
         applyPanes()
     }
+
+    /// Cancels the search, and one still waiting for nvim's buffers never
+    /// starts: also as the window closes.
+    func stopSearch() {
+        searchGeneration += 1
+        projectSearch?.cancel()
+        searchBuffers = nil
+    }
+
+    /// How long a search waits for nvim's unsaved buffers. nvim at a
+    /// hit-enter or more prompt, a swap-file question or a long `:!cmd`
+    /// holds the request; past this the search goes to the disk alone.
+    static let searchBufferWait: Duration = .milliseconds(400)
 
     private func makeSearchView() -> SearchOverlayView {
         let view = SearchOverlayView(theme: browserView.theme)
@@ -76,9 +91,13 @@ extension EditorWindowController {
         searchView?.results = SearchResults()
         guard !query.isEmpty, let projectSearch, let fetch = searchBuffers else { return }
         Task { [weak self] in
-            let buffers = await fetch.value
+            var buffers = fetch.buffers
+            if buffers == nil { buffers = await valueIfQuick(of: fetch.task, within: Self.searchBufferWait) }
             guard let self, generation == searchGeneration else { return }
-            projectSearch.search(query, buffers: buffers, onBatch: { [weak self] batch in
+            // The fetch may have landed while this waited to run.
+            buffers = buffers ?? fetch.buffers
+            if buffers == nil { fetch.wasMissed = true }
+            projectSearch.search(query, buffers: buffers ?? [], onBatch: { [weak self] batch in
                 guard let self, generation == searchGeneration else { return }
                 searchView?.results.add(batch)
             }, onFinish: { [weak self] in
@@ -104,5 +123,45 @@ extension EditorWindowController {
                 FileHandle.standardError.write(Data("scwrote: couldn't open \(match.path) in nvim: \(error)\n".utf8))
             }
         }
+    }
+}
+
+/// nvim's unsaved buffers for one opening of the search overlay.
+@MainActor
+final class SearchBufferFetch {
+    let task: Task<[UnsavedBuffer], Never>
+    /// Set once `task` has finished.
+    var buffers: [UnsavedBuffer]?
+    /// A search went ahead without them, nvim being slow to answer.
+    var wasMissed = false
+
+    init(task: Task<[UnsavedBuffer], Never>) {
+        self.task = task
+    }
+}
+
+/// `task`'s value, or nil if it takes longer than `limit`. Stops waiting at
+/// the limit; `task` itself keeps running for whoever else awaits it.
+@MainActor
+private func valueIfQuick<T: Sendable>(of task: Task<T, Never>, within limit: Duration) async -> T? {
+    let first = FirstResult<T>()
+    return await withCheckedContinuation { continuation in
+        first.continuation = continuation
+        Task { @MainActor in first.resume(await task.value) }
+        Task { @MainActor in
+            try? await Task.sleep(for: limit)
+            first.resume(nil)
+        }
+    }
+}
+
+/// Resumes its continuation once, with whichever result comes first.
+@MainActor
+private final class FirstResult<T: Sendable> {
+    var continuation: CheckedContinuation<T?, Never>?
+
+    func resume(_ value: T?) {
+        continuation?.resume(returning: value)
+        continuation = nil
     }
 }

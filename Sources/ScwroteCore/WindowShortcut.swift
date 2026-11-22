@@ -24,17 +24,24 @@ public enum WindowShortcut: Equatable, Sendable {
         public static let control = Modifiers(rawValue: 1 << 3)
     }
 
-    /// `keyCode` is the physical key (a macOS virtual key code), so Cmd+Shift+1
-    /// matches whatever character Shift+1 types.
-    public init?(keyCode: UInt16, modifiers: Modifiers) {
+    /// Digits and brackets match `keyCode`, the physical key (a macOS virtual
+    /// key code), so Cmd+Shift+1 matches whatever character Shift+1 types.
+    /// Letters match `characters`, the typed character
+    /// (`charactersIgnoringModifiers`), so Cmd+Shift+F is the key that types
+    /// F in the user's layout: on Dvorak the physical F key types U, and
+    /// matching it there would take Cmd+Shift+U instead.
+    public init?(keyCode: UInt16, characters: String?, modifiers: Modifiers) {
         switch (keyCode, modifiers) {
         case (18, [.command]): self = .toggleBrowser
         case (18, [.command, .shift]): self = .toggleBrowserPin
         case (19, [.command]): self = .togglePreview
         case (33, [.command]): self = .moveLeft
         case (30, [.command]): self = .moveRight
-        case (3, [.command, .shift]): self = .search
-        default: return nil
+        default:
+            switch (characters?.lowercased(), modifiers) {
+            case ("f", [.command, .shift]): self = .search
+            default: return nil
+            }
         }
     }
 }
