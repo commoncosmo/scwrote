@@ -207,16 +207,86 @@ final class NvimSessionTests {
         let a = try file("a.txt", "a\n")
         try client.edit(a)
 
-        try client.saveSession(to: sessionPath)
+        #expect(try client.saveSession(to: sessionPath) == .saved)
         #expect(try lua(client, "return vim.v.this_session") == .string(""))
-
-        _ = try lua(client, "vim.v.this_session = '/the users session.vim'")
-        try client.saveSession(to: sessionPath)
-        #expect(try lua(client, "return vim.v.this_session") == .string("/the users session.vim"))
 
         let failing = folder + "/no such folder/session.vim"
         #expect(throws: NvimClient.Failure.self) { try self.client.saveSession(to: failing) }
-        #expect(try lua(client, "return vim.v.this_session") == .string("/the users session.vim"))
+        #expect(try lua(client, "return vim.v.this_session") == .string(""))
+    }
+
+    /// A session plugin that loads its session after startup (scheduled, or
+    /// on VeryLazy) stacks it on scwrote's; `v:this_session` then names its
+    /// file (scwrote's restore leaves it empty), and scwrote stops saving.
+    @Test func aSessionSomeoneElseLoadedIsntSaved() throws {
+        let a = try file("a.txt", "a\n")
+        let b = try file("b.txt", "b\n")
+        try client.edit(a)
+        try client.saveSession(to: sessionPath)
+        let saved = try Data(contentsOf: URL(fileURLWithPath: sessionPath))
+        try command(client, "vsplit " + escaped(b))
+        _ = try lua(client, "vim.v.this_session = '/the plugins session.vim'")
+
+        #expect(try client.saveSession(to: sessionPath) == .skipped)
+
+        #expect(try Data(contentsOf: URL(fileURLWithPath: sessionPath)) == saved)
+        #expect(try lua(client, "return vim.v.this_session") == .string("/the plugins session.vim"))
+    }
+
+    @Test func aSessionSomeoneElseLoadedIsntSavedOnExitEither() throws {
+        let a = try file("a.txt", "a\n")
+        try client.edit(a)
+        try client.saveSession(to: sessionPath)
+        let saved = try Data(contentsOf: URL(fileURLWithPath: sessionPath))
+        try client.installSessionSaver(path: sessionPath)
+        try command(client, "enew")
+        _ = try lua(client, "vim.v.this_session = '/the plugins session.vim'")
+
+        _ = try? client.request("nvim_command", [.string("qa!")])
+        nvim.waitUntilExit()
+
+        #expect(try Data(contentsOf: URL(fileURLWithPath: sessionPath)) == saved)
+    }
+
+    @Test func nothingToSaveIsReported() throws {
+        #expect(try client.saveSession(to: sessionPath) == .cleared)
+    }
+
+    /// `:mksession!` writes in place, so a kill or a full disk mid-write
+    /// would leave a session that loads in part: it writes beside the old
+    /// one and renames over it.
+    @Test func aSaveLeavesNoTemporaryFile() throws {
+        let a = try file("a.txt", "a\n")
+        try client.edit(a)
+
+        try client.saveSession(to: sessionPath)
+        try client.saveSession(to: sessionPath)
+
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder + "/state") == ["session.vim"])
+        let (fresh, other) = try freshNvim()
+        #expect(try other.restoreSession(from: sessionPath, namedFiles: []) == .restored)
+        #expect(try listedFiles(other) == [a])
+        withExtendedLifetime(fresh) {}
+    }
+
+    @Test func aFailedWriteLeavesTheOldSession() throws {
+        let a = try file("a.txt", "a\n")
+        let b = try file("b.txt", "b\n")
+        try client.edit(a)
+        try command(client, "set sessionoptions=blank,help")
+        try client.saveSession(to: sessionPath)
+        let saved = try Data(contentsOf: URL(fileURLWithPath: sessionPath))
+        try command(client, "vsplit " + escaped(b))
+
+        // Nothing new can be made in the folder; the old file stays writable.
+        let state = folder + "/state"
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: state)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: state) }
+        #expect(throws: NvimClient.Failure.self) { try self.client.saveSession(to: self.sessionPath) }
+
+        #expect(try Data(contentsOf: URL(fileURLWithPath: sessionPath)) == saved)
+        #expect(try lua(client, "return vim.o.sessionoptions") == .string("blank,help"))
+        #expect(try lua(client, "return vim.v.this_session") == .string(""))
     }
 
     @Test func aRestoredSessionLeavesThisSessionEmpty() throws {
@@ -301,6 +371,25 @@ final class NvimSessionTests {
         withExtendedLifetime(fresh) {}
     }
 
+    /// `scwrote +3 a.md`: nvim's flags apply to the named file as they would
+    /// without a session, over the cursor the session saved for it.
+    @Test func aLineFlagWinsOverTheSessionsCursor() throws {
+        let a = try file("a.txt", numbered(100))
+        let b = try file("b.txt", numbered(10))
+        try client.edit(a)
+        _ = try lua(client, "vim.api.nvim_win_set_cursor(0, { 50, 0 })")
+        try command(client, "vsplit " + escaped(b))
+        try client.saveSession(to: sessionPath)
+
+        let (fresh, other) = try freshNvim(arguments: ["+3", a])
+        #expect(try other.restoreSession(from: sessionPath, namedFiles: [a]) == .restored)
+
+        #expect(try other.currentFile() == a)
+        #expect(try lua(other, "return vim.api.nvim_win_get_cursor(0)") == .array([.int(3), .int(0)]))
+        #expect(Set(try listedFiles(other)) == [a, b])
+        withExtendedLifetime(fresh) {}
+    }
+
     @Test func theFirstNamedFileNvimKnowsIsInFront() throws {
         let a = try file("a.txt", "a\n")
         let c = try file("c.txt", "c\n")
@@ -374,23 +463,58 @@ final class NvimSessionTests {
     @Test func aShortReadTimeoutGivesUpSoon() throws {
         // One connection keeps nvim busy for 2 s; another, with a 0.3 s read
         // timeout, gives up long before nvim gets to it.
-        let busy = NvimClient(socketPath: nvim.socketPath)
-        let started = Date()
-        let busyDone = DispatchSemaphore(value: 0)
-        DispatchQueue.global().async {
-            _ = try? busy.request("nvim_exec_lua", [.string("vim.uv.sleep(2000)"), .array([])])
-            busyDone.signal()
-        }
-        Thread.sleep(forTimeInterval: 0.2)
         let quick = NvimClient(socketPath: nvim.socketPath, connectTimeout: 0.5, readTimeout: 0.3)
-        #expect(throws: NvimClient.Failure.connectionLost) { try quick.isSessionLoaded() }
-        #expect(Date().timeIntervalSince(started) < 1.5)
-        busyDone.wait()
+        try keepingNvimBusy(for: 2) {
+            let started = Date()
+            #expect(throws: NvimClient.Failure.connectionLost) { try quick.isSessionLoaded() }
+            #expect(Date().timeIntervalSince(started) < 1.3)
+        }
+    }
+
+    /// Loading the session can hold nvim up past the read timeout (a swap
+    /// file prompt, a heavy plugin), and the saver is queued behind it:
+    /// both wait as long as nvim takes.
+    @Test func restoringAndInstallingTheSaverWaitOutTimeouts() throws {
+        let a = try file("a.txt", "a\n")
+        try client.edit(a)
+        try client.saveSession(to: sessionPath)
+        let quick = NvimClient(socketPath: nvim.socketPath, connectTimeout: 0.5, readTimeout: 0.2)
+
+        var restored: SessionRestore?
+        try keepingNvimBusy(for: 0.8) {
+            restored = try quick.restoreSession(from: self.sessionPath, namedFiles: [])
+        }
+        #expect(restored == .restored)
+        try keepingNvimBusy(for: 0.8) {
+            try quick.installSessionSaver(path: self.sessionPath)
+        }
+        #expect(try lua(client, "return #vim.api.nvim_get_autocmds({ group = 'ScwroteSession' })") == .int(1))
     }
 
     @Test func waitingForAnNvimThatIsGoneThrows() {
         let gone = NvimClient(socketPath: folder + "/gone.sock", connectTimeout: 0.2)
         #expect(throws: NvimClient.Failure.self) { try gone.waitUntilStarted() }
+    }
+
+    /// Runs `work` while another connection keeps nvim busy for `seconds`.
+    /// The busy call runs on a thread of its own, on a connection made
+    /// beforehand, so it reaches nvim at once even when the test run has
+    /// every shared queue thread blocked.
+    private func keepingNvimBusy(for seconds: Double, _ work: () throws -> Void) throws {
+        let busy = NvimClient(socketPath: nvim.socketPath)
+        _ = try busy.request("nvim_get_vvar", [.string("vim_did_enter")])
+        let sending = DispatchSemaphore(value: 0)
+        let busyDone = DispatchSemaphore(value: 0)
+        let milliseconds = Int64(seconds * 1000)
+        Thread {
+            sending.signal()
+            _ = try? busy.request("nvim_exec_lua", [.string("vim.uv.sleep(...)"), .array([.int(milliseconds)])])
+            busyDone.signal()
+        }.start()
+        sending.wait()
+        Thread.sleep(forTimeInterval: 0.1)
+        defer { busyDone.wait() }
+        try work()
     }
 
     private func freshNvim(arguments: [String] = []) throws -> (HeadlessNvim, NvimClient) {

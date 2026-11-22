@@ -120,6 +120,9 @@ extension EditorWindowController {
                     outcome.failure = "couldn't reach nvim: \(error)"
                     return outcome
                 }
+                // The load and the saver wait as long as nvim takes (a
+                // swap-file prompt during the load, a heavy plugin), so a
+                // slow load never leaves nvim without the saver.
                 if restores {
                     do {
                         outcome.restore = try nvim.restoreSession(from: path, namedFiles: namedFiles)
