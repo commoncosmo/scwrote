@@ -57,6 +57,16 @@ private let files = ["a/OneView.swift", "b/TwoView.swift", "docs/FileBrowserView
         #expect(r.rows.first?.path == "/r/z.txt")
     }
 
+    @Test func typingTheWholeNamePutsThatFileFirstAcrossFolders() {
+        func top(_ name: String, _ files: [String]) -> String? {
+            QuickOpenRanking.rank(.init(name), root: "/r", files: files.sorted(), openFiles: [], history: [], showsHidden: true)
+                .rows.first?.relativePath
+        }
+        #expect(top("theme", ["Sources/App/Views/Theme.swift", "Tests/ThemeTests.swift"]) == "Sources/App/Views/Theme.swift")
+        #expect(top("theme", ["src/components/Theme.tsx", "src/Theme.test.tsx"]) == "src/components/Theme.tsx")
+        #expect(top("main", ["Sources/Scwrote/main.swift", "docs/domain/maintenance.md"]) == "Sources/Scwrote/main.swift")
+    }
+
     @Test func tiesBreakByShorterPathThenPathOrder() {
         let r = QuickOpenRanking.rank(.init("x"), root: "/r", files: ["a/x", "b/x", "x"], openFiles: [], history: [], showsHidden: true)
         #expect(r.rows.map(\.relativePath) == ["x", "a/x", "b/x"])

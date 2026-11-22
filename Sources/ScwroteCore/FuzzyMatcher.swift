@@ -23,6 +23,7 @@ public struct FuzzyMatch: Equatable, Sendable {
 /// | each matched character | +16 |
 /// | matched character inside the file name (after the last `/`), not its extension (after the last `.`) | +16 |
 /// | at a word start: path start, after `/ _ - . +` or space, or a lowercase to uppercase step | +14 |
+/// | the term's last matched character ends the file name's stem (the name without its extension; all of a leading-dot name such as `.gitignore`) | +12 |
 /// | continues the previous matched character (a run) | +8 |
 /// | typed case equals the path's case on an uppercase path character | +2 |
 /// | opening a gap between matched characters | -5 |
@@ -31,10 +32,16 @@ public struct FuzzyMatch: Equatable, Sendable {
 /// So a gap of one skipped character costs 5, two cost 6, and so on.
 /// Characters before the first match cost nothing. Callers break score ties
 /// by shorter path, then alphabetically.
+///
+/// The stem-end bonus puts a file whose whole name was typed (`theme` for
+/// `Theme.swift`) above longer names that start the same (`ThemeTests.swift`).
+/// It stays below a word start, so a scattered match that happens to end the
+/// stem doesn't win by it.
 public enum FuzzyMatcher {
     private static let matched = 16
     private static let inFileName = 16
     private static let wordStart = 14
+    private static let stemEnd = 12
     private static let run = 8
     private static let exactCase = 2
     private static let gapOpen = 5
@@ -108,6 +115,8 @@ public enum FuzzyMatcher {
     ) -> (Int, [Int])? {
         let n = chars.count, m = term.count
         let none = Int.min
+        // The stem's last character; nil when there's no name (a path ending in "/").
+        let stemLast = nameRange.isEmpty ? nil : nameRange.upperBound - 1
         // score[i][j]: best score with term[i] matched at path[j]; from[i][j]: where term[i-1] was.
         var score = Array(repeating: Array(repeating: none, count: n), count: m)
         var from = Array(repeating: Array(repeating: -1, count: n), count: m)
@@ -125,6 +134,7 @@ public enum FuzzyMatcher {
                 if nameRange.contains(j) { here += inFileName }
                 if isWordStart(chars, j) { here += wordStart }
                 if chars[j].isUppercase && chars[j] == term[i] { here += exactCase }
+                if i == m - 1 && j == stemLast { here += stemEnd }
 
                 if i == 0 {
                     score[i][j] = here

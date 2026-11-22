@@ -78,6 +78,27 @@ struct FuzzyMatcherTests {
         let file = FuzzyMatcher.match("x", in: "a/q_y/zxz.md")!.score
         #expect(file > folder)
     }
+    @Test func theWholeNameBeatsALongerNameStartingWithIt() {
+        // Each pair ties without the stem-end bonus, and the shorter path would win.
+        #expect(ranked("theme", ["Sources/App/Views/Theme.swift", "Tests/ThemeTests.swift"]).first
+            == "Sources/App/Views/Theme.swift")
+        #expect(ranked("theme.swift", ["Sources/App/Views/Theme.swift", "Tests/ThemeTests.swift"]).first
+            == "Sources/App/Views/Theme.swift")
+        #expect(ranked("theme", ["src/components/Theme.tsx", "src/Theme.test.tsx"]).first == "src/components/Theme.tsx")
+        #expect(ranked("main", ["Sources/Scwrote/main.swift", "docs/domain/maintenance.md"]).first
+            == "Sources/Scwrote/main.swift")
+    }
+    @Test func stemEndCountsTheLastMatchedCharacterOnly() {
+        // "e" ends the stem "theme"; a leading-dot name is all stem; a gap before it still counts.
+        let ends = FuzzyMatcher.match("thme", in: "a/theme.md")!.score
+        let short = FuzzyMatcher.match("thme", in: "a/themes.md")!.score
+        #expect(ends > short)
+        #expect(FuzzyMatcher.match("gitignore", in: ".gitignore")!.score
+            > FuzzyMatcher.match("gitignore", in: ".gitignores")!.score)
+        // Two terms: each term ending the stem is rewarded on its own.
+        #expect(FuzzyMatcher.match("a theme", in: "a/theme.md")!.score
+            > FuzzyMatcher.match("a theme", in: "a/themes.md")!.score)
+    }
     @Test func aPreparedPatternMatchesLikeTheName() {
         let pattern = FuzzyPattern("ewc s")
         for path in repo {
