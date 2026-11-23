@@ -21,8 +21,8 @@ struct Theme: Equatable {
     /// The cursor row while the editor has the keyboard.
     var selectionInactive: NSColor
     var folder: NSColor
-    /// Folders on the browser's `visual` row: `visualText` when nvim's
-    /// `Visual` sets a text color, else `folder`.
+    /// Folders on the browser's `visual` row, and matches on the overlays':
+    /// `visualText` when nvim's `Visual` sets a text color, else `folder`.
     var selectedFolder: NSColor
     /// Secondary text on the overlays' `visual` row, by the same rule:
     /// `visualText` when `Visual` sets a text color, else `dim`.

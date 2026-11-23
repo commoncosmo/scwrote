@@ -355,6 +355,7 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
                 NSBezierPath(roundedRect: row, xRadius: 4, yRadius: 4).fill()
                 rowStyle.text = theme.visualText
                 rowStyle.dimText = theme.selectedDim
+                rowStyle.accent = theme.selectedFolder
             }
             renderer.drawRow(results[index], in: row.insetBy(dx: 6, dy: 0), root: root, style: rowStyle)
         }
@@ -435,15 +436,17 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
 @MainActor
 struct OverlayStyle {
     let theme: Theme
-    /// A row's text and secondary text: the theme's, or on the selected row
-    /// `visualText` and `selectedDim`.
+    /// A row's text, secondary text and highlights: the theme's, or on the
+    /// selected row `visualText`, `selectedDim` and `selectedFolder`.
     var text: NSColor
     var dimText: NSColor
+    var accent: NSColor
 
     init(theme: Theme) {
         self.theme = theme
         text = theme.foreground
         dimText = theme.dim
+        accent = theme.folder
     }
     /// Space between parts of a line.
     let gap: CGFloat = 8
@@ -459,7 +462,7 @@ struct OverlayStyle {
         ])
     }
 
-    /// `text` with `ranges` (clipped to it) in the accent color, bold.
+    /// `text` with `ranges` (clipped to it) in `accent`, bold.
     func highlighted(_ text: NSAttributedString, _ ranges: [NSRange]) -> NSAttributedString {
         let marked = NSMutableAttributedString(attributedString: text)
         let bold = NSFontManager.shared.convert(theme.font, toHaveTrait: .boldFontMask)
@@ -467,7 +470,7 @@ struct OverlayStyle {
         for range in ranges {
             let clipped = NSIntersectionRange(range, whole)
             guard clipped.length > 0 else { continue }
-            marked.addAttributes([.foregroundColor: theme.folder, .font: bold], range: clipped)
+            marked.addAttributes([.foregroundColor: accent, .font: bold], range: clipped)
         }
         return marked
     }
