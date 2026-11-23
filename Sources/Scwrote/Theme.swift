@@ -3,15 +3,17 @@ import GhosttyKit
 import ScwroteCore
 
 /// Colors and font for what scwrote draws itself (the file browser and the
-/// preview pane), taken from the same Ghostty config the terminal uses so all
-/// panes match.
-struct Theme {
+/// preview pane): nvim's colors where it reported them, else those of the
+/// Ghostty config the terminal uses, so all panes match.
+struct Theme: Equatable {
     var background: NSColor
     var foreground: NSColor
     /// Headers and other secondary text.
     var dim: NSColor
     /// The cursor row while the browser has the keyboard.
     var selection: NSColor
+    /// Text on the selected row.
+    var selectionText: NSColor
     /// The cursor row while the editor has the keyboard.
     var selectionInactive: NSColor
     var folder: NSColor
@@ -22,6 +24,20 @@ struct Theme {
     /// Space above the terminal's first line (`window-padding-y`), so the
     /// browser's rows can start level with nvim's.
     var topPadding: CGFloat
+
+    init(colors: ThemeColors, font: NSFont, topPadding: CGFloat) {
+        background = Self.nsColor(colors.background)
+        foreground = Self.nsColor(colors.foreground)
+        dim = Self.nsColor(colors.dim)
+        selection = Self.nsColor(colors.selection)
+        selectionText = Self.nsColor(colors.selectionText)
+        selectionInactive = Self.nsColor(colors.selectionInactive)
+        folder = colors.folder.map(Self.nsColor) ?? .systemBlue
+        warning = colors.warning.map(Self.nsColor) ?? .systemYellow
+        divider = Self.nsColor(colors.divider)
+        self.font = font
+        self.topPadding = topPadding
+    }
 
     /// Whether the background reads as dark (see `BackgroundTone`).
     var isDark: Bool {
@@ -37,9 +53,27 @@ struct Theme {
         NSAppearance(named: isDark ? .darkAqua : .aqua)
     }
 
-    /// Reads the final colors (theme applied) through libghostty. Call after a
-    /// TerminalController exists: creating one initializes libghostty.
+    /// Colors compared in sRGB, the font by name and size: a theme rebuilt
+    /// from the same colors is equal, so it needn't be applied again.
+    static func == (lhs: Theme, rhs: Theme) -> Bool {
+        let colors: [KeyPath<Theme, NSColor>] = [
+            \.background, \.foreground, \.dim, \.selection, \.selectionText, \.selectionInactive,
+            \.folder, \.warning, \.divider,
+        ]
+        return colors.allSatisfy { sRGB(lhs[keyPath: $0]) == sRGB(rhs[keyPath: $0]) }
+            && lhs.font.fontName == rhs.font.fontName && lhs.font.pointSize == rhs.font.pointSize
+            && lhs.topPadding == rhs.topPadding
+    }
+
+    /// The theme with no colors from nvim: the Ghostty config's alone.
     static func load(configContents: String) -> Theme {
+        ThemeBase(configContents: configContents).theme(nvim: nil)
+    }
+
+    /// What the theme takes from the Ghostty config: its final colors (theme
+    /// applied, read through libghostty), font and top padding. Call after a
+    /// TerminalController exists: creating one initializes libghostty.
+    static func loadGhostty(configContents: String) -> (ghostty: GhosttyColors, font: NSFont, topPadding: CGFloat) {
         let file = FileManager.default.temporaryDirectory
             .appendingPathComponent("scwrote-theme-\(UUID().uuidString).conf")
         try? configContents.write(to: file, atomically: true, encoding: .utf8)
@@ -50,29 +84,27 @@ struct Theme {
         ghostty_config_load_file(config, file.path)
         ghostty_config_finalize(config)
 
-        let background = color(config, "background") ?? NSColor(white: 0.13, alpha: 1)
-        let foreground = color(config, "foreground") ?? NSColor(white: 0.85, alpha: 1)
         var palette = ghostty_config_palette_s()
         let hasPalette = get(config, "palette", &palette)
-        func paletteColor(_ index: Int) -> NSColor? {
+        func paletteColor(_ index: Int) -> ScwroteCore.RGBColor? {
             guard hasPalette else { return nil }
             return withUnsafeBytes(of: palette.colors) { raw in
-                nsColor(raw.bindMemory(to: ghostty_config_color_s.self)[index])
+                rgbColor(raw.bindMemory(to: ghostty_config_color_s.self)[index])
             }
         }
 
         var fontSize: Float = 13
         _ = get(config, "font-size", &fontSize)
 
-        return Theme(
-            background: background,
-            foreground: foreground,
-            dim: blend(foreground, into: background, 0.5),
-            selection: color(config, "selection-background") ?? blend(foreground, into: background, 0.22),
-            selectionInactive: blend(foreground, into: background, 0.1),
-            folder: paletteColor(4) ?? .systemBlue,
-            warning: paletteColor(3) ?? .systemYellow,
-            divider: blend(foreground, into: background, 0.15),
+        let ghostty = GhosttyColors(
+            background: color(config, "background"),
+            foreground: color(config, "foreground"),
+            selectionBackground: color(config, "selection-background"),
+            palette3: paletteColor(3),
+            palette4: paletteColor(4)
+        )
+        return (
+            ghostty: ghostty,
             font: font(family: primaryFontFamily(in: configContents), size: CGFloat(fontSize)),
             topPadding: CGFloat(GhosttyConfig.topPadding(in: configContents))
         )
@@ -115,16 +147,39 @@ struct Theme {
         ghostty_config_get(config, &value, key, UInt(key.utf8.count))
     }
 
-    private static func color(_ config: ghostty_config_t?, _ key: String) -> NSColor? {
+    private static func color(_ config: ghostty_config_t?, _ key: String) -> ScwroteCore.RGBColor? {
         var value = ghostty_config_color_s()
-        return get(config, key, &value) ? nsColor(value) : nil
+        return get(config, key, &value) ? rgbColor(value) : nil
     }
 
-    private static func nsColor(_ color: ghostty_config_color_s) -> NSColor {
-        NSColor(srgbRed: CGFloat(color.r) / 255, green: CGFloat(color.g) / 255, blue: CGFloat(color.b) / 255, alpha: 1)
+    private static func rgbColor(_ color: ghostty_config_color_s) -> ScwroteCore.RGBColor {
+        ScwroteCore.RGBColor(red: Double(color.r) / 255, green: Double(color.g) / 255, blue: Double(color.b) / 255)
     }
 
-    private static func blend(_ top: NSColor, into base: NSColor, _ amount: CGFloat) -> NSColor {
-        base.blended(withFraction: amount, of: top) ?? base
+    private static func nsColor(_ color: ScwroteCore.RGBColor) -> NSColor {
+        NSColor(srgbRed: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 1)
+    }
+
+    /// A color's components in sRGB, alpha last.
+    private static func sRGB(_ color: NSColor) -> [CGFloat] {
+        let srgb = color.usingColorSpace(.sRGB) ?? color
+        return [srgb.redComponent, srgb.greenComponent, srgb.blueComponent, srgb.alphaComponent]
+    }
+}
+
+/// What a theme takes from the Ghostty config, kept so a theme can be built
+/// again when nvim reports new colors.
+struct ThemeBase {
+    var ghostty: GhosttyColors
+    var font: NSFont
+    var topPadding: CGFloat
+
+    init(configContents: String) {
+        (ghostty, font, topPadding) = Theme.loadGhostty(configContents: configContents)
+    }
+
+    /// nvim's colors where `nvim` has them, else the Ghostty config's.
+    func theme(nvim: NvimColors?) -> Theme {
+        Theme(colors: .resolve(nvim: nvim, ghostty: ghostty), font: font, topPadding: topPadding)
     }
 }

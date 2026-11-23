@@ -60,23 +60,30 @@ public enum GhosttyConfig {
         return prefix + (found ?? name)
     }
 
-    /// The config for one editor window: the user's config, then the command to
-    /// run, appended last so it wins over any `command` the user set for Ghostty.
+    /// The command would span more than one config line.
+    public struct UnsafeCommand: Error, Equatable {}
+
+    /// The config for one editor window: scwrote's defaults, the user's
+    /// config, then the command to run, appended last so it wins over any
+    /// `command` the user set for Ghostty.
+    ///
+    /// The defaults come first so the user's own lines win over them (later
+    /// lines win in Ghostty). `window-padding-color = extend` fills the
+    /// padding with the colors of nvim's edge cells, so it matches nvim's
+    /// background rather than Ghostty's.
     ///
     /// The command goes here instead of the surface's own `command` option
     /// because Ghostty's embedding API forces wait-after-command on whenever a
     /// surface is given a command, which would leave the window at "Process
     /// exited" after `:q` instead of closing it.
-    /// The command would span more than one config line.
-    public struct UnsafeCommand: Error, Equatable {}
-
     public static func editorConfig(userConfig: String?, command: String) throws -> String {
         // A line break (from a file name, say) would end the `command =` line
         // and turn the rest into config lines of its own.
         guard !command.contains(where: \.isNewline) else { throw UnsafeCommand() }
+        let defaults = "window-padding-color = extend"
         let editorLines = "command = \(command)\nwait-after-command = false"
-        guard let userConfig else { return editorLines }
-        return "\(userConfig)\n\(editorLines)"
+        guard let userConfig else { return "\(defaults)\n\(editorLines)" }
+        return "\(defaults)\n\(userConfig)\n\(editorLines)"
     }
 
     /// Points between the top of the terminal and its first line: the first

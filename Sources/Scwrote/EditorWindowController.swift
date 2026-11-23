@@ -38,6 +38,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     let nvimSocket: String
     /// The process's settings, shared with the Settings window.
     let settingsStore: SettingsStore
+    /// What the theme takes from the Ghostty config, to build it again from
+    /// nvim's colors.
+    let themeBase: ThemeBase
     private let nvimQueue = DispatchQueue(label: "scwrote.nvim")
     /// A second connection that only listens, for the preview.
     let previewEvents: NvimEventListener
@@ -92,9 +95,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// `GhosttyConfig.editorConfig` for why it isn't a surface option).
     /// A launch that restores brings back `session`'s window side: frame,
     /// panes, dividers and browser (see EditorWindowController+Session).
+    /// `theme` is the launch theme, built from `themeBase`.
     init(
         request: LaunchRequest, session: SessionFolder, controller: TerminalController, nvimSocket: String,
-        theme: Theme, settingsStore: SettingsStore
+        theme: Theme, themeBase: ThemeBase, settingsStore: SettingsStore
     ) {
         let saved = request.restoresSession ? session.readWindowState() : nil
         let window = EditorWindow(
@@ -131,6 +135,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         sessionFolder = session
         sessionLock = SessionLock(path: session.lock)
         self.settingsStore = settingsStore
+        self.themeBase = themeBase
         super.init(window: window)
 
         window.delegate = self
