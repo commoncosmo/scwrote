@@ -10,10 +10,15 @@ private final class Reports: @unchecked Sendable {
     let nvim: HeadlessNvim
     private let listening: NvimClient
     private let control: NvimClient
-    private let lock = NSLock()
-    private var _all: [NvimColors] = []
+    /// What the listening thread collects. The thread holds only this and the
+    /// connection, never `Reports`, so `Reports.deinit` runs and stops nvim.
+    private final class Sink: @unchecked Sendable {
+        let lock = NSLock()
+        var all: [NvimColors] = []
+    }
+    private let sink = Sink()
 
-    var all: [NvimColors] { lock.withLock { _all } }
+    var all: [NvimColors] { sink.lock.withLock { sink.all } }
 
     /// `arguments` go to nvim; the autocommands are installed as soon as it
     /// answers, which is after its startup.
@@ -26,12 +31,14 @@ private final class Reports: @unchecked Sendable {
             socketPath: nvim.socketPath, connectTimeout: 10, queuesNotifications: false, waitsOutTimeouts: true
         )
         let channel = try listening.channelID()
-        let thread = Thread { [self] in
+        let sink = sink
+        let listening = listening
+        let thread = Thread {
             while let notification = try? listening.nextNotification() {
                 if let event = PreviewEvent(method: notification.method, params: notification.params),
                     case let .colors(colors) = event
                 {
-                    lock.withLock { _all.append(colors) }
+                    sink.lock.withLock { sink.all.append(colors) }
                 }
             }
         }
@@ -47,7 +54,11 @@ private final class Reports: @unchecked Sendable {
     }
 
     func command(_ command: String) throws {
-        _ = try control.request("nvim_command", [.string(command)])
+        _ = try request("nvim_command", [.string(command)])
+    }
+
+    func request(_ method: String, _ params: [MessagePackValue]) throws -> MessagePackValue {
+        try control.request(method, params)
     }
 
     /// Waits for a report after the first `count` ones that satisfies `matches`.
@@ -116,16 +127,20 @@ struct NvimColorReportTests {
         #expect(linked.groups["Directory"] == visual)
     }
 
-    /// The report that matters is the last one: the config's `set background`
-    /// runs during startup, and whenever the autocommands go in, the final
-    /// state must reach scwrote.
+    /// A config that blocks startup (as a synchronous plugin install does)
+    /// still answers RPC, so the autocommands can go in before `VimEnter`.
+    /// `:hi` fires no autocommand: only the `VimEnter` report can carry the
+    /// color the config set.
     @Test func aColorschemeSetDuringStartupIsReported() throws {
-        let reports = try Reports(arguments: ["-c", "set background=light"])
+        let reports = try Reports(arguments: [
+            "-c", "lua vim.wait(30000, function() return vim.g.scwrote_go end)",
+            "-c", "hi Normal guibg=#123456",
+        ])
+        #expect(try reports.request("nvim_eval", [.string("v:vim_did_enter")]) == .int(0))
 
-        let light = reports.report(after: 0) { $0.background == "light" }
-        #expect(light != nil)
-        Thread.sleep(forTimeInterval: 1)
-        #expect(reports.all.last?.background == "light")
-        #expect(reports.all.last?.groups["Normal"]?.bg == RGBColor(rgb: 0xe0e2ea))
+        _ = try reports.request("nvim_set_var", [.string("scwrote_go"), .bool(true)])
+
+        let reported = reports.report(after: 0) { $0.groups["Normal"]?.bg == RGBColor(rgb: 0x123456) }
+        #expect(reported != nil)
     }
 }
