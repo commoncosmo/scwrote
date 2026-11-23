@@ -156,6 +156,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window.onShortcut = { [weak self] in self?.perform($0) }
 
         terminalView.delegate = self
+        // A change in the terminal's appearance reaches nvim, which then sets
+        // 'background' again from Ghostty's own background color. If the
+        // terminal followed the window, which follows nvim's colors,
+        // `:set background=light` would be put back to dark at once. So it
+        // keeps the appearance of Ghostty's colors, as it had before nvim's.
+        terminalView.appearance = themeBase.theme(nvim: nil).appearance
         terminalView.configuration = TerminalSurfaceOptions(
             backend: .exec,
             workingDirectory: request.workingDirectory
