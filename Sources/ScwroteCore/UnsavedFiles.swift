@@ -24,7 +24,7 @@ public struct UnsavedFiles: Equatable, Sendable {
             guard paths != self.paths else { return false }
             self.paths = paths
             return true
-        case .cursor:
+        case .cursor, .colors:
             return false
         }
     }

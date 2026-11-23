@@ -14,6 +14,8 @@ public final class NvimEventListener: @unchecked Sendable {
     /// The listening connection's channel, once nvim has said it.
     private var channel: Int64?
     private var sendsText = false
+    /// Whether the color autocommands are installed (or being installed); once.
+    private var colorsInstalled = false
 
     public init(socketPath: String, connectTimeout: TimeInterval = 2) {
         // Both wait out a slow nvim startup: until it's done, nvim takes
@@ -79,6 +81,17 @@ public final class NvimEventListener: @unchecked Sendable {
                     "nvim_exec_lua",
                     [.string(PreviewAutocommands.lua), .array(PreviewAutocommands.arguments(channel: channel, sendsText: sendsText))]
                 )
+                // Once, after the first preview install.
+                let installsColors = lock.withLock {
+                    defer { colorsInstalled = true }
+                    return !colorsInstalled
+                }
+                if installsColors {
+                    _ = try control.request(
+                        "nvim_exec_lua",
+                        [.string(ColorAutocommands.lua), .array(ColorAutocommands.arguments(channel: channel))]
+                    )
+                }
             } catch {
                 stop()
             }
