@@ -407,7 +407,7 @@ say) stays a symlink and the change goes to the file it points to. A value of
 the wrong type counts as that setting's default. Deleting the file puts every
 setting back to its default.
 
-If the file doesn't parse (a comment or a trailing comma is enough, since it's
+If the file doesn't parse (a comment is enough, since it's
 JSON, not JSONC), the settings keep their last good values, or their defaults
 at launch, and the reason goes to the log, `~/Library/Logs/scwrote.log`. The
 Settings window says what's wrong and its switches are off until the file

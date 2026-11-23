@@ -84,9 +84,36 @@ private final class Temp {
         let text = "{ // mine\n \"folders\": {\"reopen\": false} }"
         try t.put(text)
         guard case .unreadable(let message) = t.file.load() else { Issue.record("expected unreadable"); return }
-        #expect(!message.isEmpty)
+        #expect(message.contains("line"))
         #expect(throws: SettingsFileUnreadable.self) { try t.file.write(.reopensFolders, true) }
         #expect(try t.bytes() == Data(text.utf8))
+    }
+
+    @Test func writeKeepsTheFilesPermissions() throws {
+        let t = try Temp()
+        try t.put("{}")
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: t.path)
+        try t.file.write(.reopensFolders, false)
+        let mode = try FileManager.default.attributesOfItem(atPath: t.path)[.posixPermissions] as? Int
+        #expect(mode == 0o600)
+    }
+
+    @Test func writeDoesntEscapeSlashes() throws {
+        let t = try Temp()
+        try t.put(#"{"ai":{"server":"http://localhost:11434"}}"#)
+        try t.file.write(.reopensFolders, false)
+        let text = String(decoding: try t.bytes(), as: UTF8.self)
+        #expect(text.contains("http://localhost:11434"))
+    }
+
+    @Test func writeThroughADanglingSymlinkCreatesTheTarget() throws {
+        let t = try Temp()
+        let target = t.base + "/dotfiles/settings.json"
+        try FileManager.default.createSymbolicLink(atPath: t.path, withDestinationPath: "dotfiles/settings.json")
+        try t.file.write(.reopensFolders, false)
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: t.path)) != nil)
+        let json = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: target))) as? [String: Any])
+        #expect((json["folders"] as? [String: Any])?["reopen"] as? Bool == false)
     }
 
     @Test func writeCreatesTheFolderAndFile() throws {
