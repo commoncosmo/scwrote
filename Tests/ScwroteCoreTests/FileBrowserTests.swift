@@ -379,3 +379,31 @@ struct FileBrowserNvimPathTests {
         #expect(FileBrowser.nvimPath(of: "\(root)/gone.md") == "/private\(root)/gone.md")
     }
 }
+
+struct FileBrowserRestoreTests {
+    @Test func expandedFoldersRoundTrip() throws {
+        let root = try makeTree(["a/b/f.md", "c/"])
+        var browser = FileBrowser(root: root)
+        browser.reveal("\(root)/a/b/f.md")
+
+        #expect(browser.expandedFolders == ["\(root)/a", "\(root)/a/b"])
+
+        var fresh = FileBrowser(root: root)
+        fresh.restore(expanded: browser.expandedFolders, selected: browser.selectedPath)
+
+        #expect(fresh.outline == browser.outline)
+        #expect(fresh.selectedPath == "\(root)/a/b/f.md")
+    }
+
+    @Test func vanishedPathsAreDropped() throws {
+        let root = try makeTree(["a/x.md", "b.md"])
+        var browser = FileBrowser(root: root)
+        _ = browser.type("j")
+        #expect(browser.cursor == 1)
+
+        browser.restore(expanded: ["\(root)/a", "\(root)/gone"], selected: "\(root)/gone/x")
+
+        #expect(browser.expandedFolders == ["\(root)/a"])
+        #expect(browser.cursor == 0)
+    }
+}

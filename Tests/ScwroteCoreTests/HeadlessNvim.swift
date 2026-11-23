@@ -22,6 +22,11 @@ final class HeadlessNvim {
         try process.run()
     }
 
+    /// Returns once nvim has exited (it was asked to quit).
+    func waitUntilExit() {
+        process.waitUntilExit()
+    }
+
     deinit {
         process.terminate()
         process.waitUntilExit()
