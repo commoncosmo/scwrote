@@ -5,10 +5,31 @@ public struct NvimColors: Equatable, Codable, Sendable {
     public struct Group: Equatable, Codable, Sendable {
         public var fg: RGBColor?
         public var bg: RGBColor?
+        /// `gui=reverse`: nvim draws the group with fg and bg swapped.
+        public var reverse: Bool
 
-        public init(fg: RGBColor?, bg: RGBColor?) {
+        public init(fg: RGBColor?, bg: RGBColor?, reverse: Bool = false) {
             self.fg = fg
             self.bg = bg
+            self.reverse = reverse
+        }
+
+        private enum CodingKeys: String, CodingKey { case fg, bg, reverse }
+
+        /// `reverse` is optional: files saved before it existed lack it.
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            fg = try container.decodeIfPresent(RGBColor.self, forKey: .fg)
+            bg = try container.decodeIfPresent(RGBColor.self, forKey: .bg)
+            reverse = try container.decodeIfPresent(Bool.self, forKey: .reverse) ?? false
+        }
+
+        /// `reverse` only when set.
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encodeIfPresent(fg, forKey: .fg)
+            try container.encodeIfPresent(bg, forKey: .bg)
+            if reverse { try container.encode(true, forKey: .reverse) }
         }
     }
 
@@ -28,7 +49,8 @@ public struct NvimColors: Equatable, Codable, Sendable {
     }
 
     /// nil for params that don't fit the contract: one map with a string
-    /// `background` and a `groups` map of name to `{fg?, bg?}` ints.
+    /// `background` and a `groups` map of name to `{fg?, bg?}` ints and an
+    /// optional `reverse` bool.
     public init?(params: [MessagePackValue]) {
         guard params.count == 1, case let .map(fields) = params[0],
             case let .string(background)? = fields[.string("background")]
@@ -43,7 +65,8 @@ public struct NvimColors: Equatable, Codable, Sendable {
                     if case let .array(items) = value, items.isEmpty { groups[name] = Group(fg: nil, bg: nil) }
                     continue
                 }
-                groups[name] = Group(fg: Self.color(colors["fg"]), bg: Self.color(colors["bg"]))
+                let reverse = if case .bool(true)? = colors["reverse"] { true } else { false }
+                groups[name] = Group(fg: Self.color(colors["fg"]), bg: Self.color(colors["bg"]), reverse: reverse)
             }
         case let .array(items)? where items.isEmpty:
             break

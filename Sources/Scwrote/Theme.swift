@@ -10,16 +10,23 @@ struct Theme: Equatable {
     var foreground: NSColor
     /// Headers and other secondary text.
     var dim: NSColor
-    /// The cursor row while the browser has the keyboard.
+    /// Behind text drawn in `foreground`: the prompt's cursor, the overlays'
+    /// query highlight, the preview's cursor rows and diagram boxes.
     var selection: NSColor
-    /// Text on the selected row.
-    var selectionText: NSColor
+    /// The browser's cursor row while it has the keyboard, and the overlays'
+    /// selected row: nvim's `Visual`.
+    var visual: NSColor
+    /// Text on a `visual` row.
+    var visualText: NSColor
     /// The cursor row while the editor has the keyboard.
     var selectionInactive: NSColor
     var folder: NSColor
-    /// Folders on the selected row while the browser has the keyboard: the
-    /// selection's text color when nvim's `Visual` sets one, else `folder`.
+    /// Folders on the browser's `visual` row: `visualText` when nvim's
+    /// `Visual` sets a text color, else `folder`.
     var selectedFolder: NSColor
+    /// Secondary text on the overlays' `visual` row, by the same rule:
+    /// `visualText` when `Visual` sets a text color, else `dim`.
+    var selectedDim: NSColor
     /// Unsaved changes and errors in the preview's header.
     var warning: NSColor
     var divider: NSColor
@@ -33,10 +40,13 @@ struct Theme: Equatable {
         foreground = Self.nsColor(colors.foreground)
         dim = Self.nsColor(colors.dim)
         selection = Self.nsColor(colors.selection)
-        selectionText = Self.nsColor(colors.selectionText)
+        visual = Self.nsColor(colors.visual)
+        visualText = Self.nsColor(colors.visualText)
         selectionInactive = Self.nsColor(colors.selectionInactive)
         folder = colors.folder.map(Self.nsColor) ?? .systemBlue
-        selectedFolder = colors.selectionText != colors.foreground ? selectionText : folder
+        let visualSetsText = colors.visualText != colors.foreground
+        selectedFolder = visualSetsText ? visualText : folder
+        selectedDim = visualSetsText ? visualText : dim
         warning = colors.warning.map(Self.nsColor) ?? .systemYellow
         divider = Self.nsColor(colors.divider)
         self.font = font
@@ -61,17 +71,12 @@ struct Theme: Equatable {
     /// from the same colors is equal, so it needn't be applied again.
     static func == (lhs: Theme, rhs: Theme) -> Bool {
         let colors: [KeyPath<Theme, NSColor>] = [
-            \.background, \.foreground, \.dim, \.selection, \.selectionText, \.selectionInactive,
-            \.folder, \.warning, \.divider,
+            \.background, \.foreground, \.dim, \.selection, \.visual, \.visualText, \.selectionInactive,
+            \.folder, \.selectedFolder, \.selectedDim, \.warning, \.divider,
         ]
         return colors.allSatisfy { sRGB(lhs[keyPath: $0]) == sRGB(rhs[keyPath: $0]) }
             && lhs.font.fontName == rhs.font.fontName && lhs.font.pointSize == rhs.font.pointSize
             && lhs.topPadding == rhs.topPadding
-    }
-
-    /// The theme with no colors from nvim: the Ghostty config's alone.
-    static func load(configContents: String) -> Theme {
-        ThemeBase(configContents: configContents).theme(nvim: nil)
     }
 
     /// What the theme takes from the Ghostty config: its final colors (theme

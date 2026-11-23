@@ -355,14 +355,14 @@ final class FileBrowserView: NSView {
             let row = browser.rows[index]
             let gridRow = index - topRow + 1
             if index == browser.cursor {
-                (isFocused ? theme.selection : theme.selectionInactive).setFill()
+                (isFocused ? theme.visual : theme.selectionInactive).setFill()
                 NSRect(x: 0, y: grid.rowTop(gridRow), width: bounds.width, height: rowHeight).fill()
             }
             let indent = String(repeating: "  ", count: row.depth)
             let marker = row.entry.isDirectory ? (row.isExpanded ? "▾ " : "▸ ") : "  "
             let name = row.entry.name + (row.entry.isDirectory ? "/" : "")
             let color = if index == browser.cursor, isFocused {
-                row.entry.isDirectory ? theme.selectedFolder : theme.selectionText
+                row.entry.isDirectory ? theme.selectedFolder : theme.visualText
             } else {
                 row.entry.isDirectory ? theme.folder : theme.foreground
             }

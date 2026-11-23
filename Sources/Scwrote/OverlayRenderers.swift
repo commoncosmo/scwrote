@@ -48,11 +48,11 @@ struct SearchMatchRenderer: OverlayRenderer {
     func drawRow(_ match: SearchMatch, in row: NSRect, root: String, style: OverlayStyle) {
         let rootPrefix = root == "/" ? "/" : root + "/"
         let path = match.path.hasPrefix(rootPrefix) ? String(match.path.dropFirst(rootPrefix.count)) : match.path
-        let location = style.attributed("\(path):\(match.line)", color: style.theme.dim, truncation: .byTruncatingHead)
+        let location = style.attributed("\(path):\(match.line)", color: style.dimText, truncation: .byTruncatingHead)
         let room = row.width - style.gap
         let locationWidth = min(ceil(location.size().width), room * 0.45)
         style.draw(location, x: row.maxX - locationWidth, line: row, width: locationWidth)
-        let text = style.highlighted(style.attributed(match.text, color: style.theme.foreground), match.ranges.map { NSRange($0) })
+        let text = style.highlighted(style.attributed(match.text, color: style.text), match.ranges.map { NSRange($0) })
         style.draw(text, x: row.minX, line: row, width: room - locationWidth)
     }
 
@@ -103,7 +103,7 @@ struct QuickOpenRenderer: OverlayRenderer {
             return NSMaxRange(range) > lower ? NSRange(location: lower - nameStart, length: NSMaxRange(range) - lower) : nil
         }
         let name = style.highlighted(
-            style.attributed(relative.substring(from: nameStart), color: style.theme.foreground), nameRanges)
+            style.attributed(relative.substring(from: nameStart), color: style.text), nameRanges)
         let nameWidth = min(ceil(name.size().width), row.width)
         style.draw(name, x: row.minX, line: row, width: nameWidth)
 
@@ -111,7 +111,7 @@ struct QuickOpenRenderer: OverlayRenderer {
         let folderX = row.minX + nameWidth + style.gap
         guard row.maxX > folderX else { return }
         let folder = style.highlighted(
-            style.attributed(relative.substring(to: slash), color: style.theme.dim, truncation: .byTruncatingHead), ranges)
+            style.attributed(relative.substring(to: slash), color: style.dimText, truncation: .byTruncatingHead), ranges)
         style.draw(folder, x: folderX, line: row, width: row.maxX - folderX)
     }
 

@@ -127,6 +127,19 @@ struct NvimColorReportTests {
         #expect(linked.groups["Directory"] == visual)
     }
 
+    @Test func reverseIsReported() throws {
+        let reports = try Reports()
+        let first = try #require(reports.report(after: 0))
+        #expect(first.groups["Visual"]?.reverse == false)
+
+        try reports.command("hi Visual guifg=#ffaf00 guibg=#000000 gui=reverse")
+        try reports.command("doautocmd ColorScheme")
+
+        let reversed = try #require(reports.report(after: 1) { $0.groups["Visual"]?.reverse == true })
+        #expect(reversed.groups["Visual"]?.fg == RGBColor(rgb: 0xffaf00))
+        #expect(reversed.groups["Visual"]?.bg == RGBColor(rgb: 0x000000))
+    }
+
     /// A config that blocks startup (as a synchronous plugin install does)
     /// still answers RPC, so the autocommands can go in before `VimEnter`.
     /// `:hi` fires no autocommand: only the `VimEnter` report can carry the

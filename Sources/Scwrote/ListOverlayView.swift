@@ -349,11 +349,14 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
         let selected = results.selectedIndex
         for index in topRow ..< min(results.count, topRow + rows) {
             let row = NSRect(x: list.minX, y: list.minY + CGFloat(index - topRow) * lineHeight, width: list.width, height: lineHeight)
+            var rowStyle = style
             if index == selected {
-                theme.selection.setFill()
+                theme.visual.setFill()
                 NSBezierPath(roundedRect: row, xRadius: 4, yRadius: 4).fill()
+                rowStyle.text = theme.visualText
+                rowStyle.dimText = theme.selectedDim
             }
-            renderer.drawRow(results[index], in: row.insetBy(dx: 6, dy: 0), root: root, style: style)
+            renderer.drawRow(results[index], in: row.insetBy(dx: 6, dy: 0), root: root, style: rowStyle)
         }
     }
 
@@ -432,6 +435,16 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
 @MainActor
 struct OverlayStyle {
     let theme: Theme
+    /// A row's text and secondary text: the theme's, or on the selected row
+    /// `visualText` and `selectedDim`.
+    var text: NSColor
+    var dimText: NSColor
+
+    init(theme: Theme) {
+        self.theme = theme
+        text = theme.foreground
+        dimText = theme.dim
+    }
     /// Space between parts of a line.
     let gap: CGFloat = 8
 

@@ -21,7 +21,7 @@ public enum ColorAutocommands {
           local groups = {}
           for _, name in ipairs(names) do
             local hl = vim.api.nvim_get_hl(0, { name = name, link = false })
-            groups[name] = { fg = hl.fg, bg = hl.bg }
+            groups[name] = { fg = hl.fg, bg = hl.bg, reverse = hl.reverse or nil }
           end
           local ok = pcall(vim.rpcnotify, chan, "\(NvimColors.method)", { background = vim.o.background, groups = groups })
           if not ok then

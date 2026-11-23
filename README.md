@@ -231,14 +231,18 @@ title bar follow nvim's colorscheme live: after `:colorscheme` or
 `:set background`, every pane recolors at once. They take:
 
 - the background and text from `Normal`
-- the selected row from `Visual`, and in the browser its text too if
-  `Visual` sets one
+- the browser's cursor row and the overlays' selected row from `Visual`,
+  their text too if `Visual` sets one (a `reverse` `Visual` swapped, as nvim
+  draws it)
 - folders, links and the preview's accents from `Directory`
 - the unsaved marks and warnings from `WarningMsg`, else `DiagnosticWarn`
 - the dividers from `WinSeparator`, else `VertSplit`
 
 Headers and other secondary text are `Normal`'s text faded into its
-background. A group that sets no color falls back: the selection and the
+background. Where `Normal`'s text sits on a highlight (the browser's prompt
+cursor, the overlays' query, the preview's cursor rows and diagram boxes),
+the highlight is a fade of `Normal`'s text, so it stays readable whatever
+`Visual` is. A group that sets no color falls back: the selected row and the
 dividers to a fade of `Normal`'s text, folders and warnings to your Ghostty
 palette's blue and yellow. The title bar's text and buttons turn light or dark
 with the background.
