@@ -124,6 +124,8 @@ final class SettingsStoreTests {
         defer { store.stopWatching() }
         try SettingsFile(path: nested).write(.reopensFolders, false)
         #expect(try await eventually { store.settings.reopensFolders == false })
+        let settingsFolder = folder + "/later/scwrote"
+        #expect(try await eventually { canonical(store.watchedRoot) == canonical(settingsFolder) })
         try SettingsFile(path: nested).write(.showsHiddenFilesInQuickOpen, false)
         #expect(try await eventually { store.settings.showsHiddenFilesInQuickOpen == false })
     }
@@ -138,5 +140,48 @@ final class SettingsStoreTests {
         defer { store.stopWatching() }
         try SettingsFile(path: link + "/settings.json").write(.reopensFolders, false)
         #expect(try await eventually { store.settings.reopensFolders == false })
+    }
+
+    @Test func watchesThroughASymlinkedFile() async throws {
+        let other = folder + "/other"
+        let config = folder + "/config"
+        try FileManager.default.createDirectory(atPath: other, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(atPath: config, withIntermediateDirectories: true)
+        try put("{}", at: other + "/settings.json")
+        try FileManager.default.createSymbolicLink(
+            atPath: config + "/settings.json", withDestinationPath: other + "/settings.json")
+        let store = SettingsStore(file: SettingsFile(path: config + "/settings.json"))
+        store.startWatching()
+        defer { store.stopWatching() }
+        #expect(canonical(store.watchedRoot) == canonical(other))
+        try SettingsFile(path: config + "/settings.json").write(.reopensFolders, false)
+        #expect(try await eventually { store.settings.reopensFolders == false })
+        #expect(FileManager.default.destinationOfSymbolicLinkOrNil(config + "/settings.json") != nil)
+    }
+
+    @Test func aDeletedAndRecreatedFolderIsWatchedAgain() async throws {
+        let sub = folder + "/sub"
+        try FileManager.default.createDirectory(atPath: sub, withIntermediateDirectories: true)
+        try put("{}", at: sub + "/settings.json")
+        let store = SettingsStore(file: SettingsFile(path: sub + "/settings.json"))
+        store.startWatching()
+        defer { store.stopWatching() }
+        try FileManager.default.removeItem(atPath: sub)
+        #expect(try await eventually { canonical(store.watchedRoot) == canonical(folder) })
+        try SettingsFile(path: sub + "/settings.json").write(.reopensFolders, false)
+        #expect(try await eventually { store.settings.reopensFolders == false })
+        #expect(try await eventually { canonical(store.watchedRoot) == canonical(sub) })
+    }
+}
+
+private func canonical(_ path: String?) -> String? {
+    guard let path, let resolved = realpath(path, nil) else { return nil }
+    defer { free(resolved) }
+    return String(cString: resolved)
+}
+
+private extension FileManager {
+    func destinationOfSymbolicLinkOrNil(_ path: String) -> String? {
+        try? destinationOfSymbolicLink(atPath: path)
     }
 }

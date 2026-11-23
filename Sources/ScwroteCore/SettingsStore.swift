@@ -14,7 +14,7 @@ public final class SettingsStore {
     @ObservationIgnored private var handlers: [@MainActor (Settings) -> Void] = []
     @ObservationIgnored private var watcher: FolderWatcher?
     /// What `watcher` watches (a real path), if anything.
-    @ObservationIgnored private var watchedRoot: String?
+    @ObservationIgnored private(set) var watchedRoot: String?
 
     public init(file: SettingsFile) {
         self.file = file
@@ -74,12 +74,22 @@ public final class SettingsStore {
         return folder.isEmpty ? "/" : folder
     }
 
-    /// Follows the file: on each change in its folder (or, while the folder
-    /// doesn't exist yet, in its nearest existing ancestor), reloads.
+    /// The real folder to watch now: where the file really lives (through a
+    /// symlinked file or folder), or, while it doesn't exist, the settings
+    /// folder or its nearest existing ancestor.
+    private func expectedRoot() -> String {
+        let exists = { (path: String) in FileManager.default.fileExists(atPath: path) }
+        let target = exists(file.path) ? URL(fileURLWithPath: file.path).resolvingSymlinksInPath().path : file.path
+        let root = Self.watchRoot(for: target, exists: exists)
+        return URL(fileURLWithPath: root).resolvingSymlinksInPath().path
+    }
+
+    /// Follows the file: on each change near it, reloads. Watches the folder
+    /// the file really lives in, or while that doesn't exist, its nearest
+    /// existing ancestor.
     public func startWatching() {
         stopWatching()
-        let root = Self.watchRoot(for: file.path) { FileManager.default.fileExists(atPath: $0) }
-        let real = URL(fileURLWithPath: root).resolvingSymlinksInPath().path
+        let real = expectedRoot()
         watchedRoot = real
         watcher = FolderWatcher(path: real) { [weak self] in self?.fileChanged() }
     }
@@ -91,15 +101,17 @@ public final class SettingsStore {
     }
 
     private func fileChanged() {
-        if watcher != nil {
-            let folder = (file.path as NSString).deletingLastPathComponent
-            let real = URL(fileURLWithPath: folder).resolvingSymlinksInPath().path
-            var isFolder: ObjCBool = false
-            if real != watchedRoot, FileManager.default.fileExists(atPath: folder, isDirectory: &isFolder), isFolder.boolValue {
+        reload()
+        guard watcher != nil else { return }
+        let watched = watchedRoot
+        if expectedRoot() != watched || !FileManager.default.fileExists(atPath: watched ?? "") {
+            // Not inside the watcher's own callback: that would free it mid-call.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, watcher != nil, watchedRoot == watched else { return }
                 startWatching()
+                reload()
             }
         }
-        reload()
     }
 
     private func apply(_ new: Settings) {
