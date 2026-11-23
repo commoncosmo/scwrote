@@ -4,11 +4,11 @@ import Foundation
 /// Calls `onChange` on the main thread when anything inside a folder changes
 /// (FSEvents, recursive, coalesced over 0.3 s).
 @MainActor
-final class FolderWatcher {
+public final class FolderWatcher {
     private var stream: FSEventStreamRef?
     private let onChange: () -> Void
 
-    init(path: String, onChange: @escaping () -> Void) {
+    public init(path: String, onChange: @escaping () -> Void) {
         self.onChange = onChange
         var context = FSEventStreamContext(
             version: 0,
@@ -30,7 +30,7 @@ final class FolderWatcher {
         self.stream = stream
     }
 
-    func stop() {
+    public func stop() {
         guard let stream else { return }
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)
