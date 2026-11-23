@@ -22,7 +22,21 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
 
     private enum Body { case empty, document, html, image, pdf }
 
-    private let theme: Theme
+    /// A new theme recolors the pane while on screen: the header, the
+    /// stripe, the body views' backgrounds, and the renderer page, which
+    /// redraws what it shows.
+    var theme: Theme {
+        didSet {
+            guard theme != oldValue else { return }
+            headerView.theme = theme
+            documentView.setTheme(Self.pageTheme(theme), background: theme.background)
+            htmlView?.underPageBackgroundColor = theme.background
+            imageView?.backgroundColor = theme.background
+            pdfView?.backgroundColor = theme.background
+            unsavedStripe.color = theme.warning
+            needsDisplay = true
+        }
+    }
     private let schemeHandler: PreviewSchemeHandler
     private let headerView: PreviewHeaderView
     private let documentView: PreviewDocumentWebView
@@ -440,7 +454,7 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
 
     // MARK: - Theme
 
-    /// The page's `setTheme` argument, in the Ghostty theme's colors and font.
+    /// The page's `setTheme` argument, in the theme's colors and font.
     private static func pageTheme(_ theme: Theme) -> [String: Any] {
         return [
             "background": Theme.css(theme.background),
@@ -535,7 +549,7 @@ extension NSScrollView {
 /// A plain rectangle of one color; drawn (not a layer) so it shows in snapshots.
 @MainActor
 private final class FillView: NSView {
-    private let color: NSColor
+    var color: NSColor { didSet { needsDisplay = true } }
 
     init(color: NSColor) {
         self.color = color

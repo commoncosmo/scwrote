@@ -243,7 +243,7 @@ struct NvimEventListenerTests {
             switch event {
             case let .buffer(snapshot): snapshot.path != session.file
             case let .cursor(path, _): path != session.file
-            case .modified, .unsaved: false
+            case .modified, .unsaved, .colors: false
             }
         }
         #expect(strays.isEmpty)

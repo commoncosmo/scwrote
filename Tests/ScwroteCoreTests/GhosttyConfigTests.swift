@@ -96,13 +96,46 @@ struct GhosttyConfigTests {
     @Test func editorConfigRunsTheCommandAndClosesWhenItExits() throws {
         let config = try GhosttyConfig.editorConfig(userConfig: "theme = /t/Afterglow", command: "'nvim' 'a.md'")
 
-        #expect(config == "theme = /t/Afterglow\ncommand = 'nvim' 'a.md'\nwait-after-command = false")
+        #expect(config == "window-padding-color = extend\ntheme = /t/Afterglow\ncommand = 'nvim' 'a.md'\nwait-after-command = false")
     }
 
     @Test func editorConfigWorksWithoutAUserConfig() throws {
         let config = try GhosttyConfig.editorConfig(userConfig: nil, command: "'nvim'")
 
-        #expect(config == "command = 'nvim'\nwait-after-command = false")
+        #expect(config == "window-padding-color = extend\ncommand = 'nvim'\nwait-after-command = false")
+    }
+
+    /// The padding takes the colors of the cells at nvim's edges, so it
+    /// matches nvim's background instead of Ghostty's.
+    @Test func editorConfigExtendsPaddingBeforeTheUsersLines() throws {
+        let config = try GhosttyConfig.editorConfig(userConfig: "font-size = 14", command: "'nvim'")
+
+        #expect(config.split(separator: "\n") == [
+            "window-padding-color = extend",
+            "font-size = 14",
+            "command = 'nvim'",
+            "wait-after-command = false",
+        ])
+    }
+
+    @Test func editorConfigWithoutUserConfigStillExtendsPadding() throws {
+        let config = try GhosttyConfig.editorConfig(userConfig: nil, command: "'nvim'")
+
+        #expect(config.split(separator: "\n") == [
+            "window-padding-color = extend",
+            "command = 'nvim'",
+            "wait-after-command = false",
+        ])
+    }
+
+    /// Later lines win in Ghostty, so the user's own choice holds.
+    @Test func aUsersPaddingColorComesLaterAndWins() throws {
+        let config = try GhosttyConfig.editorConfig(userConfig: "window-padding-color = background", command: "'nvim'")
+        let lines = config.split(separator: "\n").map(String.init)
+
+        let extend = try #require(lines.firstIndex(of: "window-padding-color = extend"))
+        let users = try #require(lines.firstIndex(of: "window-padding-color = background"))
+        #expect(extend < users)
     }
 
     /// A file name may contain a line break. In the config it would end the

@@ -19,7 +19,7 @@ final class PreviewHeaderView: NSView {
 
     private static let remoteContentNote = "remote content blocked · R to load"
 
-    private let theme: Theme
+    var theme: Theme { didSet { needsDisplay = true } }
     private let sidePadding: CGFloat = 8
     private let gap: CGFloat = 12
 

@@ -2,7 +2,7 @@ import AppKit
 import ScwroteCore
 
 /// Draws a `FileBrowser` like a terminal pane (one monospaced line per row, in
-/// the Ghostty theme's colors) and feeds it vim keys.
+/// the theme's colors) and feeds it vim keys.
 @MainActor
 final class FileBrowserView: NSView {
     private(set) var browser: FileBrowser
@@ -355,13 +355,18 @@ final class FileBrowserView: NSView {
             let row = browser.rows[index]
             let gridRow = index - topRow + 1
             if index == browser.cursor {
-                (isFocused ? theme.selection : theme.selectionInactive).setFill()
+                (isFocused ? theme.visual : theme.selectionInactive).setFill()
                 NSRect(x: 0, y: grid.rowTop(gridRow), width: bounds.width, height: rowHeight).fill()
             }
             let indent = String(repeating: "  ", count: row.depth)
             let marker = row.entry.isDirectory ? (row.isExpanded ? "▾ " : "▸ ") : "  "
             let name = row.entry.name + (row.entry.isDirectory ? "/" : "")
-            let text = attributed(indent + marker + name, color: row.entry.isDirectory ? theme.folder : theme.foreground)
+            let color = if index == browser.cursor, isFocused {
+                row.entry.isDirectory ? theme.selectedFolder : theme.visualText
+            } else {
+                row.entry.isDirectory ? theme.folder : theme.foreground
+            }
+            let text = attributed(indent + marker + name, color: color)
             if unsaved.count > 0, unsaved.marks(nvimPath(of: row.entry.path, isDirectory: row.entry.isDirectory), isDirectory: row.entry.isDirectory) {
                 drawMarked(text, row: gridRow)
             } else {

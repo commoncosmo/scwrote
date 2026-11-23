@@ -69,11 +69,19 @@ public enum PreviewEvent: Equatable, Sendable {
     /// Every file with unsaved changes, sent whole (on install, renames and
     /// unloads) so a set built from `modified` events can't drift.
     case unsaved(Set<String>)
+    /// The colors of nvim's colorscheme, sent on install and whenever the
+    /// colorscheme or `background` changes (see `ColorAutocommands`).
+    case colors(NvimColors)
 
     static let method = "scwrote_preview"
 
     /// nil for other notifications and for params that don't fit the contract.
     public init?(method: String, params: [MessagePackValue]) {
+        if method == NvimColors.method {
+            guard let colors = NvimColors(params: params) else { return nil }
+            self = .colors(colors)
+            return
+        }
         guard method == Self.method, params.count == 1, case let .map(fields) = params[0],
               case let .string(type)? = fields[.string("type")]
         else { return nil }

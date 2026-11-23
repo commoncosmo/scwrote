@@ -40,10 +40,15 @@ extension EditorWindowController {
         FileHandle.standardError.write(Data("scwrote: lost nvim's events; the preview no longer follows nvim\n".utf8))
     }
 
+    /// Colors recolor the window and go no further: they mean nothing to
+    /// the browser's unsaved marks or the preview's state.
     private func receive(_ event: PreviewEvent) {
         switch event {
         case let .buffer(snapshot): latestCursor = (snapshot.path, snapshot.cursor)
         case let .cursor(path, position): latestCursor = (path, position)
+        case let .colors(report):
+            receiveColors(report)
+            return
         case .modified, .unsaved: break
         }
         var unsaved = browserView.unsaved

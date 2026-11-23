@@ -17,7 +17,7 @@ protocol OverlayKeyTarget: AnyObject {
 @MainActor
 final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget {
     private(set) var overlay = SearchOverlay<Renderer.List>()
-    let theme: Theme
+    var theme: Theme { didSet { needsDisplay = true } }
     /// The searched folder, resolved like the results' paths, which show
     /// relative to it.
     var root = "" { didSet { needsDisplay = true } }
@@ -349,11 +349,15 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
         let selected = results.selectedIndex
         for index in topRow ..< min(results.count, topRow + rows) {
             let row = NSRect(x: list.minX, y: list.minY + CGFloat(index - topRow) * lineHeight, width: list.width, height: lineHeight)
+            var rowStyle = style
             if index == selected {
-                theme.selection.setFill()
+                theme.visual.setFill()
                 NSBezierPath(roundedRect: row, xRadius: 4, yRadius: 4).fill()
+                rowStyle.text = theme.visualText
+                rowStyle.dimText = theme.selectedDim
+                rowStyle.accent = theme.selectedFolder
             }
-            renderer.drawRow(results[index], in: row.insetBy(dx: 6, dy: 0), root: root, style: style)
+            renderer.drawRow(results[index], in: row.insetBy(dx: 6, dy: 0), root: root, style: rowStyle)
         }
     }
 
@@ -432,6 +436,18 @@ final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget
 @MainActor
 struct OverlayStyle {
     let theme: Theme
+    /// A row's text, secondary text and highlights: the theme's, or on the
+    /// selected row `visualText`, `selectedDim` and `selectedFolder`.
+    var text: NSColor
+    var dimText: NSColor
+    var accent: NSColor
+
+    init(theme: Theme) {
+        self.theme = theme
+        text = theme.foreground
+        dimText = theme.dim
+        accent = theme.folder
+    }
     /// Space between parts of a line.
     let gap: CGFloat = 8
 
@@ -446,7 +462,7 @@ struct OverlayStyle {
         ])
     }
 
-    /// `text` with `ranges` (clipped to it) in the accent color, bold.
+    /// `text` with `ranges` (clipped to it) in `accent`, bold.
     func highlighted(_ text: NSAttributedString, _ ranges: [NSRange]) -> NSAttributedString {
         let marked = NSMutableAttributedString(attributedString: text)
         let bold = NSFontManager.shared.convert(theme.font, toHaveTrait: .boldFontMask)
@@ -454,7 +470,7 @@ struct OverlayStyle {
         for range in ranges {
             let clipped = NSIntersectionRange(range, whole)
             guard clipped.length > 0 else { continue }
-            marked.addAttributes([.foregroundColor: theme.folder, .font: bold], range: clipped)
+            marked.addAttributes([.foregroundColor: accent, .font: bold], range: clipped)
         }
         return marked
     }

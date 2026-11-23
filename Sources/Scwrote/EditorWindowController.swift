@@ -38,6 +38,16 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     let nvimSocket: String
     /// The process's settings, shared with the Settings window.
     let settingsStore: SettingsStore
+    /// What the theme takes from the Ghostty config, to build it again from
+    /// nvim's colors.
+    let themeBase: ThemeBase
+    /// What every pane is drawn in now (see `apply(theme:)`).
+    private(set) var theme: Theme
+    /// Where nvim's last color report is remembered for the next launch, and
+    /// the report the file holds as far as this window knows (loaded at
+    /// launch, or saved since), so an equal report doesn't rewrite it.
+    private let lastColorsFile: LastColorsFile
+    private var savedColors: NvimColors?
     private let nvimQueue = DispatchQueue(label: "scwrote.nvim")
     /// A second connection that only listens, for the preview.
     let previewEvents: NvimEventListener
@@ -92,11 +102,16 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// `GhosttyConfig.editorConfig` for why it isn't a surface option).
     /// A launch that restores brings back `session`'s window side: frame,
     /// panes, dividers and browser (see EditorWindowController+Session).
+    /// The window and every pane start in the launch theme: the report
+    /// `lastColorsFile` remembers, resolved against `themeBase` (Ghostty's
+    /// colors alone if there's none).
     init(
         request: LaunchRequest, session: SessionFolder, controller: TerminalController, nvimSocket: String,
-        theme: Theme, settingsStore: SettingsStore
+        themeBase: ThemeBase, lastColorsFile: LastColorsFile, settingsStore: SettingsStore
     ) {
         let saved = request.restoresSession ? session.readWindowState() : nil
+        let savedColors = lastColorsFile.load()
+        let theme = themeBase.theme(nvim: savedColors)
         let window = EditorWindow(
             contentRect: NSRect(x: 0, y: 0, width: 960, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -131,12 +146,22 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         sessionFolder = session
         sessionLock = SessionLock(path: session.lock)
         self.settingsStore = settingsStore
+        self.themeBase = themeBase
+        self.theme = theme
+        self.lastColorsFile = lastColorsFile
+        self.savedColors = savedColors
         super.init(window: window)
 
         window.delegate = self
         window.onShortcut = { [weak self] in self?.perform($0) }
 
         terminalView.delegate = self
+        // A change in the terminal's appearance reaches nvim, which then sets
+        // 'background' again from Ghostty's own background color. If the
+        // terminal followed the window, which follows nvim's colors,
+        // `:set background=light` would be put back to dark at once. So it
+        // keeps the appearance of Ghostty's colors, as it had before nvim's.
+        terminalView.appearance = themeBase.theme(nvim: nil).appearance
         terminalView.configuration = TerminalSurfaceOptions(
             backend: .exec,
             workingDirectory: request.workingDirectory
@@ -326,6 +351,36 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    // MARK: - Colors
+
+    /// nvim reported its colors (at startup, or after its colorscheme or
+    /// background changed): every pane takes them, and the report is
+    /// remembered for the next launch.
+    func receiveColors(_ report: NvimColors) {
+        apply(theme: themeBase.theme(nvim: report))
+        guard report != savedColors else { return }
+        lastColorsFile.save(report)
+        savedColors = report
+    }
+
+    /// The one path that recolors the window while it's on screen: its
+    /// background and title bar (whose text and controls follow the
+    /// background's brightness), the cover, the dividers, the browser, the
+    /// overlays (open, or kept for reopening) and the preview. A theme equal
+    /// to the current one changes nothing.
+    func apply(theme: Theme) {
+        guard theme != self.theme else { return }
+        self.theme = theme
+        window?.backgroundColor = theme.background
+        window?.appearance = theme.appearance
+        editorContainer.coverColor = theme.background
+        layoutView.dividerColor = theme.divider
+        browserView.theme = theme
+        searchView?.theme = theme
+        quickOpenView?.theme = theme
+        previewView.theme = theme
+    }
+
     // MARK: - Files on disk
 
     /// `-` moved the browser: actions follow the new root, a prompt opened
@@ -500,6 +555,12 @@ final class TerminalContainerView: NSView {
         set { cover.isHidden = !newValue }
     }
 
+    /// The cover's color: the theme's background.
+    var coverColor: NSColor {
+        get { cover.color }
+        set { cover.color = newValue }
+    }
+
     init(terminalView: TerminalView, background: NSColor) {
         self.terminalView = terminalView
         cover = CoverView(color: background)
@@ -530,7 +591,12 @@ final class TerminalContainerView: NSView {
 
     /// Layer-backed, so it stays above the terminal's Metal layer.
     private final class CoverView: NSView {
+        var color: NSColor {
+            didSet { layer?.backgroundColor = color.cgColor }
+        }
+
         init(color: NSColor) {
+            self.color = color
             super.init(frame: .zero)
             wantsLayer = true
             layer?.backgroundColor = color.cgColor

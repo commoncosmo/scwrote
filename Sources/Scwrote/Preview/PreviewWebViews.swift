@@ -131,7 +131,7 @@ final class PreviewDocumentWebView: PreviewWebView, WKScriptMessageHandler {
     /// The renderer's verdict on the shown content: an error, or a note.
     var onRendered: ((_ error: String?, _ note: String?) -> Void)?
 
-    private let theme: [String: Any]
+    private var theme: [String: Any]
     private var isLoaded = false
     /// The request to render once the page has loaded.
     private var pending: [String: Any]?
@@ -175,6 +175,16 @@ final class PreviewDocumentWebView: PreviewWebView, WKScriptMessageHandler {
         callAsyncJavaScript("await scwrote.render(req)", arguments: ["req": request], in: nil, in: .page) { [weak self] result in
             self?.renderReturned(call, result)
         }
+    }
+
+    /// New colors: the page restyles, and redraws what it shows that its
+    /// styles can't reach (diagrams). Before the page has loaded, it takes
+    /// them when it does.
+    func setTheme(_ theme: [String: Any], background: NSColor) {
+        self.theme = theme
+        underPageBackgroundColor = background
+        guard isLoaded else { return }
+        callAsyncJavaScript("scwrote.setTheme(theme)", arguments: ["theme": theme], in: nil, in: .page)
     }
 
     /// Another body is shown: drop what this one still reports.

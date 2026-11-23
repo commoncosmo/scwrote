@@ -14,9 +14,10 @@ scwrote --fresh ./
 `scwrote <files>` behaves like `nvim <files>` typed in the same shell: same
 arguments, same working directory, same environment (`PATH` and all). With a
 folder, or no argument, it opens a file browser on that folder instead, and the
-folder becomes nvim's working directory. The window uses your Ghostty config
-(font, theme) and closes when nvim exits. Opening a folder again brings its
-window back the way you left it; `--fresh` starts it fresh instead (see
+folder becomes nvim's working directory. The window uses your Ghostty
+config's font and nvim's colors (see [Colors](#colors)), and closes when nvim
+exits. Opening a folder again brings its window back the way you left it;
+`--fresh` starts it fresh instead (see
 [Coming back to a folder](#coming-back-to-a-folder)).
 
 ## Install
@@ -222,6 +223,42 @@ In the preview:
 
 While the preview has focus it stops following nvim's cursor; it picks up
 again when you return to the editor.
+
+## Colors
+
+The file browser, the preview, the search and quick open overlays and the
+title bar follow nvim's colorscheme live: after `:colorscheme` or
+`:set background`, every pane recolors at once. They take:
+
+- the background and text from `Normal`
+- the browser's cursor row and the overlays' selected row from `Visual`,
+  their text too if `Visual` sets one (a `reverse` `Visual` swapped, as nvim
+  draws it)
+- folders, links and the preview's accents from `Directory`
+- the unsaved marks and warnings from `WarningMsg`, else `DiagnosticWarn`
+- the dividers from `WinSeparator`, else `VertSplit`
+
+Headers and other secondary text are `Normal`'s text faded into its
+background. Where `Normal`'s text sits on a highlight (the browser's prompt
+cursor, the overlays' query, the preview's cursor rows and diagram boxes),
+the highlight is a fade of `Normal`'s text, so it stays readable whatever
+`Visual` is. A group that sets no color falls back: the selected row and the
+dividers to a fade of `Normal`'s text, folders and warnings to your Ghostty
+palette's blue and yellow. The title bar's text and buttons turn light or dark
+with the background.
+
+The font still comes from your Ghostty config. A transparent colorscheme, one
+that gives `Normal` no background, leaves the background and text to your
+Ghostty colors; the other groups still come from nvim. Otherwise, while nvim
+sets colors, your Ghostty theme no longer colors scwrote's panes. The space
+around nvim's text takes the colors of nvim's edge rows and columns, unless
+your Ghostty config sets its own `window-padding-color`.
+
+scwrote remembers the last colors nvim reported, in
+`~/Library/Application Support/scwrote/last-colors.json`, and a new window
+starts in them, so it doesn't flash your Ghostty colors before nvim reports.
+If the file is missing or can't be read, the window starts in your Ghostty
+colors and nvim's next report writes it again.
 
 ## Search
 
@@ -449,7 +486,10 @@ window's, as `shot-settings.png` for `shot.png`).
 `SCWROTE_SESSIONS_DIR=/tmp/sessions` keeps sessions there instead of in
 `~/Library/Application Support/scwrote/sessions`, and
 `SCWROTE_SETTINGS=/tmp/settings.json` reads and writes settings there instead
-of in `~/.config/scwrote/settings.json`, so test runs leave yours alone.
+of in `~/.config/scwrote/settings.json`, and
+`SCWROTE_LAST_COLORS=/tmp/last-colors.json` remembers nvim's colors there
+instead of in `~/Library/Application Support/scwrote/last-colors.json`, so
+test runs leave yours alone.
 
 ## Known quirks
 
@@ -530,7 +570,9 @@ sh scripts/tests/install-test.sh    # the installer
   shared with search (`FolderFileList.swift`), the fuzzy matcher
   (`FuzzyMatcher.swift`), the query's `:line` (`QuickOpenQuery.swift`), the
   ranking (`QuickOpenResults.swift`) and nvim's recent files
-  (`NvimClient+QuickOpen.swift`).
+  (`NvimClient+QuickOpen.swift`); and nvim's colors: its report
+  (`NvimColors.swift`), what scwrote draws with (`ThemeColors.swift`) and the
+  remembered report (`LastColorsFile.swift`).
 - `Sources/Scwrote`: the AppKit app: one window per process, hosting a
   libghostty surface ([libghostty-spm](https://github.com/Lakr233/libghostty-spm),
   pinned exactly because libghostty's API isn't stable yet). The search and

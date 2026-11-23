@@ -50,4 +50,16 @@ struct PreviewEventInboxTests {
 
         #expect(inbox.take() == [buffer("/a.md", "a"), buffer("/b.md", "b")])
     }
+
+    @Test func aNewerColorsEventReplacesAWaitingOne() {
+        let inbox = PreviewEventInbox()
+        let a = NvimColors(background: "dark", groups: [:])
+        let b = NvimColors(background: "light", groups: [:])
+
+        _ = inbox.post(.colors(a))
+        _ = inbox.post(cursor("/a.md", line: 1))
+        _ = inbox.post(.colors(b))
+
+        #expect(inbox.take() == [cursor("/a.md", line: 1), .colors(b)])
+    }
 }
