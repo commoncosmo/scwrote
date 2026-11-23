@@ -3,7 +3,8 @@ import Foundation
 /// Events from the listener's thread, waiting for the main thread to take
 /// them. A buffer event replaces one for the same file still waiting: when a
 /// big file is edited faster than it renders, only its newest text is worth
-/// drawing; likewise a colors event replaces a waiting one. Every other event keeps its place and order.
+/// drawing; likewise a colors event replaces a waiting one. Every other event
+/// keeps its place and order.
 public final class PreviewEventInbox: @unchecked Sendable {
     private let lock = NSLock()
     private var waiting: [PreviewEvent] = []

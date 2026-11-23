@@ -123,6 +123,19 @@ struct PreviewEventTests {
         #expect(PreviewEvent(method: "scwrote_preview", params: []) == nil)
         #expect(PreviewEvent(method: "scwrote_preview", params: [.string("buffer")]) == nil)
     }
+
+    @Test func colorsNotificationDecodes() {
+        let payload: MessagePackValue = .map([
+            .string("background"): .string("dark"),
+            .string("groups"): .map([.string("Normal"): .map([.string("bg"): .int(0x14161b)])]),
+        ])
+
+        #expect(PreviewEvent(method: "scwrote_colors", params: [payload]) == .colors(NvimColors(
+            background: "dark", groups: ["Normal": .init(fg: nil, bg: RGBColor(rgb: 0x14161b))]
+        )))
+        #expect(PreviewEvent(method: "scwrote_colors", params: [.map([.string("background"): .int(1)])]) == nil)
+        #expect(PreviewEvent(method: "scwrote_colors", params: []) == nil)
+    }
 }
 
 struct BufferSnapshotLineCountTests {
@@ -148,18 +161,5 @@ struct BufferSnapshotLineCountTests {
 
     @Test func aBufferTooLargeToSendCountsAsOneLine() {
         #expect(snapshot(nil).lineCount == 1)
-    }
-
-    @Test func colorsNotificationDecodes() {
-        let payload: MessagePackValue = .map([
-            .string("background"): .string("dark"),
-            .string("groups"): .map([.string("Normal"): .map([.string("bg"): .int(0x14161b)])]),
-        ])
-
-        #expect(PreviewEvent(method: "scwrote_colors", params: [payload]) == .colors(NvimColors(
-            background: "dark", groups: ["Normal": .init(fg: nil, bg: RGBColor(rgb: 0x14161b))]
-        )))
-        #expect(PreviewEvent(method: "scwrote_colors", params: [.map([.string("background"): .int(1)])]) == nil)
-        #expect(PreviewEvent(method: "scwrote_colors", params: []) == nil)
     }
 }
