@@ -36,6 +36,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// Where `nvim` connects, for a one-off connection that mustn't wait
     /// behind `nvimQueue` (see EditorWindowController+Session).
     let nvimSocket: String
+    /// The process's settings, shared with the Settings window.
+    let settingsStore: SettingsStore
     private let nvimQueue = DispatchQueue(label: "scwrote.nvim")
     /// A second connection that only listens, for the preview.
     let previewEvents: NvimEventListener
@@ -92,7 +94,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// panes, dividers and browser (see EditorWindowController+Session).
     init(
         request: LaunchRequest, session: SessionFolder, controller: TerminalController, nvimSocket: String,
-        theme: Theme
+        theme: Theme, settingsStore: SettingsStore
     ) {
         let saved = request.restoresSession ? session.readWindowState() : nil
         let window = EditorWindow(
@@ -128,6 +130,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         fileActions = FileActions(root: browser.root, fileSystem: LocalFileSystem())
         sessionFolder = session
         sessionLock = SessionLock(path: session.lock)
+        self.settingsStore = settingsStore
         super.init(window: window)
 
         window.delegate = self
@@ -223,6 +226,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         case .moveRight: moveToRightPane(nil)
         case .search: toggleSearch(nil)
         case .quickOpen: toggleQuickOpen(nil)
+        case .settings: NSApp.sendAction(#selector(AppDelegate.showSettings(_:)), to: nil, from: nil)
         }
     }
 
@@ -441,8 +445,9 @@ extension EditorWindowController: TerminalSurfaceTitleDelegate, TerminalSurfaceC
 }
 
 /// Catches the window's own keys (`WindowShortcut`: Cmd+1, Cmd+Shift+1,
-/// Cmd+2, Cmd+[, Cmd+], Cmd+Shift+F, Cmd+Shift+O) before the terminal sees them: Ghostty binds Cmd+digit to
-/// tabs and Cmd+[ / Cmd+] to splits, neither of which scwrote has.
+/// Cmd+2, Cmd+[, Cmd+], Cmd+Shift+F, Cmd+Shift+O, Cmd+,) before the terminal
+/// sees them: Ghostty binds Cmd+digit to tabs, Cmd+[ / Cmd+] to splits, neither
+/// of which scwrote has, and Cmd+, to opening its own config.
 @MainActor
 final class EditorWindow: NSWindow {
     var onShortcut: ((WindowShortcut) -> Void)?

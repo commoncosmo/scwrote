@@ -7,6 +7,7 @@ private let leftBracket: UInt16 = 33
 private let rightBracket: UInt16 = 30
 private let keyF: UInt16 = 3
 private let keyY: UInt16 = 16
+private let comma: UInt16 = 43
 
 /// A key as `NSEvent` reports it: the physical key and the character it types.
 private func shortcut(_ keyCode: UInt16, _ characters: String?, _ modifiers: WindowShortcut.Modifiers) -> WindowShortcut? {
@@ -74,6 +75,19 @@ struct WindowShortcutTests {
         #expect(shortcut(31, "o", [.command]) == nil)
         // Dvorak: the key that types "o" is key code 1 (US "s")
         #expect(shortcut(1, "O", [.command, .shift]) == .quickOpen)
+    }
+
+    /// Cmd+, follows the typed comma, so it's the key that types a comma in
+    /// the user's layout, wherever that key is.
+    @Test func commandCommaOpensSettings() {
+        #expect(shortcut(comma, ",", [.command]) == .settings)
+        #expect(shortcut(comma, ",", [.command, .shift]) == nil)
+        #expect(shortcut(comma, ",", [.command, .option]) == nil)
+        #expect(shortcut(comma, ",", []) == nil)
+        // A layout where comma is on another key (on Dvorak, US "w")
+        #expect(shortcut(13, ",", [.command]) == .settings)
+        // and the US comma key typing something else there isn't Settings
+        #expect(shortcut(comma, "w", [.command]) == nil)
     }
 
     @Test func cmdShiftPeriodTogglesHiddenFiles() {
