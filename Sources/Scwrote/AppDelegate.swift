@@ -5,10 +5,17 @@ import ScwroteCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var editors: [EditorWindowController] = []
+    /// Made first thing at launch, and shared by the Settings window and the editor.
+    private(set) lazy var settingsStore = SettingsStore(
+        file: SettingsFile(environment: ProcessInfo.processInfo.environment, home: NSHomeDirectory())
+    )
+    /// Made the first time Settings opens.
+    private var settingsWindow: SettingsWindowController?
     /// The `scwrote` launcher waiting to hear that this app is in front.
     private var launcherToNotify: pid_t?
 
     func applicationDidFinishLaunching(_: Notification) {
+        settingsStore.startWatching()
         NSApp.mainMenu = MainMenu.make()
 
         let environment = ProcessInfo.processInfo.environment
@@ -42,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 var isDirectory: ObjCBool = false
                 return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
             }
-        )
+        ).honoring(settingsStore.settings) // Reopen is read once: a later change doesn't touch this window.
         // nvim listens here so the file browser can tell it what to open.
         let nvimSocket = NSTemporaryDirectory() + "scwrote-\(getpid()).sock"
         let controller: TerminalController
@@ -67,14 +74,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             session: sessions.folder(for: request.workingDirectory),
             controller: controller,
             nvimSocket: nvimSocket,
-            theme: Theme.load(configContents: config)
+            theme: Theme.load(configContents: config),
+            settingsStore: settingsStore
         )
+        // The Settings window never outlives the editor: closing it too lets
+        // the app quit after its last window.
         editor.onClose = { [weak self, weak editor] in
-            self?.editors.removeAll { $0 === editor }
+            guard let self else { return }
+            editors.removeAll { $0 === editor }
+            if editors.isEmpty { settingsWindow?.close() }
         }
         editors.append(editor)
         editor.showWindow(nil)
         NSApp.activate()
+    }
+
+    /// Settings… in the scwrote menu, and Cmd+, from the editor window: shows
+    /// the Settings window, or brings it to the front.
+    @objc func showSettings(_: Any?) {
+        let settings = settingsWindow ?? SettingsWindowController(store: settingsStore)
+        settingsWindow = settings
+        settings.show()
     }
 
     /// We're in front: the launcher can exit and give the shell its prompt back.

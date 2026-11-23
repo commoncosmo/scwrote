@@ -4,11 +4,6 @@ import ScwroteCore
 extension EditorWindowController {
     // MARK: - Quick open
 
-    /// Whether quick open lists hidden files (Cmd+Shift+. in the overlay).
-    /// scwrote runs one window per process, so the choice lasts until the
-    /// window closes.
-    static var showsHiddenFiles = true
-
     var isQuickOpenOpen: Bool { quickOpenView.map { layoutView.overlay === $0 } ?? false }
 
     /// Closes whichever overlay is open.
@@ -151,9 +146,26 @@ extension EditorWindowController {
         case let .open(row): open(row)
         case .close: closeQuickOpen()
         case .toggleHidden:
-            Self.showsHiddenFiles.toggle()
-            rankQuickOpen()
+            // Changes the setting, so every window follows. The store applies
+            // the new value before writing it (and keeps it, logging why, if
+            // the write fails), so `followQuickOpenSettings` ranks the list
+            // again here either way.
+            let shown = settingsStore.settings.showsHiddenFilesInQuickOpen
+            settingsStore.set(.showsHiddenFilesInQuickOpen, !shown)
         case .sendToQuickfix: break // project search only
+        }
+    }
+
+    /// An open quick open ranks again when hidden files are turned on or off
+    /// under it: from the Settings window or another window's Cmd+Shift+.
+    /// Called once, as the window is made.
+    func followQuickOpenSettings() {
+        var shown = settingsStore.settings.showsHiddenFilesInQuickOpen
+        settingsStore.onChange { [weak self] settings in
+            guard settings.showsHiddenFilesInQuickOpen != shown else { return }
+            shown = settings.showsHiddenFilesInQuickOpen
+            guard let self, isQuickOpenOpen else { return }
+            rankQuickOpen()
         }
     }
 
@@ -177,7 +189,7 @@ extension EditorWindowController {
         let query = QuickOpenQuery(view.overlay.query.text)
         let root = view.root
         let state = quickOpenFetch?.value
-        let showsHidden = Self.showsHiddenFiles
+        let showsHidden = settingsStore.settings.showsHiddenFilesInQuickOpen
         let previous = quickOpenRanked
         Task.detached(priority: .userInitiated) { [weak self] in
             let ranked = QuickOpenRanking.rank(

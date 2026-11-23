@@ -116,6 +116,39 @@ struct LaunchRequestTests {
         #expect(resolve(["a.md"], cwd: "/p").restoresSession)
     }
 
+    // MARK: The Reopen setting
+
+    private let reopenOff = Settings(showsHiddenFilesInQuickOpen: true, reopensFolders: false)
+
+    @Test func reopenOffActsLikeFresh() {
+        let request = resolve(["src"], cwd: "/p", dirs: "/p/src")
+        let honored = request.honoring(reopenOff)
+
+        #expect(honored.restoresSession == false)
+        var expected = request
+        expected.restoresSession = false
+        #expect(honored == expected)
+    }
+
+    @Test func reopenOnLeavesTheRequestAlone() {
+        let request = resolve(["src"], cwd: "/p", dirs: "/p/src")
+
+        #expect(request.honoring(.defaults) == request)
+    }
+
+    @Test func freshStillWinsWithReopenOn() {
+        #expect(resolve(["--fresh", "src"], cwd: "/p", dirs: "/p/src").honoring(.defaults).restoresSession == false)
+    }
+
+    @Test func reopenOffKeepsNamedFilesAndLineFlags() {
+        let request = resolve(["+3", "a.md"], cwd: "/p")
+        let honored = request.honoring(reopenOff)
+
+        #expect(honored.namedFiles == ["/p/a.md"])
+        #expect(honored.nvimArguments == ["+3", "a.md"])
+        #expect(honored.restoresSession == false)
+    }
+
     // MARK: Layout flags leave nvim's session alone
 
     /// A session rebuilds nvim's windows, so a launch that asks nvim for a

@@ -15,6 +15,8 @@ public enum WindowShortcut: Equatable, Sendable {
     case search
     /// Cmd+Shift+O: open or close quick open.
     case quickOpen
+    /// Cmd+,: open the Settings window, or bring it to the front.
+    case settings
 
     public struct Modifiers: OptionSet, Sendable {
         public let rawValue: Int
@@ -28,7 +30,7 @@ public enum WindowShortcut: Equatable, Sendable {
 
     /// Digits and brackets match `keyCode`, the physical key (a macOS virtual
     /// key code), so Cmd+Shift+1 matches whatever character Shift+1 types.
-    /// Letters match `characters`, the typed character
+    /// Letters and the comma match `characters`, the typed character
     /// (`charactersIgnoringModifiers`), so Cmd+Shift+F is the key that types
     /// F in the user's layout: on Dvorak the physical F key types U, and
     /// matching it there would take Cmd+Shift+U instead.
@@ -43,6 +45,7 @@ public enum WindowShortcut: Equatable, Sendable {
             switch (characters?.lowercased(), modifiers) {
             case ("f", [.command, .shift]): self = .search
             case ("o", [.command, .shift]): self = .quickOpen
+            case (",", [.command]): self = .settings
             default: return nil
             }
         }

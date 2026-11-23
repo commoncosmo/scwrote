@@ -8,9 +8,10 @@ import ScwroteCore
 ///       <Left>, <Right>, <C-d>, <C-u> are browser keys. While an overlay
 ///       (search, quick open) is open, plain characters, <CR>, <Esc>, <Up>
 ///       and <Down> go to it instead. The window's own keys, <D-1> (Cmd+1),
-///       <D-S-1>, <D-2>, <D-[>, <D-]>, <D-S-f> (search) and <D-S-o> (quick
-///       open), are posted as real key events, so they take the path a
-///       keyboard's would; so are <D-S-.> (quick open's hidden files
+///       <D-S-1>, <D-2>, <D-[>, <D-]>, <D-S-f> (search), <D-S-o> (quick
+///       open) and <D-,> (Settings), are posted as real key events to
+///       whichever window has the keyboard, so they take the path a
+///       keyboard's would; so are <D-w> (close), <D-S-.> (quick open's hidden files
 ///       toggle), <C-q> (search's send to quickfix), <S-R> (Shift+R),
 ///       for the preview's `R` when it has the
 ///       keyboard, and the browser prompt's editing keys <BS>, <Del>
@@ -21,11 +22,14 @@ import ScwroteCore
 ///       braces goes to nvim with nvim_input, in nvim's key notation:
 ///       {ohello<Esc>} opens a line, types "hello" and leaves insert mode.
 ///   SCWROTE_DEBUG_SNAPSHOT=/path.png   afterwards, save a picture of the
-///       window, and log which view has the keyboard.
+///       window, and log which view has the keyboard; with Settings open, a
+///       picture of it too, at /path-settings.png.
 ///   SCWROTE_DEBUG_WIDTH=600            before the keys, set the window's
 ///       content width in points (for checking which panes give way).
 ///   SCWROTE_DEBUG_FULLSCREEN=1         before the keys, put the window in
 ///       full screen.
+///   SCWROTE_DEBUG_SETTINGS=1           before the keys, open the Settings
+///       window (as Cmd+, would), so keys and a snapshot find it open.
 extension EditorWindowController {
     func runDebugHooks() {
         let environment = ProcessInfo.processInfo.environment
@@ -33,7 +37,8 @@ extension EditorWindowController {
         let snapshot = environment["SCWROTE_DEBUG_SNAPSHOT"]
         let width = environment["SCWROTE_DEBUG_WIDTH"].flatMap(Double.init)
         let fullScreen = environment["SCWROTE_DEBUG_FULLSCREEN"] != nil
-        guard !keys.isEmpty || snapshot != nil || width != nil || fullScreen else { return }
+        let settings = environment["SCWROTE_DEBUG_SETTINGS"] != nil
+        guard !keys.isEmpty || snapshot != nil || width != nil || fullScreen || settings else { return }
 
         Task {
             if let width, let window {
@@ -41,6 +46,7 @@ extension EditorWindowController {
             }
             if fullScreen { window?.toggleFullScreen(nil) }
             try? await Task.sleep(for: .seconds(1)) // let nvim start
+            if settings { NSApp.sendAction(#selector(AppDelegate.showSettings(_:)), to: nil, from: nil) }
             var held: (keyCode: UInt16, characters: String, modifiers: NSEvent.ModifierFlags)?
             for key in keys {
                 if case .repeatLast = key {
@@ -82,24 +88,27 @@ extension EditorWindowController {
         case repeatLast
     }
 
-    /// Posts a key press or release to the app's event queue: it goes through
-    /// the same key-equivalent and first-responder handling as a keyboard's.
+    /// Posts a key press or release to the app's event queue, for the window
+    /// with the keyboard (this one or Settings): it goes through the same
+    /// key-equivalent and first-responder handling as a keyboard's.
     /// If the app couldn't come to the front (started from a terminal that
     /// isn't), the queue would drop it for want of a key window, so a press
-    /// goes to the window's key-equivalent handling directly, and if that
+    /// goes to this window's key-equivalent handling directly, and if that
     /// doesn't take it, to the view with the keyboard (a release goes
     /// nowhere then).
     private func post(
         _ type: NSEvent.EventType, _ keyCode: UInt16, _ characters: String, _ modifiers: NSEvent.ModifierFlags,
         isARepeat: Bool = false
     ) {
-        guard let window, let event = NSEvent.keyEvent(
+        guard let window else { return }
+        let keyWindow = NSApp.keyWindow ?? window
+        guard let event = NSEvent.keyEvent(
             with: type, location: .zero, modifierFlags: modifiers,
-            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: keyWindow.windowNumber,
             context: nil, characters: characters, charactersIgnoringModifiers: characters,
             isARepeat: isARepeat, keyCode: keyCode
         ) else { return }
-        if window.isKeyWindow {
+        if keyWindow.isKeyWindow {
             NSApp.postEvent(event, atStart: false)
         } else if type == .keyDown, !window.performKeyEquivalent(with: event) {
             window.firstResponder?.keyDown(with: event)
@@ -132,6 +141,7 @@ extension EditorWindowController {
             "<D-[>": .keyboard(33, "[", [.command]), "<D-]>": .keyboard(30, "]", [.command]),
             "<D-S-f>": .keyboard(3, "F", [.command, .shift]),
             "<D-S-o>": .keyboard(31, "O", [.command, .shift]),
+            "<D-,>": .keyboard(43, ",", [.command]), "<D-w>": .keyboard(13, "w", [.command]),
             "<D-S-.>": .keyboard(47, ">", [.command, .shift]),
             "<S-R>": .keyboard(15, "R", [.shift]),
             "<BS>": .keyboard(51, "\u{7f}", []),
@@ -200,5 +210,20 @@ extension EditorWindowController {
         try? png.write(to: URL(fileURLWithPath: path))
         let keyboard = window?.firstResponder.map { String(describing: type(of: $0)) } ?? "none"
         FileHandle.standardError.write(Data("scwrote: snapshot saved to \(path) (keyboard: \(keyboard))\n".utf8))
+        saveSettingsSnapshot(besides: path)
+    }
+
+    /// The Settings window's form, if it's open, through ordinary view caching.
+    private func saveSettingsSnapshot(besides path: String) {
+        guard let settings = NSApp.windows.first(where: { $0.windowController is SettingsWindowController && $0.isVisible }),
+              let view = settings.contentView,
+              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)
+        else { return }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        let settingsPath = (path as NSString).deletingPathExtension + "-settings.png"
+        guard let png = rep.representation(using: .png, properties: [:]) else { return }
+        try? png.write(to: URL(fileURLWithPath: settingsPath))
+        let keyWindow = NSApp.keyWindow.map { $0 === settings ? "Settings" : "editor" } ?? "none"
+        FileHandle.standardError.write(Data("scwrote: Settings snapshot saved to \(settingsPath) (key window: \(keyWindow))\n".utf8))
     }
 }
