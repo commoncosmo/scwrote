@@ -86,6 +86,15 @@ public struct LaunchRequest: Equatable, Sendable {
         )
     }
 
+    /// This request with the settings read at launch: Reopen where I left
+    /// off turned off makes it fresh, as `--fresh` does (the session is still
+    /// saved). Turned on, the request is unchanged, so `--fresh` still wins.
+    public func honoring(_ settings: Settings) -> LaunchRequest {
+        var request = self
+        if !settings.reopensFolders { request.restoresSession = false }
+        return request
+    }
+
     /// nvim's flags that set up its windows: `-d`, `-o`, `-O` and `-p`, each
     /// with an optional count (`-O3`), and `-q` and `-t`, each with or
     /// without its value attached (`-qerrors.txt`, `-tmain`).

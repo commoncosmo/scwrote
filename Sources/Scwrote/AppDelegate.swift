@@ -49,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 var isDirectory: ObjCBool = false
                 return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
             }
-        )
+        ).honoring(settingsStore.settings) // Reopen is read once: a later change doesn't touch this window.
         // nvim listens here so the file browser can tell it what to open.
         let nvimSocket = NSTemporaryDirectory() + "scwrote-\(getpid()).sock"
         let controller: TerminalController

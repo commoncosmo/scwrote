@@ -152,6 +152,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
         layoutView.onGaveWay = { [weak self] in self?.panesGaveWay($0) }
         connectPreview()
+        followQuickOpenSettings()
 
         window.contentView = layoutView
         if let saved { restoreWindowSide(from: saved) } else { window.center() }

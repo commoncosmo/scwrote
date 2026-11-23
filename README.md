@@ -91,6 +91,7 @@ shown they move one pane at a time across all three (see Preview below):
 | Esc (in the browser) | go to the editor (hides the browser unless pinned) |
 | Cmd+1 | show the browser and go to it / go to it / hide it |
 | Cmd+Shift+1 | pin / unpin |
+| Cmd+, | open Settings (from any pane, an overlay or Settings itself) |
 
 In the browser:
 
@@ -296,9 +297,11 @@ in path order, so `:42` alone opens a recent file at line 42.
 
 It lists what ripgrep would, so files your `.gitignore` names stay out, but
 hidden files and folders (such as `.github/`) are listed. Cmd+Shift+. hides or
-shows them until the window closes; while they're hidden the count says
-"hidden off". Unsaved edits in nvim show in the preview instead of the file on
-disk; a binary file's preview just says so.
+shows them; the choice is the Show hidden files setting (see
+[Settings](#settings)), so it's remembered and every open window follows it.
+While they're hidden the count says "hidden off". Unsaved edits in nvim show
+in the preview instead of the file on disk; a binary file's preview just says
+so.
 
 The keys and the mouse work as in search (see the table above), with
 Cmd+Shift+O closing it. Cmd+Shift+F switches to search and Cmd+Shift+O back;
@@ -324,7 +327,11 @@ Starting on a file, `scwrote notes/today.md`, brings back the session of the
 folder you're in (the shell's, which is nvim's working directory), with that
 file in front. `scwrote --fresh ./` (or `--fresh` with files) skips bringing
 anything back for that launch; when that window closes, what it had is saved
-as usual and replaces the old session.
+as usual and replaces the old session. Turning off Reopen where I left off
+(see [Settings](#settings)) makes every launch fresh this way; sessions are
+still saved, so turning it back on brings back what the last window had. The
+setting is read as a window opens, so changing it doesn't touch windows
+already open.
 
 nvim's flags that lay out its own windows, `-d`, `-o`, `-O`, `-p` (with or
 without a count, as in `-O3`), `-q` and `-t`, keep that layout: `scwrote -d
@@ -367,6 +374,46 @@ While nvim's side loads, the editor pane stays blank (for at most 2 seconds),
 so nvim appears with your files already in place. A session that fails to
 load in part keeps what did load; the error goes to the log.
 
+## Settings
+
+Cmd+, (scwrote > Settings…) opens the Settings window. Switches apply at once;
+there's nothing to confirm.
+
+| Setting | Default | Does |
+|---|---|---|
+| Quick open > Show hidden files | on | quick open lists hidden files and folders; Cmd+Shift+. in quick open changes it too |
+| Folders > Reopen where I left off | on | opening a folder brings its window back (see [Coming back to a folder](#coming-back-to-a-folder)); off, every launch is fresh, as with `--fresh` |
+
+They're kept in `~/.config/scwrote/settings.json`, or
+`$XDG_CONFIG_HOME/scwrote/settings.json` if `XDG_CONFIG_HOME` is set. There's
+no file until you first change a setting. It's plain JSON, written with
+sorted keys, so you can read it or edit it by hand:
+
+```json
+{
+  "folders" : {
+    "reopen" : true
+  },
+  "quickOpen" : {
+    "showHiddenFiles" : false
+  }
+}
+```
+
+Every open window follows a change, whether it's made in another window or in
+the file by hand. A change from scwrote rewrites only its own key and keeps
+everything else in the file as it was; a symlinked file (from a dotfiles repo,
+say) stays a symlink and the change goes to the file it points to. A value of
+the wrong type counts as that setting's default. Deleting the file puts every
+setting back to its default.
+
+If the file doesn't parse (a comment or a trailing comma is enough, since it's
+JSON, not JSONC), the settings keep their last good values, or their defaults
+at launch, and the reason goes to the log. The Settings window says what's
+wrong and its switches are off until the file parses again: scwrote never
+writes over a file it can't read. Cmd+Shift+. in quick open still hides or
+shows hidden files in that window.
+
 ## Debugging
 
 `SCWROTE_DEBUG=1 scwrote README.md` logs libghostty's lifecycle and actions to
@@ -380,9 +427,10 @@ SCWROTE_DEBUG_KEYS='G<CR>' SCWROTE_DEBUG_SNAPSHOT=/tmp/shot.png scwrote ./
 
 Keys go to the browser; `<CR>` `<Esc>` `<Up>` `<Down>` `<Left>` `<Right>`
 `<C-d>` `<C-u>` are named keys. The window's own keys, `<D-1>` (Cmd+1),
-`<D-S-1>`, `<D-2>`, `<D-[>`, `<D-]>`, `<D-S-f>` and `<D-S-o>`, quick open's
-`<D-S-.>` and search's `<C-q>`, are posted as real key events, so they take
-the same path through the app as a keyboard's. While an overlay is open, plain characters,
+`<D-S-1>`, `<D-2>`, `<D-[>`, `<D-]>`, `<D-S-f>`, `<D-S-o>`, `<D-,>` (Settings)
+and `<D-w>` (close), quick open's `<D-S-.>` and search's `<C-q>`, are posted
+as real key events, so they take the same path through the app as a
+keyboard's. While an overlay is open, plain characters,
 `<CR>`, `<Esc>`, `<Up>` and `<Down>` go to it. Text in braces goes to nvim
 (`nvim_input`, in nvim's key notation), so `{ohello<Esc>}` opens a line, types
 "hello" and leaves insert mode.
@@ -395,9 +443,13 @@ SCWROTE_DEBUG_KEYS='<D-2>{ohello<Esc>}' SCWROTE_DEBUG_SNAPSHOT=/tmp/p.png \
 ```
 
 `SCWROTE_DEBUG_FULLSCREEN=1` puts the window in full screen first.
+`SCWROTE_DEBUG_SETTINGS=1` opens the Settings window first, as Cmd+, would,
+so keys and the picture find it open (the picture of it is saved beside the
+window's, as `shot-settings.png` for `shot.png`).
 `SCWROTE_SESSIONS_DIR=/tmp/sessions` keeps sessions there instead of in
-`~/Library/Application Support/scwrote/sessions`, so test runs leave yours
-alone.
+`~/Library/Application Support/scwrote/sessions`, and
+`SCWROTE_SETTINGS=/tmp/settings.json` reads and writes settings there instead
+of in `~/.config/scwrote/settings.json`, so test runs leave yours alone.
 
 ## Known quirks
 
