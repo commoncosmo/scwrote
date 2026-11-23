@@ -409,10 +409,10 @@ setting back to its default.
 
 If the file doesn't parse (a comment or a trailing comma is enough, since it's
 JSON, not JSONC), the settings keep their last good values, or their defaults
-at launch, and the reason goes to the log. The Settings window says what's
-wrong and its switches are off until the file parses again: scwrote never
-writes over a file it can't read. Cmd+Shift+. in quick open still hides or
-shows hidden files in that window.
+at launch, and the reason goes to the log, `~/Library/Logs/scwrote.log`. The
+Settings window says what's wrong and its switches are off until the file
+parses again: scwrote never writes over a file it can't read. Cmd+Shift+. in
+quick open still hides or shows hidden files in that window.
 
 ## Debugging
 
