@@ -1,0 +1,125 @@
+import Testing
+
+@testable import ScwroteCore
+
+private func color(_ rgb: Int) -> RGBColor { RGBColor(rgb: rgb) }
+
+private let ghostty = GhosttyColors(
+    background: color(0x101010), foreground: color(0xe0e0e0), selectionBackground: color(0x334455),
+    palette3: color(0xaaaa00), palette4: color(0x0000aa))
+
+private func group(fg: Int? = nil, bg: Int? = nil) -> NvimColors.Group {
+    NvimColors.Group(fg: fg.map(color), bg: bg.map(color))
+}
+
+@Suite struct ThemeColorsTests {
+    @Test func withoutNvimItMatchesTodaysTheme() {
+        let theme = ThemeColors.resolve(nvim: nil, ghostty: ghostty)
+        let bg = color(0x101010)
+        let fg = color(0xe0e0e0)
+        #expect(theme.background == bg)
+        #expect(theme.foreground == fg)
+        #expect(theme.dim == fg.blended(into: bg, 0.5))
+        #expect(theme.selection == color(0x334455))
+        #expect(theme.selectionText == fg)
+        #expect(theme.selectionInactive == fg.blended(into: bg, 0.1))
+        #expect(theme.folder == color(0x0000aa))
+        #expect(theme.warning == color(0xaaaa00))
+        #expect(theme.divider == fg.blended(into: bg, 0.15))
+
+        let empty = ThemeColors.resolve(nvim: nil, ghostty: GhosttyColors())
+        let white13 = RGBColor(red: 0.13, green: 0.13, blue: 0.13)
+        let white85 = RGBColor(red: 0.85, green: 0.85, blue: 0.85)
+        #expect(empty.background == white13)
+        #expect(empty.foreground == white85)
+        #expect(empty.selection == white85.blended(into: white13, 0.22))
+        #expect(empty.folder == nil)
+        #expect(empty.warning == nil)
+    }
+
+    @Test func nvimGroupsMapToThemeFields() {
+        let nvim = NvimColors(background: "dark", groups: [
+            "Normal": group(fg: 0xcccccc, bg: 0x202020),
+            "Visual": group(fg: 0xffffff, bg: 0x445566),
+            "Directory": group(fg: 0x1188ff),
+            "WarningMsg": group(fg: 0xffaa00),
+            "DiagnosticWarn": group(fg: 0x999900),
+            "WinSeparator": group(fg: 0x555555),
+            "VertSplit": group(fg: 0x777777),
+        ])
+        let theme = ThemeColors.resolve(nvim: nvim, ghostty: ghostty)
+        let bg = color(0x202020)
+        let fg = color(0xcccccc)
+        #expect(theme.background == bg)
+        #expect(theme.foreground == fg)
+        #expect(theme.selection == color(0x445566))
+        #expect(theme.selectionText == color(0xffffff))
+        #expect(theme.folder == color(0x1188ff))
+        #expect(theme.warning == color(0xffaa00))
+        #expect(theme.divider == color(0x555555))
+        #expect(theme.dim == fg.blended(into: bg, 0.5))
+        #expect(theme.selectionInactive == fg.blended(into: bg, 0.1))
+    }
+
+    @Test func warningFallsBackToDiagnosticWarn() {
+        let nvim = NvimColors(background: "dark", groups: [
+            "Normal": group(fg: 0xcccccc, bg: 0x202020), "DiagnosticWarn": group(fg: 0x999900),
+        ])
+        #expect(ThemeColors.resolve(nvim: nvim, ghostty: ghostty).warning == color(0x999900))
+    }
+
+    @Test func dividerFallsBackToVertSplit() {
+        let nvim = NvimColors(background: "dark", groups: [
+            "Normal": group(fg: 0xcccccc, bg: 0x202020), "VertSplit": group(fg: 0x777777),
+        ])
+        #expect(ThemeColors.resolve(nvim: nvim, ghostty: ghostty).divider == color(0x777777))
+    }
+
+    @Test func visualWithoutBackgroundFallsBackToTheBlend() {
+        let nvim = NvimColors(background: "dark", groups: [
+            "Normal": group(fg: 0xcccccc, bg: 0x202020), "Visual": group(fg: 0xeeeeee),
+        ])
+        let theme = ThemeColors.resolve(nvim: nvim, ghostty: ghostty)
+        #expect(theme.selection == color(0xcccccc).blended(into: color(0x202020), 0.22))
+        #expect(theme.selectionText == color(0xeeeeee))
+    }
+
+    @Test func visualWithoutForegroundUsesTheForeground() {
+        let nvim = NvimColors(background: "dark", groups: [
+            "Normal": group(fg: 0xcccccc, bg: 0x202020), "Visual": group(bg: 0x445566),
+        ])
+        let theme = ThemeColors.resolve(nvim: nvim, ghostty: ghostty)
+        #expect(theme.selectionText == theme.foreground)
+        #expect(theme.selection == color(0x445566))
+    }
+
+    @Test func missingGroupsKeepTodaysFallbacks() {
+        let nvim = NvimColors(background: "dark", groups: ["Normal": group(fg: 0xcccccc, bg: 0x202020)])
+        let theme = ThemeColors.resolve(nvim: nvim, ghostty: ghostty)
+        let bg = color(0x202020)
+        let fg = color(0xcccccc)
+        #expect(theme.folder == color(0x0000aa))
+        #expect(theme.warning == color(0xaaaa00))
+        #expect(theme.divider == fg.blended(into: bg, 0.15))
+        #expect(theme.selection == fg.blended(into: bg, 0.22))
+    }
+
+    @Test func emptySentGroupCountsAsMissing() {
+        let nvim = NvimColors(background: "dark", groups: [
+            "Normal": group(fg: 0xcccccc, bg: 0x202020), "Directory": group(), "Visual": group(),
+        ])
+        let theme = ThemeColors.resolve(nvim: nvim, ghostty: ghostty)
+        #expect(theme.folder == color(0x0000aa))
+        #expect(theme.selection == color(0xcccccc).blended(into: color(0x202020), 0.22))
+    }
+
+    @Test func transparentNormalTakesGhosttysPair() {
+        let nvim = NvimColors(background: "dark", groups: [
+            "Normal": group(fg: 0xcccccc), "Directory": group(fg: 0x1188ff),
+        ])
+        let theme = ThemeColors.resolve(nvim: nvim, ghostty: ghostty)
+        #expect(theme.background == color(0x101010))
+        #expect(theme.foreground == color(0xe0e0e0))
+        #expect(theme.folder == color(0x1188ff))
+    }
+}
