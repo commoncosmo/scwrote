@@ -71,15 +71,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let sessions = SessionStore(environment: environment, home: NSHomeDirectory())
         // Start in the colors nvim last reported, so a colorscheme unlike
         // Ghostty's doesn't flash Ghostty's colors first.
-        let themeBase = ThemeBase(configContents: config)
-        let lastColors = LastColorsFile(environment: environment, home: NSHomeDirectory()).load()
         let editor = EditorWindowController(
             request: request,
             session: sessions.folder(for: request.workingDirectory),
             controller: controller,
             nvimSocket: nvimSocket,
-            theme: themeBase.theme(nvim: lastColors),
-            themeBase: themeBase,
+            themeBase: ThemeBase(configContents: config),
+            lastColorsFile: LastColorsFile(environment: environment, home: NSHomeDirectory()),
             settingsStore: settingsStore
         )
         // The Settings window never outlives the editor: closing it too lets

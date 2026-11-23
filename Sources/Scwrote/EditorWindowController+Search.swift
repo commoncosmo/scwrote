@@ -77,7 +77,7 @@ extension EditorWindowController {
     }
 
     private func makeSearchView() -> SearchOverlayView {
-        let view = SearchOverlayView(theme: browserView.theme)
+        let view = SearchOverlayView(theme: theme)
         view.onAction = { [weak self] in self?.handle($0) }
         view.onCancelBusy = { [weak self, weak view] in
             guard let self, let view else { return }

@@ -17,7 +17,7 @@ protocol OverlayKeyTarget: AnyObject {
 @MainActor
 final class ListOverlayView<Renderer: OverlayRenderer>: NSView, OverlayKeyTarget {
     private(set) var overlay = SearchOverlay<Renderer.List>()
-    let theme: Theme
+    var theme: Theme { didSet { needsDisplay = true } }
     /// The searched folder, resolved like the results' paths, which show
     /// relative to it.
     var root = "" { didSet { needsDisplay = true } }

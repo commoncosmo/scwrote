@@ -17,6 +17,9 @@ struct Theme: Equatable {
     /// The cursor row while the editor has the keyboard.
     var selectionInactive: NSColor
     var folder: NSColor
+    /// Folders on the selected row while the browser has the keyboard: the
+    /// selection's text color when nvim's `Visual` sets one, else `folder`.
+    var selectedFolder: NSColor
     /// Unsaved changes and errors in the preview's header.
     var warning: NSColor
     var divider: NSColor
@@ -33,6 +36,7 @@ struct Theme: Equatable {
         selectionText = Self.nsColor(colors.selectionText)
         selectionInactive = Self.nsColor(colors.selectionInactive)
         folder = colors.folder.map(Self.nsColor) ?? .systemBlue
+        selectedFolder = colors.selectionText != colors.foreground ? selectionText : folder
         warning = colors.warning.map(Self.nsColor) ?? .systemYellow
         divider = Self.nsColor(colors.divider)
         self.font = font

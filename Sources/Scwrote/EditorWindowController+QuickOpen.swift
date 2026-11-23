@@ -134,7 +134,7 @@ extension EditorWindowController {
     }
 
     private func makeQuickOpenView() -> QuickOpenView {
-        let view = QuickOpenView(theme: browserView.theme)
+        let view = QuickOpenView(theme: theme)
         view.onAction = { [weak self] in self?.handleQuickOpen($0) }
         quickOpenView = view
         return view
