@@ -2,6 +2,13 @@ import Foundation
 import Testing
 @testable import ScwroteCore
 
+/// How long a wait in these tests gives its condition before calling it a
+/// failure. Each wait returns as soon as its condition holds, so this only
+/// matters when something is wrong; it is long because a busy CI runner
+/// (3 cores, with nvim test processes starting alongside) can take several
+/// seconds to run a shell script.
+private let patience: Duration = .seconds(30)
+
 @Suite(.enabled(if: rgPath != nil, "needs ripgrep"))
 final class ProjectSearchTests {
     /// Under `NSTemporaryDirectory()`, so in its `/var/...` form, which
@@ -78,7 +85,7 @@ final class ProjectSearchTests {
 
     /// Waits until `listLog` has `count` lines saying `word`; false after `timeout`.
     @MainActor
-    func listLogShows(_ count: Int, _ word: String, within timeout: Duration = .seconds(5)) async -> Bool {
+    func listLogShows(_ count: Int, _ word: String, within timeout: Duration = patience) async -> Bool {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
             if listLogLines.filter({ $0 == word }).count >= count { return true }
@@ -104,7 +111,7 @@ final class ProjectSearchTests {
         }
 
         /// True once `onFinish` ran, false if it didn't within `timeout`.
-        func finished(within timeout: Duration = .seconds(5)) async -> Bool {
+        func finished(within timeout: Duration = patience) async -> Bool {
             if finishCount > 0 { return true }
             return await withCheckedContinuation { continuation in
                 self.continuation = continuation
@@ -130,7 +137,7 @@ final class ProjectSearchTests {
         return delivery
     }
 
-    /// Runs one search to the end; nil if it didn't finish within 5 seconds.
+    /// Runs one search to the end; nil if it didn't finish within `patience`.
     @MainActor
     func results(_ search: ProjectSearch, _ query: String, buffers: [UnsavedBuffer] = [],
                  limit: Int? = ProjectSearch.deliveryLimit) async -> [SearchMatch]? {
@@ -277,7 +284,7 @@ final class ProjectSearchTests {
                 try? await Task.sleep(for: .milliseconds(50))
             }
         }
-        let finished = await delivery.finished(within: .seconds(3))
+        let finished = await delivery.finished()
         churn.cancel()
         #expect(finished, "\(listLogLines)")
         #expect(delivery.matches.map(\.key) == [SearchMatch.Key(path: resolved + "/a.txt", line: 1)])
