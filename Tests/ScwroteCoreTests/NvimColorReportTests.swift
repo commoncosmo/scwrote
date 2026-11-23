@@ -140,20 +140,62 @@ struct NvimColorReportTests {
         #expect(reversed.groups["Visual"]?.bg == RGBColor(rgb: 0x000000))
     }
 
+    /// The report waits for the event's other handlers, so one registered
+    /// after scwrote's that changes a group is included.
+    @Test func aColorSchemeHandlerRegisteredLaterIsIncluded() throws {
+        let reports = try Reports()
+        _ = try #require(reports.report(after: 0))
+
+        _ = try reports.request("nvim_exec_lua", [
+            .string("vim.api.nvim_create_autocmd('ColorScheme', { callback = function() vim.cmd('hi Directory guifg=#abcdef') end })"),
+            .array([]),
+        ])
+        try reports.command("colorscheme morning")
+
+        let report = try #require(reports.report(after: 1))
+        #expect(report.groups["Directory"]?.fg == RGBColor(rgb: 0xabcdef))
+    }
+
+    /// With a colorscheme loaded, `:set background` reloads it (ColorScheme)
+    /// and fires OptionSet; the two make one report.
+    @Test func settingBackgroundSendsOneReport() throws {
+        let reports = try Reports()
+        _ = try #require(reports.report(after: 0))
+        try reports.command("colorscheme default")
+        _ = try #require(reports.report(after: 1))
+        // Lets anything else from that command arrive before counting.
+        _ = try reports.request("nvim_exec_lua", [.string("vim.wait(50) return 1"), .array([])])
+        Thread.sleep(forTimeInterval: 0.3)
+        let before = reports.all.count
+
+        try reports.command("set background=light")
+        _ = try #require(reports.report(after: before) { $0.background == "light" })
+        _ = try reports.request("nvim_exec_lua", [.string("vim.wait(50) return 1"), .array([])])
+        Thread.sleep(forTimeInterval: 0.3)
+
+        #expect(reports.all.count == before + 1)
+    }
+
     /// A config that blocks startup (as a synchronous plugin install does)
     /// still answers RPC, so the autocommands can go in before `VimEnter`.
-    /// `:hi` fires no autocommand: only the `VimEnter` report can carry the
-    /// color the config set.
+    /// Nothing is reported until startup ends, so the colors from before the
+    /// config's colorscheme never reach scwrote; then the first report has
+    /// the config's. `:hi` fires no autocommand: only the `VimEnter` report
+    /// can carry the color the config set.
     @Test func aColorschemeSetDuringStartupIsReported() throws {
         let reports = try Reports(arguments: [
             "-c", "lua vim.wait(30000, function() return vim.g.scwrote_go end)",
             "-c", "hi Normal guibg=#123456",
         ])
         #expect(try reports.request("nvim_eval", [.string("v:vim_did_enter")]) == .int(0))
+        // A ColorScheme during startup is held back too.
+        try reports.command("doautocmd ColorScheme")
+        Thread.sleep(forTimeInterval: 0.5)
+        #expect(reports.all.isEmpty)
 
         _ = try reports.request("nvim_set_var", [.string("scwrote_go"), .bool(true)])
 
-        let reported = reports.report(after: 0) { $0.groups["Normal"]?.bg == RGBColor(rgb: 0x123456) }
-        #expect(reported != nil)
+        let first = try #require(reports.report(after: 0))
+        #expect(first.groups["Normal"]?.bg == RGBColor(rgb: 0x123456))
     }
 }

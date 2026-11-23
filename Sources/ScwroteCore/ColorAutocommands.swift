@@ -2,9 +2,13 @@
 /// `nvim_exec_lua(lua, arguments(channel:))`, from any connection: it sends
 /// `scwrote_colors` notifications (decoded by `PreviewEvent`) to that channel.
 ///
-/// A report goes out on install, on `ColorScheme`, on `OptionSet background`
-/// and, when installed before startup finished, once on `VimEnter`, so a
-/// colorscheme the config sets is reported; never per redraw or keystroke.
+/// Nothing is reported before startup has finished: nvim answers RPC during
+/// startup (a config's `vim.wait`, a plugin installer), when its colors may
+/// still be the defaults the config's colorscheme replaces. So a report goes
+/// out on install if startup is done, else once on `VimEnter`; then on
+/// `ColorScheme` and `OptionSet background`, never per redraw or keystroke.
+/// Those two schedule the report, so `ColorScheme` handlers registered after
+/// these are included and `:set background`, which can fire both, sends one.
 /// Like `PreviewAutocommands`, the autocommands remove themselves once the
 /// channel is gone.
 public enum ColorAutocommands {
@@ -30,10 +34,21 @@ public enum ColorAutocommands {
           end
         end
 
-        report()
-        vim.api.nvim_create_autocmd("ColorScheme", { group = group, callback = report })
-        vim.api.nvim_create_autocmd("OptionSet", { group = group, pattern = "background", callback = report })
-        if vim.v.vim_did_enter == 0 then
+        local pending = false
+        local function schedule_report()
+          if vim.v.vim_did_enter ~= 1 or pending then return end
+          pending = true
+          vim.schedule(function()
+            pending = false
+            report()
+          end)
+        end
+
+        vim.api.nvim_create_autocmd("ColorScheme", { group = group, callback = schedule_report })
+        vim.api.nvim_create_autocmd("OptionSet", { group = group, pattern = "background", callback = schedule_report })
+        if vim.v.vim_did_enter == 1 then
+          report()
+        else
           vim.api.nvim_create_autocmd("VimEnter", { group = group, once = true, callback = report })
         end
         """
