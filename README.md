@@ -237,12 +237,17 @@ title bar follow nvim's colorscheme live: after `:colorscheme` or
 - folders, links and the preview's accents from `Directory`
 - the unsaved marks and warnings from `WarningMsg`, else `DiagnosticWarn`
 - the dividers from `WinSeparator`, else `VertSplit`
+- the file browser's shade and its secondary text from `ScwroteBrowser`, a
+  group scwrote's own colorscheme sets (in nvim default and in other
+  colorschemes it's unset, and the browser takes `Normal`)
 
 Headers and other secondary text are `Normal`'s text faded into its
-background. Where `Normal`'s text sits on a highlight (the browser's prompt
-cursor, the overlays' query, the preview's cursor rows and diagram boxes),
-the highlight is a fade of `Normal`'s text, so it stays readable whatever
-`Visual` is. A group that sets no color falls back: the selected row and the
+background; in the browser, `ScwroteBrowser`'s text if it sets one, else
+`Normal`'s text faded into the browser's shade. Where `Normal`'s text sits on
+a highlight or fill (the browser's prompt cursor, the overlays' query, the
+preview's cursor rows, code blocks and diagram boxes), the highlight is a
+fade of `Normal`'s text, so it stays readable whatever `Visual` and the
+dividers are. A group that sets no color falls back: the selected row and the
 dividers to a fade of `Normal`'s text, folders and warnings to your Ghostty
 palette's blue and yellow. The title bar's text and buttons turn light or dark
 with the background.

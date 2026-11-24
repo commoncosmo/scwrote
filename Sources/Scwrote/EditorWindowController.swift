@@ -107,10 +107,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// `GhosttyConfig.editorConfig` for why it isn't a surface option).
     /// A launch that restores brings back `session`'s window side: frame,
     /// panes, dividers and browser (see EditorWindowController+Session).
-    /// The window and every pane start in the launch theme: the report
-    /// `lastColorsFile` remembers for `colors.background`, the one nvim is started
-    /// with (the other one's if it has none for that), resolved against `themeBase` (Ghostty's colors alone if there's
-    /// none).
+    /// `colors` is what nvim was started with. Its background seeds the
+    /// `BackgroundFollower` and picks the launch theme the window and every
+    /// pane start in: the report `lastColorsFile` remembers for that
+    /// background (the other one's if it has none for it), resolved against
+    /// `themeBase` (Ghostty's colors alone if there's none). Its light and
+    /// dark colors seed the pair a later change of the settings is compared
+    /// against, so only a new pair is sent to nvim.
     init(
         request: LaunchRequest, session: SessionFolder, controller: TerminalController, nvimSocket: String,
         themeBase: ThemeBase, colors: LaunchColors, lastColorsFile: LastColorsFile,
