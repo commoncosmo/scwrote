@@ -235,4 +235,17 @@ private func group(fg: Int? = nil, bg: Int? = nil, reverse: Bool = false) -> Nvi
         // The editor's own dim text is unchanged.
         #expect(theme.dim == color(0x2b2823).blended(into: color(0xf3efe7), 0.5))
     }
+
+    /// nvim 0.12's default colors link WinSeparator to Normal, so the divider
+    /// is the text color: code blocks and diagram fills take their own fade
+    /// of the text, which text stays readable on.
+    @Test func fillIsReadableWhenTheDividerIsTheTextColor() {
+        let nvim = NvimColors(background: "dark", groups: [
+            "Normal": group(fg: 0xe0e2ea, bg: 0x14161b), "WinSeparator": group(fg: 0xe0e2ea),
+        ])
+        let theme = ThemeColors.resolve(nvim: nvim, ghostty: ghostty)
+        #expect(theme.fill != theme.divider)
+        #expect(theme.foreground.contrastRatio(with: theme.fill) >= 4.5)
+        #expect(theme.fill == color(0xe0e2ea).blended(into: color(0x14161b), 0.1))
+    }
 }

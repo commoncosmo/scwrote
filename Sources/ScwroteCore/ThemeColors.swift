@@ -36,6 +36,9 @@ public struct ThemeColors: Equatable, Sendable {
     /// The cursor row while the editor has the keyboard.
     public var selectionInactive: RGBColor
     public var divider: RGBColor
+    /// Code blocks and diagram fills in the preview: a fade of `foreground`,
+    /// so text stays readable on it whatever the divider is.
+    public var fill: RGBColor
     /// nil: the system blue.
     public var folder: RGBColor?
     /// nil: the system yellow.
@@ -82,6 +85,7 @@ public struct ThemeColors: Equatable, Sendable {
             visualText: visual.fg ?? foreground,
             selectionInactive: foreground.blended(into: background, 0.1),
             divider: fg("WinSeparator") ?? fg("VertSplit") ?? foreground.blended(into: background, 0.15),
+            fill: foreground.blended(into: background, 0.1),
             folder: fg("Directory") ?? ghostty.palette4,
             warning: fg("WarningMsg") ?? fg("DiagnosticWarn") ?? ghostty.palette3,
             browserBackground: browserBackground,

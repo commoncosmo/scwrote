@@ -30,6 +30,8 @@ struct Theme: Equatable {
     /// Unsaved changes and errors in the preview's header.
     var warning: NSColor
     var divider: NSColor
+    /// Code blocks and diagram fills in the preview.
+    var fill: NSColor
     /// The file browser's shade, its secondary text, and its cursor row while
     /// the editor has the keyboard (see `ThemeColors`).
     var browserBackground: NSColor
@@ -54,6 +56,7 @@ struct Theme: Equatable {
         selectedDim = visualSetsText ? visualText : dim
         warning = colors.warning.map(Self.nsColor) ?? .systemYellow
         divider = Self.nsColor(colors.divider)
+        fill = Self.nsColor(colors.fill)
         browserBackground = Self.nsColor(colors.browserBackground)
         browserDim = Self.nsColor(colors.browserDim)
         browserSelectionInactive = Self.nsColor(colors.browserSelectionInactive)
@@ -80,7 +83,7 @@ struct Theme: Equatable {
     static func == (lhs: Theme, rhs: Theme) -> Bool {
         let colors: [KeyPath<Theme, NSColor>] = [
             \.background, \.foreground, \.dim, \.selection, \.visual, \.visualText, \.selectionInactive,
-            \.folder, \.selectedFolder, \.selectedDim, \.warning, \.divider,
+            \.folder, \.selectedFolder, \.selectedDim, \.warning, \.divider, \.fill,
             \.browserBackground, \.browserDim, \.browserSelectionInactive,
         ]
         return colors.allSatisfy { sRGB(lhs[keyPath: $0]) == sRGB(rhs[keyPath: $0]) }
