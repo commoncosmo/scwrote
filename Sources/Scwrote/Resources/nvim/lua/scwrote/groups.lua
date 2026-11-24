@@ -27,6 +27,10 @@ return function(p)
     Statement = { fg = p.keyword },
     Operator = { fg = p.fg },
     PreProc = { fg = p.special },
+    -- Legacy Vim syntax (Swift's, say) marks `import`, `struct`, `let` and
+    -- `func` as these, which nvim links to PreProc: they're keywords.
+    Include = { link = "Statement" },
+    Define = { link = "Statement" },
     Type = { fg = p.type },
     Special = { fg = p.special },
     Delimiter = { fg = p.fg2 },

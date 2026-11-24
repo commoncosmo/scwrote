@@ -224,6 +224,28 @@ struct ScwroteColorschemeTests {
         }
     }
 
+    /// Under legacy Vim syntax (Swift's, say), `import`, `struct`, `let` and
+    /// `func` are `Include` or `Define`, which nvim links to `PreProc`: they
+    /// take the keyword color, as `return` (`Statement`) does.
+    @Test(arguments: [
+        (global: "scwrote_light_colors", value: LightColors.warmPaper.rawValue, background: NvimBackground.light),
+        (global: "scwrote_light_colors", value: LightColors.coolSlate.rawValue, background: NvimBackground.light),
+        (global: "scwrote_dark_colors", value: DarkColors.softDark.rawValue, background: NvimBackground.dark),
+    ])
+    func declarationKeywordsTakeTheKeywordColor(palette: (global: String, value: String, background: NvimBackground))
+        throws
+    {
+        let nvim = try ColorschemeNvim([
+            "--cmd", "let g:\(palette.global) = '\(palette.value)'",
+            "--cmd", "set background=\(palette.background.rawValue)",
+            "--cmd", "colorscheme scwrote",
+        ])
+        let keyword = try #require(try nvim.color("Statement", "fg"), "\(palette.value): Statement has no fg")
+        for group in ["Include", "Define"] {
+            #expect(try nvim.color(group, "fg") == keyword, "\(palette.value): \(group) isn't the keyword color")
+        }
+    }
+
     /// Ghostty hands the command to a shell, so the launch's words go through
     /// one here too, with a runtime folder whose path has a quote, a comma
     /// and spaces. nvim's `runtimepath` can't hold a backslash (its lookups
