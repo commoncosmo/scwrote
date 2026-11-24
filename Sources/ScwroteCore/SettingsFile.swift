@@ -41,6 +41,9 @@ public struct SettingsFile: Sendable {
         for key in SettingKey.allCases {
             if let value = Self.bool(in: object, at: key.path) { key.set(value, in: &settings) }
         }
+        if let raw = Self.string(in: object, at: Self.modePath), let mode = AppearanceMode(rawValue: raw) {
+            settings.appearanceMode = mode
+        }
         return .loaded(settings)
     }
 
@@ -49,11 +52,23 @@ public struct SettingsFile: Sendable {
     /// the folder and file if missing. Throws `SettingsFileUnreadable` without
     /// touching the file if it doesn't parse.
     public func write(_ key: SettingKey, _ value: Bool) throws {
+        try write(value, at: key.path)
+    }
+
+    /// Sets the appearance mode, with the same guarantees as the other write.
+    public func write(_ mode: AppearanceMode) throws {
+        try write(mode.rawValue, at: Self.modePath)
+    }
+
+    /// Where the appearance mode lives in the file.
+    private static let modePath = ["appearance", "mode"]
+
+    private func write(_ value: Any, at path: [String]) throws {
         let real = destination()
         var object = FileManager.default.fileExists(atPath: real) ? try Self.readObject(at: real) : [:]
-        let section = key.path[0]
+        let section = path[0]
         var values = object[section] as? [String: Any] ?? [:]
-        values[key.path[1]] = value
+        values[path[1]] = value
         object[section] = values
         let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
 
@@ -108,5 +123,11 @@ public struct SettingsFile: Sendable {
             CFGetTypeID(value) == CFBooleanGetTypeID()
         else { return nil }
         return value.boolValue
+    }
+
+    /// The value at `path` if it is a JSON string.
+    private static func string(in object: [String: Any], at path: [String]) -> String? {
+        guard let section = object[path[0]] as? [String: Any] else { return nil }
+        return section[path[1]] as? String
     }
 }

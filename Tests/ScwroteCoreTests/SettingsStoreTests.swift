@@ -49,6 +49,17 @@ final class SettingsStoreTests {
         #expect(store.file.load() == .loaded(Settings(showsHiddenFilesInQuickOpen: false, reopensFolders: true)))
     }
 
+    @Test func settingTheModeAppliesAtOnceAndWrites() {
+        let store = SettingsStore(file: SettingsFile(path: path))
+        var calls = 0
+        store.onChange { _ in calls += 1 }
+        #expect(store.set(AppearanceMode.light))
+        #expect(store.settings.appearanceMode == .light)
+        #expect(calls == 1)
+        guard case .loaded(let loaded) = SettingsFile(path: path).load() else { Issue.record("expected loaded"); return }
+        #expect(loaded.appearanceMode == .light)
+    }
+
     @Test func setStillAppliesWhenTheWriteFails() throws {
         try put("{")
         let store = SettingsStore(file: SettingsFile(path: path))

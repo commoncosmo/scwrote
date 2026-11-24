@@ -49,9 +49,21 @@ public final class SettingsStore {
     public func set(_ key: SettingKey, _ value: Bool) -> Bool {
         var changed = settings
         key.set(value, in: &changed)
-        apply(changed)
+        return apply(changed) { try file.write(key, value) }
+    }
+
+    /// Like `set(_:_:)`, for the appearance mode.
+    @discardableResult
+    public func set(_ mode: AppearanceMode) -> Bool {
+        var changed = settings
+        changed.appearanceMode = mode
+        return apply(changed) { try file.write(mode) }
+    }
+
+    private func apply(_ new: Settings, writing write: () throws -> Void) -> Bool {
+        apply(new)
         do {
-            try file.write(key, value)
+            try write()
             return true
         } catch {
             let reason = (error as? SettingsFileUnreadable)?.message ?? error.localizedDescription
