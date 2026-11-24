@@ -325,7 +325,7 @@ final class FileBrowserView: NSView {
     // MARK: - Drawing
 
     override func draw(_: NSRect) {
-        theme.background.setFill()
+        theme.browserBackground.setFill()
         bounds.fill()
 
         // The unsaved count sits at the right; the path gets what's left, cut
@@ -338,10 +338,10 @@ final class FileBrowserView: NSView {
             headerWidth -= width + rowHeight
         }
         let header = (browser.root as NSString).abbreviatingWithTildeInPath + (isPinned ? "  · pinned" : "")
-        draw(attributed(header, color: theme.dim, truncation: .byTruncatingHead), row: 0, x: sidePadding, width: headerWidth)
+        draw(attributed(header, color: theme.browserDim, truncation: .byTruncatingHead), row: 0, x: sidePadding, width: headerWidth)
 
         if browser.rows.isEmpty {
-            draw(attributed("(empty) · a: new file", color: theme.dim), row: 1, x: sidePadding, width: bounds.width - sidePadding * 2)
+            draw(attributed("(empty) · a: new file", color: theme.browserDim), row: 1, x: sidePadding, width: bounds.width - sidePadding * 2)
         } else {
             drawRows()
         }
@@ -355,7 +355,7 @@ final class FileBrowserView: NSView {
             let row = browser.rows[index]
             let gridRow = index - topRow + 1
             if index == browser.cursor {
-                (isFocused ? theme.visual : theme.selectionInactive).setFill()
+                (isFocused ? theme.visual : theme.browserSelectionInactive).setFill()
                 NSRect(x: 0, y: grid.rowTop(gridRow), width: bounds.width, height: rowHeight).fill()
             }
             let indent = String(repeating: "  ", count: row.depth)
@@ -383,7 +383,7 @@ final class FileBrowserView: NSView {
     private func draw(_ prompt: BrowserPrompt) {
         let row = bottomRow
         let rowRect = NSRect(x: 0, y: grid.rowTop(row), width: bounds.width, height: rowHeight)
-        theme.background.setFill()
+        theme.browserBackground.setFill()
         rowRect.fill()
         let available = bounds.width - sidePadding * 2
 
@@ -392,7 +392,7 @@ final class FileBrowserView: NSView {
         defer { NSGraphicsContext.restoreGraphicsState() }
 
         if let error = prompt.error {
-            let label = attributed(prompt.errorLabel, color: theme.dim)
+            let label = attributed(prompt.errorLabel, color: theme.browserDim)
             let labelWidth = ceil(label.size().width)
             draw(label, row: row, x: sidePadding, width: labelWidth)
             let message = attributed(error, color: theme.warning)
@@ -404,9 +404,9 @@ final class FileBrowserView: NSView {
         if case let .delete(_, question) = prompt.kind {
             let cursorWidth = ceil(blank.size().width)
             let fitted = question.fitted(to: Double(available - cursorWidth)) { text in
-                Double(ceil(self.attributed(text, color: self.theme.dim).size().width))
+                Double(ceil(self.attributed(text, color: self.theme.browserDim).size().width))
             }
-            let label = attributed(fitted, color: theme.dim)
+            let label = attributed(fitted, color: theme.browserDim)
             let labelWidth = ceil(label.size().width)
             theme.selection.setFill()
             NSRect(x: sidePadding + labelWidth, y: rowRect.minY, width: cursorWidth, height: rowRect.height).fill()
@@ -414,7 +414,7 @@ final class FileBrowserView: NSView {
             return
         }
 
-        let label = attributed(prompt.label, color: theme.dim, truncation: .byClipping)
+        let label = attributed(prompt.label, color: theme.browserDim, truncation: .byClipping)
         let labelWidth = ceil(label.size().width)
         let characters = Array(prompt.line.text)
         let cursor = prompt.line.cursor

@@ -15,7 +15,7 @@ type Command = "lineDown" | "lineUp" | "halfPageDown" | "halfPageUp" | "top" | "
 /** Colors are CSS colors (`#rrggbb`); `fontFamily` is one family name; `fontSize` is in CSS pixels. */
 interface Theme {
   background: string; foreground: string; dim: string; selection: string;
-  accent: string; warning: string; divider: string; fontFamily: string; fontSize: number; isDark: boolean;
+  accent: string; warning: string; divider: string; fill: string; fontFamily: string; fontSize: number; isDark: boolean;
 }
 type Message = { type: "rendered"; note?: string } | { type: "error"; message: string };
 
@@ -480,11 +480,12 @@ function configureMermaid(): void {
         primaryTextColor: theme.foreground,
         primaryBorderColor: theme.accent,
         nodeBorder: theme.accent,
-        secondaryColor: theme.divider,
+        secondaryColor: theme.fill,
+        secondaryTextColor: theme.foreground,
         tertiaryColor: theme.background,
         lineColor: theme.dim,
         textColor: theme.foreground,
-        noteBkgColor: theme.divider,
+        noteBkgColor: theme.fill,
         noteTextColor: theme.foreground,
         fontFamily: fontFamily(theme.fontFamily),
         fontSize: `${theme.fontSize}px`,
@@ -499,7 +500,8 @@ function setTheme(next: Theme): void {
   const vars: [string, string][] = [
     ["--bg", next.background], ["--fg", next.foreground], ["--dim", next.dim],
     ["--selection", next.selection], ["--accent", next.accent], ["--warning", next.warning],
-    ["--divider", next.divider], ["--font", fontFamily(next.fontFamily)], ["--font-size", `${next.fontSize}px`],
+    ["--divider", next.divider], ["--fill", next.fill],
+    ["--font", fontFamily(next.fontFamily)], ["--font-size", `${next.fontSize}px`],
   ];
   for (const [name, value] of vars) style.setProperty(name, value);
   style.colorScheme = next.isDark ? "dark" : "light";

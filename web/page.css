@@ -7,6 +7,7 @@
   --accent: #569cd6;
   --warning: #d7ba7d;
   --divider: #3c3c3c;
+  --fill: #303030;
   --font: ui-monospace, monospace;
   --font-size: 13px;
   color-scheme: dark;
@@ -53,12 +54,12 @@ body { margin: 0; }
 .markdown code {
   padding: 0.1em 0.3em;
   border-radius: 3px;
-  background: var(--divider);
+  background: var(--fill);
 }
 .markdown pre {
   padding: 0.6em 0.8em;
   border-radius: 4px;
-  background: var(--divider);
+  background: var(--fill);
   overflow-x: auto;
 }
 .markdown pre code { padding: 0; background: none; }

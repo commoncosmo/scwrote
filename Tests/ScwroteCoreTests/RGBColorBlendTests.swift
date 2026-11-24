@@ -28,6 +28,14 @@ struct RGBColorBlendTests {
         }
     }
 
+    @Test func contrastRatioMatchesWCAG() {
+        let black = RGBColor(rgb: 0x000000), white = RGBColor(rgb: 0xffffff)
+        #expect(abs(black.contrastRatio(with: white) - 21) <= 0.01)
+        #expect(abs(white.contrastRatio(with: black) - 21) <= 0.01)
+        #expect(white.contrastRatio(with: white) == 1)
+        #expect(abs(RGBColor(rgb: 0x777777).contrastRatio(with: white) - 4.48) <= 0.01)
+    }
+
     private func nsColor(_ rgb: Int) -> NSColor {
         let color = RGBColor(rgb: rgb)
         return NSColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: 1)

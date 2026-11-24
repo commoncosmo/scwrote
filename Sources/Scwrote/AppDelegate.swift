@@ -20,7 +20,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsStore.startWatching()
         // From the start, so no change of the mode's background is missed.
         systemAppearance.onChange { [weak self] _ in self?.appearanceChanged() }
-        settingsStore.onChange { [weak self] _ in self?.appearanceChanged() }
+        // The colors first: a hand edit that changes the mode and the colors
+        // it switches to then never shows the old colors in the new mode.
+        settingsStore.onChange { [weak self] _ in
+            self?.colorChoicesChanged()
+            self?.appearanceChanged()
+        }
         NSApp.mainMenu = MainMenu.make()
 
         let environment = ProcessInfo.processInfo.environment
@@ -57,13 +62,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ).honoring(settingsStore.settings) // Reopen is read once: a later change doesn't touch this window.
         // nvim listens here so the file browser can tell it what to open.
         let nvimSocket = NSTemporaryDirectory() + "scwrote-\(getpid()).sock"
-        // nvim starts in the mode's brightness, and so does the window.
+        // nvim starts in the mode's brightness, and so does the window, in
+        // scwrote's colorscheme unless the user's config picks its own.
         let background = effectiveBackground
+        let colors = LaunchColors(
+            background: background,
+            light: settingsStore.settings.lightColors,
+            dark: settingsStore.settings.darkColors,
+            runtimeFolder: Bundle.module.resourceURL!.appending(path: "nvim").path
+        )
         let controller: TerminalController
         let config: String
         do {
             (controller, config) = try makeTerminalController(
-                command: request.shellCommand(nvimPath: nvim, listenAddress: nvimSocket, background: background),
+                command: request.shellCommand(nvimPath: nvim, listenAddress: nvimSocket, colors: colors),
                 environment: environment
             )
         } catch {
@@ -84,7 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller: controller,
             nvimSocket: nvimSocket,
             themeBase: ThemeBase(configContents: config),
-            background: background,
+            colors: colors,
             lastColorsFile: LastColorsFile(environment: environment, home: NSHomeDirectory()),
             settingsStore: settingsStore
         )
@@ -110,6 +122,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func appearanceChanged() {
         let background = effectiveBackground
         for editor in editors { editor.effectiveBackgroundChanged(to: background) }
+    }
+
+    /// The settings changed: every window takes the light and dark colors
+    /// (each ignores a pair it already has).
+    private func colorChoicesChanged() {
+        let settings = settingsStore.settings
+        for editor in editors { editor.colorChoicesChanged(light: settings.lightColors, dark: settings.darkColors) }
     }
 
     /// Settings… in the scwrote menu, and Cmd+, from the editor window: shows

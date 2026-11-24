@@ -41,6 +41,7 @@ public struct NvimColors: Equatable, Codable, Sendable {
     public static let method = "scwrote_colors"
     public static let groupNames = [
         "Normal", "Visual", "Directory", "WarningMsg", "DiagnosticWarn", "WinSeparator", "VertSplit",
+        "ScwroteBrowser",
     ]
 
     public init(background: String, groups: [String: Group]) {

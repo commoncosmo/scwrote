@@ -44,6 +44,12 @@ public struct SettingsFile: Sendable {
         if let raw = Self.string(in: object, at: Self.modePath), let mode = AppearanceMode(rawValue: raw) {
             settings.appearanceMode = mode
         }
+        if let raw = Self.string(in: object, at: Self.lightColorsPath), let colors = LightColors(rawValue: raw) {
+            settings.lightColors = colors
+        }
+        if let raw = Self.string(in: object, at: Self.darkColorsPath), let colors = DarkColors(rawValue: raw) {
+            settings.darkColors = colors
+        }
         return .loaded(settings)
     }
 
@@ -59,6 +65,19 @@ public struct SettingsFile: Sendable {
     public func write(_ mode: AppearanceMode) throws {
         try write(mode.rawValue, at: Self.modePath)
     }
+
+    /// Sets the light colors, with the same guarantees as the other write.
+    public func write(_ colors: LightColors) throws {
+        try write(colors.rawValue, at: Self.lightColorsPath)
+    }
+
+    /// Sets the dark colors, with the same guarantees as the other write.
+    public func write(_ colors: DarkColors) throws {
+        try write(colors.rawValue, at: Self.darkColorsPath)
+    }
+
+    private static let lightColorsPath = ["appearance", "lightColors"]
+    private static let darkColorsPath = ["appearance", "darkColors"]
 
     /// Where the appearance mode lives in the file.
     private static let modePath = ["appearance", "mode"]

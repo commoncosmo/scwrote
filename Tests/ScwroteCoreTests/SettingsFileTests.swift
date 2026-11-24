@@ -214,6 +214,47 @@ private final class Temp {
         #expect(json["x"] as? Int == 1)
     }
 
+    @Test func colorsChoicesDefault() throws {
+        let t = try Temp()
+        try t.put(#"{"folders":{"reopen":false}}"#)
+        guard case .loaded(let settings) = t.file.load() else { Issue.record("expected loaded"); return }
+        #expect(settings.lightColors == .warmPaper)
+        #expect(settings.darkColors == .softDark)
+    }
+
+    @Test func colorsChoicesReadEachValue() throws {
+        let t = try Temp()
+        for (text, colors) in [("warmPaper", LightColors.warmPaper), ("coolSlate", .coolSlate)] {
+            try t.put(#"{"appearance":{"lightColors":"\#(text)"}}"#)
+            guard case .loaded(let settings) = t.file.load() else { Issue.record("expected loaded"); return }
+            #expect(settings.lightColors == colors)
+        }
+        for (text, colors) in [("softDark", DarkColors.softDark), ("nvimDefault", .nvimDefault)] {
+            try t.put(#"{"appearance":{"darkColors":"\#(text)"}}"#)
+            guard case .loaded(let settings) = t.file.load() else { Issue.record("expected loaded"); return }
+            #expect(settings.darkColors == colors)
+        }
+    }
+
+    @Test func unknownOrWrongTypedColorsAreDefaults() throws {
+        let t = try Temp()
+        for value in [#""WarmPaper""#, "3", "null", "[]"] {
+            try t.put(#"{"appearance":{"mode":"dark","lightColors":\#(value),"darkColors":\#(value)},"folders":{"reopen":false}}"#)
+            #expect(t.file.load() == .loaded(Settings(showsHiddenFilesInQuickOpen: true, reopensFolders: false, appearanceMode: .dark)))
+        }
+    }
+
+    @Test func writingAColorsChoiceKeepsOtherKeys() throws {
+        let t = try Temp()
+        try t.put(#"{"appearance":{"mode":"dark"},"x":1}"#)
+        try t.file.write(LightColors.coolSlate)
+        let json = try t.json()
+        #expect(json["appearance"] as? [String: String] == ["mode": "dark", "lightColors": "coolSlate"])
+        #expect(json["x"] as? Int == 1)
+        try t.file.write(DarkColors.nvimDefault)
+        #expect(try t.json()["appearance"] as? [String: String] == ["mode": "dark", "lightColors": "coolSlate", "darkColors": "nvimDefault"])
+    }
+
     @Test func writingTheModeOverAnUnreadableFileThrows() throws {
         let t = try Temp()
         try t.put("{ // c")

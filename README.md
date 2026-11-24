@@ -237,12 +237,17 @@ title bar follow nvim's colorscheme live: after `:colorscheme` or
 - folders, links and the preview's accents from `Directory`
 - the unsaved marks and warnings from `WarningMsg`, else `DiagnosticWarn`
 - the dividers from `WinSeparator`, else `VertSplit`
+- the file browser's shade and its secondary text from `ScwroteBrowser`, a
+  group scwrote's own colorscheme sets (in nvim default and in other
+  colorschemes it's unset, and the browser takes `Normal`)
 
 Headers and other secondary text are `Normal`'s text faded into its
-background. Where `Normal`'s text sits on a highlight (the browser's prompt
-cursor, the overlays' query, the preview's cursor rows and diagram boxes),
-the highlight is a fade of `Normal`'s text, so it stays readable whatever
-`Visual` is. A group that sets no color falls back: the selected row and the
+background; in the browser, `ScwroteBrowser`'s text if it sets one, else
+`Normal`'s text faded into the browser's shade. Where `Normal`'s text sits on
+a highlight or fill (the browser's prompt cursor, the overlays' query, the
+preview's cursor rows, code blocks and diagram boxes), the highlight is a
+fade of `Normal`'s text, so it stays readable whatever `Visual` and the
+dividers are. A group that sets no color falls back: the selected row and the
 dividers to a fade of `Normal`'s text, folders and warnings to your Ghostty
 palette's blue and yellow. The title bar's text and buttons turn light or dark
 with the background.
@@ -266,6 +271,37 @@ does, your config wins: scwrote never sets `background` in that nvim,
 whatever the mode. A `:set background` of your own lasts until the light or
 dark scwrote asks for next changes: macOS switching, under System, or a change
 of the setting (in the window or in `settings.json`) that picks the other one.
+
+Unless your nvim config picks a colorscheme, nvim starts in scwrote's own,
+`scwrote`, which has light and dark versions to choose from in Settings >
+Appearance:
+
+- Light colors: Warm paper (the default), a warm off-white, or Cool slate, a
+  cool gray-blue.
+- Dark colors: Soft dark (the default), a soft charcoal, or nvim default,
+  nvim's own dark colors.
+
+In Warm paper, Cool slate and Soft dark the file browser has a shade of its
+own, a little darker than the editor; in nvim default it has the editor's
+background. Changing the colors for the mode that's showing recolors every
+window at once; changing the other one shows when the mode next switches.
+
+A config that loads a colorscheme of its own replaces scwrote's, and the two
+choices change nothing in that nvim. A config can also load scwrote's by
+name, with `colorscheme scwrote` (it's on nvim's `runtimepath` inside
+scwrote); it then follows the two choices as if scwrote had loaded it.
+
+lazy.nvim rebuilds `runtimepath` while your config runs, which drops
+scwrote's folder until nvim has started (scwrote puts it back then). If your
+config names `colorscheme scwrote` after `require("lazy").setup`, keep the
+folder in lazy's paths. Inside scwrote, `vim.g.scwrote_runtime` holds it;
+outside, it's unset and the list is empty:
+
+```lua
+require("lazy").setup(spec, {
+  performance = { rtp = { paths = { vim.g.scwrote_runtime } } },
+})
+```
 
 scwrote remembers the last colors nvim reported in light and in dark, in
 `~/Library/Application Support/scwrote/last-colors.json`, and a new window
@@ -433,6 +469,8 @@ there's nothing to confirm.
 | Setting | Default | Does |
 |---|---|---|
 | Appearance > Mode | System | System follows macOS's light or dark appearance; Light and Dark always use that one (see [Colors](#colors)) |
+| Appearance > Light colors | Warm paper | scwrote's colors in light mode, Warm paper or Cool slate, when your nvim config picks no colorscheme |
+| Appearance > Dark colors | Soft dark | scwrote's colors in dark mode, Soft dark or nvim default, when your nvim config picks no colorscheme |
 | Quick open > Show hidden files | on | quick open lists hidden files and folders; Cmd+Shift+. in quick open changes it too |
 | Folders > Reopen where I left off | on | opening a folder brings its window back (see [Coming back to a folder](#coming-back-to-a-folder)); off, every launch is fresh, as with `--fresh` |
 
@@ -444,6 +482,8 @@ sorted keys, so you can read it or edit it by hand:
 ```json
 {
   "appearance" : {
+    "darkColors" : "softDark",
+    "lightColors" : "warmPaper",
     "mode" : "dark"
   },
   "folders" : {
@@ -456,7 +496,10 @@ sorted keys, so you can read it or edit it by hand:
 ```
 
 `appearance.mode` is `"system"`, `"light"` or `"dark"`; any other value
-counts as `"system"`.
+counts as `"system"`. `appearance.lightColors` is `"warmPaper"` or
+`"coolSlate"`, and any other value counts as `"warmPaper"`;
+`appearance.darkColors` is `"softDark"` or `"nvimDefault"`, and any other
+value counts as `"softDark"`.
 
 Every open window follows a change, whether it's made in another window or in
 the file by hand. A change from scwrote rewrites only its own key and keeps

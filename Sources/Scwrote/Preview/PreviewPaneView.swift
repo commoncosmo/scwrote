@@ -464,6 +464,7 @@ final class PreviewPaneView: NSView, NSGestureRecognizerDelegate {
             "accent": Theme.css(theme.folder),
             "warning": Theme.css(theme.warning),
             "divider": Theme.css(theme.divider),
+            "fill": Theme.css(theme.fill),
             "fontFamily": theme.font.familyName ?? "monospace",
             "fontSize": Double(theme.font.pointSize),
             "isDark": theme.isDark,

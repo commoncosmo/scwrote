@@ -6,7 +6,7 @@ private let patience: TimeInterval = 30
 
 /// A headless nvim with a client that has ColorAutocommands installed, and
 /// everything it reports, collected on a background thread.
-private final class Reports: @unchecked Sendable {
+final class Reports: @unchecked Sendable {
     let nvim: HeadlessNvim
     private let listening: NvimClient
     private let control: NvimClient

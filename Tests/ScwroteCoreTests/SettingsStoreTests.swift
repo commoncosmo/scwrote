@@ -60,6 +60,21 @@ final class SettingsStoreTests {
         #expect(loaded.appearanceMode == .light)
     }
 
+    @Test func settingAColorsChoiceAppliesAtOnceAndWrites() {
+        let store = SettingsStore(file: SettingsFile(path: path))
+        var calls = 0
+        store.onChange { _ in calls += 1 }
+        #expect(store.set(DarkColors.nvimDefault))
+        #expect(store.settings.darkColors == .nvimDefault)
+        #expect(calls == 1)
+        #expect(store.set(LightColors.coolSlate))
+        #expect(store.settings.lightColors == .coolSlate)
+        #expect(calls == 2)
+        guard case .loaded(let loaded) = SettingsFile(path: path).load() else { Issue.record("expected loaded"); return }
+        #expect(loaded.darkColors == .nvimDefault)
+        #expect(loaded.lightColors == .coolSlate)
+    }
+
     @Test func setStillAppliesWhenTheWriteFails() throws {
         try put("{")
         let store = SettingsStore(file: SettingsFile(path: path))
