@@ -263,15 +263,16 @@ switches between them; a dark-only one stays dark.
 
 If your nvim config sets `background` itself, or loads a colorscheme that
 does, your config wins: scwrote never sets `background` in that nvim,
-whatever the mode. A `:set background` of your own lasts until the mode next
-switches (macOS changing, under System, or a new choice in Settings).
+whatever the mode. A `:set background` of your own lasts until the light or
+dark scwrote asks for next changes: macOS switching, under System, or a change
+of the setting (in the window or in `settings.json`) that picks the other one.
 
 scwrote remembers the last colors nvim reported in light and in dark, in
 `~/Library/Application Support/scwrote/last-colors.json`, and a new window
 starts in the ones for its mode, so it doesn't flash your Ghostty colors
-before nvim reports. If the file is missing or can't be read, or has none for
-that mode yet, the window starts in your Ghostty colors and nvim's next
-report writes it again.
+before nvim reports. With none for that mode yet, it starts in the other
+mode's. If the file is missing or can't be read, or has neither, the window
+starts in your Ghostty colors and nvim's next report writes it again.
 
 ## Search
 

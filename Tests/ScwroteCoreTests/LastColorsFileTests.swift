@@ -76,6 +76,28 @@ private let sample = NvimColors(background: "dark", groups: [
         #expect(file.load(for: .light) == Self.light)
     }
 
+    @Test func launchColorsPreferTheModesOwnEntry() throws {
+        let temp = try Temp()
+        let file = LastColorsFile(path: temp.base + "/last-colors.json")
+        file.save(sample)
+        file.save(Self.light)
+        #expect(file.launchColors(for: .light) == Self.light)
+        #expect(file.launchColors(for: .dark) == sample)
+    }
+
+    @Test func launchColorsFallBackToTheOtherEntry() throws {
+        let temp = try Temp()
+        let file = LastColorsFile(path: temp.base + "/last-colors.json")
+        file.save(sample)
+        #expect(file.launchColors(for: .light) == sample)
+    }
+
+    @Test func launchColorsWithNothingSavedIsNone() throws {
+        let temp = try Temp()
+        let file = LastColorsFile(path: temp.base + "/last-colors.json")
+        #expect(file.launchColors(for: .light) == nil)
+    }
+
     @Test func aFileFromBeforeLoadsForItsOwnBackground() throws {
         let temp = try Temp()
         let path = temp.base + "/last-colors.json"

@@ -18,6 +18,16 @@ public struct LastColorsFile: Sendable {
         entries()?[background.rawValue]
     }
 
+    /// The colors a launch in `background` starts in: its own entry if there is
+    /// one, else the other background's, else nil. An nvim config that owns
+    /// `background` only ever reports one of them, so the mode it never reports
+    /// would otherwise start in Ghostty's colors every time; the other entry is
+    /// never worse than that.
+    public func launchColors(for background: NvimBackground) -> NvimColors? {
+        let all = entries()
+        return all?[background.rawValue] ?? all?.first { NvimBackground(rawValue: $0.key) != nil }?.value
+    }
+
     /// The file's reports by background. A file from before, one bare report,
     /// counts as the entry for its own `background`.
     private func entries() -> [String: NvimColors]? {

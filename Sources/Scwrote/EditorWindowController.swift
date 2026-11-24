@@ -107,7 +107,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// panes, dividers and browser (see EditorWindowController+Session).
     /// The window and every pane start in the launch theme: the report
     /// `lastColorsFile` remembers for `background`, the one nvim is started
-    /// with, resolved against `themeBase` (Ghostty's colors alone if there's
+    /// with (the other one's if it has none for that), resolved against `themeBase` (Ghostty's colors alone if there's
     /// none).
     init(
         request: LaunchRequest, session: SessionFolder, controller: TerminalController, nvimSocket: String,
@@ -115,7 +115,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         settingsStore: SettingsStore
     ) {
         let saved = request.restoresSession ? session.readWindowState() : nil
-        let savedColors = lastColorsFile.load(for: background)
+        let savedColors = lastColorsFile.launchColors(for: background)
         let theme = themeBase.theme(nvim: savedColors)
         let window = EditorWindow(
             contentRect: NSRect(x: 0, y: 0, width: 960, height: 640),
