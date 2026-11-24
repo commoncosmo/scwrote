@@ -27,6 +27,19 @@ public struct RGBColor: Equatable, Codable, Sendable {
         return RGBColor(converting: mixed, from: Self.genericRGBSpace) ?? background
     }
 
+    /// The WCAG 2 contrast ratio between this and `other`: 1 (the same) to 21
+    /// (black on white), whichever is lighter.
+    public func contrastRatio(with other: RGBColor) -> Double {
+        let (a, b) = (relativeLuminance, other.relativeLuminance)
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+    }
+
+    /// WCAG 2's relative luminance, from linearized sRGB.
+    private var relativeLuminance: Double {
+        func linear(_ c: Double) -> Double { c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+        return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+    }
+
     /// Whether it reads as dark (see `BackgroundTone`).
     public var isDark: Bool { BackgroundTone.isDark(red: red, green: green, blue: blue) }
 

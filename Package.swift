@@ -23,8 +23,9 @@ let package = Package(
                 // The C API, for reading theme colors out of the Ghostty config.
                 .product(name: "GhosttyKit", package: "libghostty-spm"),
             ],
-            // The preview's renderer page, built from web/ by `bun run build`.
-            resources: [.copy("Resources/Preview"), .copy("Resources/AppIcon.png")]
+            // The preview's renderer page, built from web/ by `bun run build`;
+            // the nvim runtime folder that holds the `scwrote` colorscheme.
+            resources: [.copy("Resources/Preview"), .copy("Resources/AppIcon.png"), .copy("Resources/nvim")]
         ),
         .testTarget(name: "ScwroteCoreTests", dependencies: ["ScwroteCore"]),
     ],
