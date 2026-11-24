@@ -17,6 +17,16 @@ public enum AppearanceMode: String, CaseIterable, Sendable {
     }
 }
 
+/// The colors scwrote uses in light mode when the user's nvim config picks no colorscheme.
+public enum LightColors: String, CaseIterable, Sendable {
+    case warmPaper, coolSlate
+}
+
+/// The colors scwrote uses in dark mode when the user's nvim config picks no colorscheme.
+public enum DarkColors: String, CaseIterable, Sendable {
+    case softDark, nvimDefault
+}
+
 /// The user's preferences, as scwrote applies them.
 public struct Settings: Equatable, Sendable {
     /// Whether quick open lists hidden files and folders.
@@ -27,10 +37,20 @@ public struct Settings: Equatable, Sendable {
     /// Whether the editor follows macOS's appearance or stays light or dark.
     public var appearanceMode: AppearanceMode
 
-    public init(showsHiddenFilesInQuickOpen: Bool, reopensFolders: Bool, appearanceMode: AppearanceMode = .system) {
+    /// The colors used in light mode when nvim's config picks none.
+    public var lightColors: LightColors
+    /// The colors used in dark mode when nvim's config picks none.
+    public var darkColors: DarkColors
+
+    public init(
+        showsHiddenFilesInQuickOpen: Bool, reopensFolders: Bool, appearanceMode: AppearanceMode = .system,
+        lightColors: LightColors = .warmPaper, darkColors: DarkColors = .softDark
+    ) {
         self.showsHiddenFilesInQuickOpen = showsHiddenFilesInQuickOpen
         self.reopensFolders = reopensFolders
         self.appearanceMode = appearanceMode
+        self.lightColors = lightColors
+        self.darkColors = darkColors
     }
 
     /// What applies when there is no file, or a value in it is missing or of the wrong type.

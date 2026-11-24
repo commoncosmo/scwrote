@@ -60,6 +60,22 @@ public final class SettingsStore {
         return apply(changed) { try file.write(mode) }
     }
 
+    /// Like `set(_:_:)`, for the light colors.
+    @discardableResult
+    public func set(_ colors: LightColors) -> Bool {
+        var changed = settings
+        changed.lightColors = colors
+        return apply(changed) { try file.write(colors) }
+    }
+
+    /// Like `set(_:_:)`, for the dark colors.
+    @discardableResult
+    public func set(_ colors: DarkColors) -> Bool {
+        var changed = settings
+        changed.darkColors = colors
+        return apply(changed) { try file.write(colors) }
+    }
+
     private func apply(_ new: Settings, writing write: () throws -> Void) -> Bool {
         apply(new)
         do {
