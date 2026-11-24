@@ -254,11 +254,24 @@ sets colors, your Ghostty theme no longer colors scwrote's panes. The space
 around nvim's text takes the colors of nvim's edge rows and columns, unless
 your Ghostty config sets its own `window-padding-color`.
 
-scwrote remembers the last colors nvim reported, in
+Settings > Appearance > Mode picks light or dark: System (the default)
+follows macOS, even while scwrote is in the background; Light and Dark stay
+put. scwrote starts nvim with `background` set to match, and when the mode
+changes it sets `background` again in every window, so the colorscheme
+recolors everything as above. A colorscheme with light and dark versions
+switches between them; a dark-only one stays dark.
+
+If your nvim config sets `background` itself, or loads a colorscheme that
+does, your config wins: scwrote never sets `background` in that nvim,
+whatever the mode. A `:set background` of your own lasts until the mode next
+switches (macOS changing, under System, or a new choice in Settings).
+
+scwrote remembers the last colors nvim reported in light and in dark, in
 `~/Library/Application Support/scwrote/last-colors.json`, and a new window
-starts in them, so it doesn't flash your Ghostty colors before nvim reports.
-If the file is missing or can't be read, the window starts in your Ghostty
-colors and nvim's next report writes it again.
+starts in the ones for its mode, so it doesn't flash your Ghostty colors
+before nvim reports. If the file is missing or can't be read, or has none for
+that mode yet, the window starts in your Ghostty colors and nvim's next
+report writes it again.
 
 ## Search
 
@@ -413,11 +426,12 @@ load in part keeps what did load; the error goes to the log.
 
 ## Settings
 
-Cmd+, (scwrote > Settings…) opens the Settings window. Switches apply at once;
+Cmd+, (scwrote > Settings…) opens the Settings window. Changes apply at once;
 there's nothing to confirm.
 
 | Setting | Default | Does |
 |---|---|---|
+| Appearance > Mode | System | System follows macOS's light or dark appearance; Light and Dark always use that one (see [Colors](#colors)) |
 | Quick open > Show hidden files | on | quick open lists hidden files and folders; Cmd+Shift+. in quick open changes it too |
 | Folders > Reopen where I left off | on | opening a folder brings its window back (see [Coming back to a folder](#coming-back-to-a-folder)); off, every launch is fresh, as with `--fresh` |
 
@@ -428,6 +442,9 @@ sorted keys, so you can read it or edit it by hand:
 
 ```json
 {
+  "appearance" : {
+    "mode" : "dark"
+  },
   "folders" : {
     "reopen" : true
   },
@@ -436,6 +453,9 @@ sorted keys, so you can read it or edit it by hand:
   }
 }
 ```
+
+`appearance.mode` is `"system"`, `"light"` or `"dark"`; any other value
+counts as `"system"`.
 
 Every open window follows a change, whether it's made in another window or in
 the file by hand. A change from scwrote rewrites only its own key and keeps
@@ -447,7 +467,7 @@ setting back to its default.
 If the file doesn't parse (a comment is enough, since it's
 JSON, not JSONC), the settings keep their last good values, or their defaults
 at launch, and the reason goes to the log, `~/Library/Logs/scwrote.log`. The
-Settings window says what's wrong and its switches are off until the file
+Settings window says what's wrong and its controls are off until the file
 parses again: scwrote never writes over a file it can't read. Cmd+Shift+. in
 quick open still hides or shows hidden files in that window.
 

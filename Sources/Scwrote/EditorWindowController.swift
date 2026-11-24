@@ -48,8 +48,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// launch, or saved since), so an equal report doesn't rewrite it.
     private let lastColorsFile: LastColorsFile
     private var savedColors: NvimColors?
-    /// The `background` nvim was started with (see `LaunchRequest.shellCommand`).
-    let launchBackground: NvimBackground
+    /// When to set nvim's `background` as the appearance mode changes, from
+    /// the one nvim was started with (see `LaunchRequest.shellCommand`).
+    private var backgroundFollower: BackgroundFollower
     private let nvimQueue = DispatchQueue(label: "scwrote.nvim")
     /// A second connection that only listens, for the preview.
     let previewEvents: NvimEventListener
@@ -154,7 +155,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         self.theme = theme
         self.lastColorsFile = lastColorsFile
         self.savedColors = savedColors
-        launchBackground = background
+        backgroundFollower = BackgroundFollower(launchedWith: background)
         super.init(window: window)
 
         window.delegate = self
@@ -384,6 +385,32 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         searchView?.theme = theme
         quickOpenView?.theme = theme
         previewView.theme = theme
+    }
+
+    // MARK: - Appearance mode
+
+    /// The appearance mode's background is now `background` (macOS changed
+    /// under System, or the setting changed).
+    func effectiveBackgroundChanged(to background: NvimBackground) {
+        setNvimBackground(backgroundFollower.effectiveChanged(to: background))
+    }
+
+    /// nvim's startup is over, and it says whether its config owns `background`.
+    func backgroundOwnerKnown(owned: Bool) {
+        setNvimBackground(backgroundFollower.ownershipKnown(owned: owned))
+    }
+
+    /// Sets nvim's `background`, if there's one to set. nvim then reports
+    /// its colors, which recolor the window.
+    private func setNvimBackground(_ background: NvimBackground?) {
+        guard let background else { return }
+        Task {
+            do {
+                try await nvimCall { try $0.setBackground(background) }
+            } catch {
+                FileHandle.standardError.write(Data("scwrote: couldn't set nvim's background: \(error)\n".utf8))
+            }
+        }
     }
 
     // MARK: - Files on disk

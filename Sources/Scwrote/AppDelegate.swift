@@ -18,6 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         settingsStore.startWatching()
+        // From the start, so no change of the mode's background is missed.
+        systemAppearance.onChange { [weak self] _ in self?.appearanceChanged() }
+        settingsStore.onChange { [weak self] _ in self?.appearanceChanged() }
         NSApp.mainMenu = MainMenu.make()
 
         let environment = ProcessInfo.processInfo.environment
@@ -55,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // nvim listens here so the file browser can tell it what to open.
         let nvimSocket = NSTemporaryDirectory() + "scwrote-\(getpid()).sock"
         // nvim starts in the mode's brightness, and so does the window.
-        let background = settingsStore.settings.appearanceMode.background(systemIsDark: systemAppearance.isDark)
+        let background = effectiveBackground
         let controller: TerminalController
         let config: String
         do {
@@ -95,6 +98,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editors.append(editor)
         editor.showWindow(nil)
         NSApp.activate()
+    }
+
+    /// The background the appearance mode asks for now.
+    private var effectiveBackground: NvimBackground {
+        settingsStore.settings.appearanceMode.background(systemIsDark: systemAppearance.isDark)
+    }
+
+    /// macOS's appearance or the settings changed: every window follows the
+    /// mode's background (each ignores a background it already has).
+    private func appearanceChanged() {
+        let background = effectiveBackground
+        for editor in editors { editor.effectiveBackgroundChanged(to: background) }
     }
 
     /// Settings… in the scwrote menu, and Cmd+, from the editor window: shows
