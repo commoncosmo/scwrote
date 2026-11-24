@@ -40,6 +40,14 @@ public struct ThemeColors: Equatable, Sendable {
     public var folder: RGBColor?
     /// nil: the system yellow.
     public var warning: RGBColor?
+    /// The file browser's own shade: scwrote's colorscheme gives it one
+    /// (`ScwroteBrowser`'s background); without it, `background`.
+    public var browserBackground: RGBColor
+    /// The browser's headers and other secondary text: `ScwroteBrowser`'s
+    /// text color if it has one, else `foreground` blended over the shade.
+    public var browserDim: RGBColor
+    /// The browser's cursor row while the editor has the keyboard.
+    public var browserSelectionInactive: RGBColor
 
     /// With no nvim report these are the Ghostty config's colors, as scwrote
     /// drew before it took nvim's.
@@ -63,6 +71,8 @@ public struct ThemeColors: Equatable, Sendable {
         let blendedSelection = foreground.blended(into: background, 0.22)
         let selection = nvim == nil ? ghostty.selectionBackground ?? blendedSelection : blendedSelection
         let visual = drawn("Visual")
+        let browser = nvim?.groups["ScwroteBrowser"]
+        let browserBackground = browser?.bg ?? background
         return ThemeColors(
             background: background,
             foreground: foreground,
@@ -73,6 +83,9 @@ public struct ThemeColors: Equatable, Sendable {
             selectionInactive: foreground.blended(into: background, 0.1),
             divider: fg("WinSeparator") ?? fg("VertSplit") ?? foreground.blended(into: background, 0.15),
             folder: fg("Directory") ?? ghostty.palette4,
-            warning: fg("WarningMsg") ?? fg("DiagnosticWarn") ?? ghostty.palette3)
+            warning: fg("WarningMsg") ?? fg("DiagnosticWarn") ?? ghostty.palette3,
+            browserBackground: browserBackground,
+            browserDim: browser?.fg ?? foreground.blended(into: browserBackground, 0.5),
+            browserSelectionInactive: foreground.blended(into: browserBackground, 0.1))
     }
 }

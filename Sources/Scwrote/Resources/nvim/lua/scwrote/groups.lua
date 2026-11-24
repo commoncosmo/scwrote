@@ -12,7 +12,8 @@ return function(p)
     NormalNC = { link = "Normal" },
     MsgArea = { link = "Normal" },
     StdoutMsg = { link = "Normal" },
-    ScwroteBrowser = { bg = p.browser },
+    -- Its fg is the browser's dim text (headers, prompts).
+    ScwroteBrowser = { fg = p.browser_dim, bg = p.browser },
     -- Plain, as in nvim's default: completed text keeps the colors under it.
     ComplMatchIns = {},
 

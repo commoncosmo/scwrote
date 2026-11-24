@@ -57,13 +57,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ).honoring(settingsStore.settings) // Reopen is read once: a later change doesn't touch this window.
         // nvim listens here so the file browser can tell it what to open.
         let nvimSocket = NSTemporaryDirectory() + "scwrote-\(getpid()).sock"
-        // nvim starts in the mode's brightness, and so does the window.
+        // nvim starts in the mode's brightness, and so does the window, in
+        // scwrote's colorscheme unless the user's config picks its own.
         let background = effectiveBackground
+        let colors = LaunchColors(
+            background: background,
+            light: settingsStore.settings.lightColors,
+            dark: settingsStore.settings.darkColors,
+            runtimeFolder: Bundle.module.resourceURL!.appending(path: "nvim").path
+        )
         let controller: TerminalController
         let config: String
         do {
             (controller, config) = try makeTerminalController(
-                command: request.shellCommand(nvimPath: nvim, listenAddress: nvimSocket, background: background),
+                command: request.shellCommand(nvimPath: nvim, listenAddress: nvimSocket, colors: colors),
                 environment: environment
             )
         } catch {

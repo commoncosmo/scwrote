@@ -210,6 +210,8 @@ struct ScwroteColorschemeTests {
         for group in ["Normal", "Directory"] {
             try expectContrast(group, on: browser, atLeast: palette.floor, "ScwroteBrowser")
         }
+        // Its own text color is the browser's dim text.
+        try expectContrast("ScwroteBrowser", on: browser, atLeast: 3, "ScwroteBrowser")
 
         // Diffs: their own shades, and their text readable on them.
         let visual = try color("Visual", "bg")
@@ -220,5 +222,82 @@ struct ScwroteColorschemeTests {
             let ratio = text.contrastRatio(with: shade)
             #expect(ratio >= 4.5, "\(palette.value): \(group)'s text on it is \(ratio), under 4.5")
         }
+    }
+
+    /// Ghostty hands the command to a shell, so the launch's words go through
+    /// one here too, with a runtime folder whose path has a quote, a comma
+    /// and spaces. nvim's `runtimepath` can't hold a backslash (its lookups
+    /// read one as an escape), so for that folder only the words arriving
+    /// intact is checked.
+    @Test func launchColorsSurviveAnAwkwardPath() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("scwrote-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: temp) }
+        for name in ["it's, a path", #"it's, a\ path"#] {
+            let folder = temp.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try FileManager.default.copyItem(
+                at: URL(fileURLWithPath: runtimeFolder), to: folder.appendingPathComponent("nvim"))
+        }
+
+        let nvim = try LaunchedNvim(runtimeFolder: temp.appendingPathComponent("it's, a path/nvim").path)
+        #expect(try nvim.lua("return vim.g.colors_name") == .string("scwrote"))
+        #expect(try nvim.lua("return vim.g.scwrote_light_colors") == .string("coolSlate"))
+
+        let backslashed = temp.appendingPathComponent(#"it's, a\ path/nvim"#).path
+        let other = try LaunchedNvim(runtimeFolder: backslashed)
+        let escaped = backslashed.replacingOccurrences(of: ",", with: #"\,"#)
+        #expect(try other.lua("local tail = ... return vim.o.runtimepath:sub(-#tail)", [.string(escaped)]) == .string(escaped))
+    }
+
+    @Test func aColorsReportIncludesTheBrowserShade() throws {
+        let folder = runtimeFolder.replacingOccurrences(of: " ", with: "\\ ")
+        let reports = try Reports(arguments: [
+            "--cmd", "set rtp+=\(folder)",
+            "--cmd", "let g:scwrote_light_colors = '\(LightColors.warmPaper.rawValue)'",
+            "--cmd", "set background=light",
+            "--cmd", "colorscheme scwrote",
+        ])
+
+        let report = try #require(reports.report(after: 0))
+
+        #expect(report.groups["ScwroteBrowser"]?.bg == RGBColor(rgb: 0xe9e3d6))
+        #expect(report.groups["ScwroteBrowser"]?.fg != nil)
+    }
+}
+
+/// nvim started the way scwrote starts it: `LaunchRequest.shellCommand`'s
+/// words run by a shell, made headless and kept clear of the user's config.
+private final class LaunchedNvim {
+    private let process = Process()
+    private let socketPath = NSTemporaryDirectory() + "sn-\(UUID().uuidString.prefix(8)).sock"
+    private let control: NvimClient
+
+    init(runtimeFolder: String) throws {
+        let request = LaunchRequest(
+            workingDirectory: "/tmp", nvimArguments: ["--headless", "--clean", "-n"], title: "tmp",
+            browserRoot: "/tmp", startsInBrowser: true)
+        let colors = LaunchColors(background: .light, light: .coolSlate, dark: .softDark, runtimeFolder: runtimeFolder)
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        // `exec`, as Ghostty runs it, so stopping the process stops nvim.
+        process.arguments = [
+            "-c", "exec " + request.shellCommand(nvimPath: nvimPath!, listenAddress: socketPath, colors: colors),
+        ]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        control = NvimClient(
+            socketPath: socketPath, connectTimeout: 10, queuesNotifications: false, waitsOutTimeouts: true)
+        try control.waitUntilStarted()
+    }
+
+    deinit {
+        control.close()
+        process.terminate()
+        process.waitUntilExit()
+        try? FileManager.default.removeItem(atPath: socketPath)
+    }
+
+    func lua(_ code: String, _ arguments: [MessagePackValue] = []) throws -> MessagePackValue {
+        try control.request("nvim_exec_lua", [.string(code), .array(arguments)])
     }
 }

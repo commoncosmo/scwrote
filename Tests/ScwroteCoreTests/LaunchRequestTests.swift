@@ -195,6 +195,11 @@ struct LaunchRequestTests {
 
     // MARK: The command Ghostty runs
 
+    /// What every `shellCommand` test launches with, and the words it adds
+    /// between `--listen <address>` and the user's arguments.
+    private let colors = LaunchColors(background: .dark, light: .warmPaper, dark: .softDark, runtimeFolder: "/x/nvim")
+    private let colorWords = #"'--cmd' 'lua vim.opt.runtimepath:append([==[/x/nvim]==]) vim.g.scwrote_light_colors = "warmPaper" vim.g.scwrote_dark_colors = "softDark"' '--cmd' 'set background=dark' '--cmd' 'colorscheme scwrote'"#
+
     @Test func shellCommandListensOnASocketAndSingleQuotesEveryWord() {
         let request = LaunchRequest(
             workingDirectory: "/tmp",
@@ -205,12 +210,12 @@ struct LaunchRequestTests {
         )
 
         #expect(
-            request.shellCommand(nvimPath: "/opt/homebrew/bin/nvim", listenAddress: "/tmp/s.sock", background: .dark)
-                == #"'/opt/homebrew/bin/nvim' '--listen' '/tmp/s.sock' '--cmd' 'set background=dark' 'my notes.md' 'it'\''s.md'"#
+            request.shellCommand(nvimPath: "/opt/homebrew/bin/nvim", listenAddress: "/tmp/s.sock", colors: colors)
+                == "'/opt/homebrew/bin/nvim' '--listen' '/tmp/s.sock' \(colorWords) " + #"'my notes.md' 'it'\''s.md'"#
         )
     }
 
-    @Test func shellCommandSetsTheBackgroundBeforeTheUsersArguments() {
+    @Test func shellCommandSetsUpTheColorschemeBeforeTheUsersArguments() {
         let request = LaunchRequest(
             workingDirectory: "/tmp",
             nvimArguments: ["--cmd", "x"],
@@ -218,10 +223,33 @@ struct LaunchRequestTests {
             browserRoot: "/tmp",
             startsInBrowser: true
         )
+        let colors = LaunchColors(background: .light, light: .coolSlate, dark: .nvimDefault, runtimeFolder: "/x/nvim")
+
+        let words = [
+            "'/opt/homebrew/bin/nvim'", "'--listen'", "'/tmp/s.sock'",
+            "'--cmd'",
+            #"'lua vim.opt.runtimepath:append([==[/x/nvim]==]) vim.g.scwrote_light_colors = "coolSlate" vim.g.scwrote_dark_colors = "nvimDefault"'"#,
+            "'--cmd'", "'set background=light'",
+            "'--cmd'", "'colorscheme scwrote'",
+            "'--cmd'", "'x'",
+        ]
+        #expect(
+            request.shellCommand(nvimPath: "/opt/homebrew/bin/nvim", listenAddress: "/tmp/s.sock", colors: colors)
+                == words.joined(separator: " ")
+        )
+    }
+
+    /// A comma separates `runtimepath`'s folders, so one in the folder's name
+    /// is escaped.
+    @Test func shellCommandEscapesACommaInTheRuntimeFolder() {
+        let request = LaunchRequest(
+            workingDirectory: "/tmp", nvimArguments: [], title: "tmp", browserRoot: "/tmp", startsInBrowser: true)
+        var colors = colors
+        colors.runtimeFolder = "/a, b/nvim"
 
         #expect(
-            request.shellCommand(nvimPath: "/opt/homebrew/bin/nvim", listenAddress: "/tmp/s.sock", background: .light)
-                == "'/opt/homebrew/bin/nvim' '--listen' '/tmp/s.sock' '--cmd' 'set background=light' '--cmd' 'x'"
+            request.shellCommand(nvimPath: "nvim", listenAddress: "/s", colors: colors)
+                .contains(#"runtimepath:append([==[/a\, b/nvim]==])"#)
         )
     }
 }

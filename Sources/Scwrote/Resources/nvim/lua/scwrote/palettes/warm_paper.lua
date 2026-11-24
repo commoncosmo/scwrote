@@ -3,6 +3,7 @@
 return {
   bg = "#f3efe7",
   browser = "#e9e3d6",
+  browser_dim = "#867c6b", -- the browser's secondary text: 3.2:1 on browser
   fg = "#2b2823",
   fg2 = "#5e574c", -- punctuation, folds, the cursor's line number
   comment = "#938979", -- from #998f80, darkened to 3:1

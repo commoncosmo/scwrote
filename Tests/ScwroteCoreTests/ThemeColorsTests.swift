@@ -186,4 +186,53 @@ private func group(fg: Int? = nil, bg: Int? = nil, reverse: Bool = false) -> Nvi
         #expect(theme.foreground == color(0xe0e0e0))
         #expect(theme.folder == color(0x1188ff))
     }
+
+    // MARK: The file browser's shade
+
+    @Test func browserTakesScwroteBrowsersBackground() {
+        let nvim = NvimColors(background: "light", groups: [
+            "Normal": group(fg: 0x2b2823, bg: 0xf3efe7), "ScwroteBrowser": group(bg: 0xe9e3d6),
+        ])
+        let theme = ThemeColors.resolve(nvim: nvim, ghostty: ghostty)
+        let shade = color(0xe9e3d6)
+        #expect(theme.background == color(0xf3efe7))
+        #expect(theme.browserBackground == shade)
+        #expect(theme.browserSelectionInactive == color(0x2b2823).blended(into: shade, 0.1))
+    }
+
+    @Test func browserFallsBackToNormalWithoutTheGroup() {
+        let nvim = NvimColors(background: "dark", groups: ["Normal": group(fg: 0xcccccc, bg: 0x202020)])
+        let theme = ThemeColors.resolve(nvim: nvim, ghostty: ghostty)
+        #expect(theme.browserBackground == theme.background)
+        #expect(theme.browserDim == theme.dim)
+        #expect(theme.browserSelectionInactive == theme.selectionInactive)
+
+        let withoutNvim = ThemeColors.resolve(nvim: nil, ghostty: ghostty)
+        #expect(withoutNvim.browserBackground == withoutNvim.background)
+        #expect(withoutNvim.browserDim == withoutNvim.dim)
+        #expect(withoutNvim.browserSelectionInactive == withoutNvim.selectionInactive)
+    }
+
+    /// A shade with no text color of its own: the dim text is blended over
+    /// the shade, not over the editor's background.
+    @Test func browserDimIsBlendedOverTheShade() {
+        let nvim = NvimColors(background: "light", groups: [
+            "Normal": group(fg: 0x2b2823, bg: 0xf3efe7), "ScwroteBrowser": group(bg: 0xe9e3d6),
+        ])
+        let theme = ThemeColors.resolve(nvim: nvim, ghostty: ghostty)
+        #expect(theme.browserDim == color(0x2b2823).blended(into: color(0xe9e3d6), 0.5))
+        #expect(theme.browserDim != theme.dim)
+    }
+
+    /// The palettes give the shade a text color of their own for dim text,
+    /// since a blend can fall under 3:1 on a light shade.
+    @Test func browserDimIsTheShadesOwnTextColor() {
+        let nvim = NvimColors(background: "light", groups: [
+            "Normal": group(fg: 0x2b2823, bg: 0xf3efe7), "ScwroteBrowser": group(fg: 0x867c6b, bg: 0xe9e3d6),
+        ])
+        let theme = ThemeColors.resolve(nvim: nvim, ghostty: ghostty)
+        #expect(theme.browserDim == color(0x867c6b))
+        // The editor's own dim text is unchanged.
+        #expect(theme.dim == color(0x2b2823).blended(into: color(0xf3efe7), 0.5))
+    }
 }
