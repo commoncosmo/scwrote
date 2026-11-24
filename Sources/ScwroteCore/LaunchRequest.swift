@@ -111,18 +111,25 @@ public struct LaunchRequest: Equatable, Sendable {
     /// The command Ghostty runs. nvim listens on `listenAddress` so scwrote can
     /// talk to it, and starts in scwrote's colorscheme: `--cmd`s, which run
     /// before the user's config (and their own `--cmd`s), put the runtime
-    /// folder on `runtimepath` and set the colors chosen for each background,
-    /// set `background` (its own `set`, so `BackgroundOwnership` sees a
-    /// `--cmd` set it), then load the colorscheme. A config that picks its own
-    /// colorscheme or `background` overrides them. Ghostty hands the command to
-    /// a shell, so every word is single-quoted to keep spaces and quotes in
-    /// paths intact.
+    /// folder on `runtimepath` (and in `g:scwrote_runtime`) and set the colors
+    /// chosen for each background, set `background` (its own `set`, so
+    /// `BackgroundOwnership` sees a `--cmd` set it), then load the
+    /// colorscheme. A config that picks its own colorscheme or `background`
+    /// overrides them. A config that rebuilds `runtimepath` (lazy.nvim does by
+    /// default) drops the folder, so a `VimEnter` autocommand puts it back.
+    /// Ghostty hands the command to a shell, so every word is single-quoted to
+    /// keep spaces and quotes in paths intact.
     public func shellCommand(nvimPath: String, listenAddress: String, colors: LaunchColors) -> String {
         // A comma separates runtimepath's folders; `\,` keeps one in a name.
         let folder = colors.runtimeFolder.replacingOccurrences(of: ",", with: #"\,"#)
-        let setup = "lua vim.opt.runtimepath:append([==[\(folder)]==])"
+        let setup = "lua local folder = [==[\(folder)]==]"
+            + " vim.opt.runtimepath:append(folder)"
+            + " vim.g.scwrote_runtime = [==[\(colors.runtimeFolder)]==]"
             + " vim.g.scwrote_light_colors = \"\(colors.light.rawValue)\""
             + " vim.g.scwrote_dark_colors = \"\(colors.dark.rawValue)\""
+            + " vim.api.nvim_create_autocmd(\"VimEnter\", { once = true, callback = function()"
+            + " if not (\",\" .. vim.o.runtimepath .. \",\"):find(\",\" .. folder .. \",\", 1, true)"
+            + " then vim.opt.runtimepath:append(folder) end end })"
         let words = [
             nvimPath, "--listen", listenAddress,
             "--cmd", setup,

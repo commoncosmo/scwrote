@@ -318,6 +318,43 @@ struct ScwroteColorschemeTests {
         #expect(try other.lua("local tail = ... return vim.o.runtimepath:sub(-#tail)", [.string(escaped)]) == .string(escaped))
     }
 
+    /// lazy.nvim rebuilds `runtimepath` while the config runs (its
+    /// `performance.rtp.reset`), dropping scwrote's folder: it's put back once
+    /// nvim has started, so a background switch and a changed choice still
+    /// find the colorscheme.
+    @Test func aConfigThatResetsRuntimepathKeepsTheColorscheme() throws {
+        let nvim = try LaunchedNvim(
+            runtimeFolder: runtimeFolder, light: .warmPaper, dark: .softDark,
+            arguments: ["-c", "set rtp=$VIMRUNTIME", "-c", "let g:rtp_after_config = &rtp"])
+        // The config's reset did drop it.
+        #expect(try nvim.lua("return vim.g.rtp_after_config:find('Resources/nvim', 1, true) == nil") == .bool(true))
+        #expect(try nvim.lua("return vim.g.scwrote_runtime") == .string(runtimeFolder))
+
+        try nvim.setBackground(.dark)
+
+        #expect(try nvim.lua("return vim.g.colors_name") == .string("scwrote"))
+        #expect(try nvim.color("Normal", "bg") == 0x1e1f22)
+
+        try nvim.setColorChoices(light: .coolSlate, dark: .nvimDefault)
+
+        #expect(try nvim.color("Normal", "bg") == 0x14161b)
+        try nvim.setBackground(.light)
+        #expect(try nvim.color("Normal", "bg") == 0xeef2f6)
+    }
+
+    /// A folder still on `runtimepath` isn't added a second time.
+    @Test func aRuntimepathThatKeepsTheFolderIsLeftAlone() throws {
+        let nvim = try LaunchedNvim(runtimeFolder: runtimeFolder)
+        let count = try nvim.lua("""
+            local folder, n = ..., 0
+            for _, path in ipairs(vim.api.nvim_list_runtime_paths()) do
+              if path == folder then n = n + 1 end
+            end
+            return n
+            """, [.string(runtimeFolder)])
+        #expect(count == .int(1))
+    }
+
     @Test func aColorsReportIncludesTheBrowserShade() throws {
         let folder = runtimeFolder.replacingOccurrences(of: " ", with: "\\ ")
         let reports = try Reports(arguments: [
@@ -341,11 +378,15 @@ private final class LaunchedNvim {
     private let socketPath = NSTemporaryDirectory() + "sn-\(UUID().uuidString.prefix(8)).sock"
     private let control: NvimClient
 
-    init(runtimeFolder: String) throws {
+    /// `arguments` follow scwrote's, as a user's own do.
+    init(
+        runtimeFolder: String, light: LightColors = .coolSlate, dark: DarkColors = .softDark,
+        arguments: [String] = []
+    ) throws {
         let request = LaunchRequest(
-            workingDirectory: "/tmp", nvimArguments: ["--headless", "--clean", "-n"], title: "tmp",
+            workingDirectory: "/tmp", nvimArguments: ["--headless", "--clean", "-n"] + arguments, title: "tmp",
             browserRoot: "/tmp", startsInBrowser: true)
-        let colors = LaunchColors(background: .light, light: .coolSlate, dark: .softDark, runtimeFolder: runtimeFolder)
+        let colors = LaunchColors(background: .light, light: light, dark: dark, runtimeFolder: runtimeFolder)
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         // `exec`, as Ghostty runs it, so stopping the process stops nvim.
         process.arguments = [
@@ -368,5 +409,20 @@ private final class LaunchedNvim {
 
     func lua(_ code: String, _ arguments: [MessagePackValue] = []) throws -> MessagePackValue {
         try control.request("nvim_exec_lua", [.string(code), .array(arguments)])
+    }
+
+    func setBackground(_ background: NvimBackground) throws {
+        try control.setBackground(background)
+    }
+
+    func setColorChoices(light: LightColors, dark: DarkColors) throws {
+        try control.setColorChoices(light: light, dark: dark)
+    }
+
+    /// The group's color with links followed, or nil.
+    func color(_ name: String, _ attribute: String) throws -> Int? {
+        let value = try lua("local name, attribute = ... return vim.api.nvim_get_hl(0, { name = name, link = false })[attribute]",
+            [.string(name), .string(attribute)])
+        if case let .int(rgb) = value { return Int(rgb) } else { return nil }
     }
 }

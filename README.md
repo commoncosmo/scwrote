@@ -286,6 +286,18 @@ choices change nothing in that nvim. A config can also load scwrote's by
 name, with `colorscheme scwrote` (it's on nvim's `runtimepath` inside
 scwrote); it then follows the two choices as if scwrote had loaded it.
 
+lazy.nvim rebuilds `runtimepath` while your config runs, which drops
+scwrote's folder until nvim has started (scwrote puts it back then). If your
+config names `colorscheme scwrote` after `require("lazy").setup`, keep the
+folder in lazy's paths. Inside scwrote, `vim.g.scwrote_runtime` holds it;
+outside, it's unset and the list is empty:
+
+```lua
+require("lazy").setup(spec, {
+  performance = { rtp = { paths = { vim.g.scwrote_runtime } } },
+})
+```
+
 scwrote remembers the last colors nvim reported in light and in dark, in
 `~/Library/Application Support/scwrote/last-colors.json`, and a new window
 starts in the ones for its mode, so it doesn't flash your Ghostty colors
