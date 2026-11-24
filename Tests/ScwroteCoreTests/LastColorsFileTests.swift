@@ -26,30 +26,85 @@ private let sample = NvimColors(background: "dark", groups: [
 
     @Test func missingFileIsNone() throws {
         let temp = try Temp()
-        #expect(LastColorsFile(path: temp.base + "/last-colors.json").load() == nil)
+        #expect(LastColorsFile(path: temp.base + "/last-colors.json").load(for: .dark) == nil)
     }
 
     @Test func brokenLastColorsFileIsNone() throws {
         let temp = try Temp()
         let path = temp.base + "/last-colors.json"
         try "{".write(toFile: path, atomically: true, encoding: .utf8)
-        #expect(LastColorsFile(path: path).load() == nil)
+        #expect(LastColorsFile(path: path).load(for: .dark) == nil)
     }
 
     @Test func lastColorsRoundTrip() throws {
         let temp = try Temp()
         let file = LastColorsFile(path: temp.base + "/new/folder/last-colors.json")
         file.save(sample)
-        #expect(file.load() == sample)
+        #expect(file.load(for: .dark) == sample)
     }
 
     @Test func savingReplacesAnEarlierReport() throws {
         let temp = try Temp()
         let file = LastColorsFile(path: temp.base + "/last-colors.json")
         file.save(sample)
-        let other = NvimColors(background: "light", groups: [:])
+        let other = NvimColors(background: "dark", groups: [:])
         file.save(other)
-        #expect(file.load() == other)
+        #expect(file.load(for: .dark) == other)
+    }
+
+    private static let light = NvimColors(background: "light", groups: [
+        "Normal": .init(fg: RGBColor(rgb: 0x111111), bg: RGBColor(rgb: 0xfafafa)),
+    ])
+
+    @Test func eachBackgroundKeepsItsOwnReport() throws {
+        let temp = try Temp()
+        let file = LastColorsFile(path: temp.base + "/last-colors.json")
+        file.save(sample)
+        file.save(Self.light)
+        #expect(file.load(for: .dark) == sample)
+        #expect(file.load(for: .light) == Self.light)
+    }
+
+    @Test func savingReplacesOnlyThatBackgroundsReport() throws {
+        let temp = try Temp()
+        let file = LastColorsFile(path: temp.base + "/last-colors.json")
+        let b = NvimColors(background: "dark", groups: [:])
+        file.save(sample)
+        file.save(Self.light)
+        file.save(b)
+        #expect(file.load(for: .dark) == b)
+        #expect(file.load(for: .light) == Self.light)
+    }
+
+    @Test func aFileFromBeforeLoadsForItsOwnBackground() throws {
+        let temp = try Temp()
+        let path = temp.base + "/last-colors.json"
+        try JSONEncoder().encode(sample).write(to: URL(fileURLWithPath: path))
+        let file = LastColorsFile(path: path)
+        #expect(file.load(for: .dark) == sample)
+        #expect(file.load(for: .light) == nil)
+    }
+
+    @Test func aReportWithAnUnknownBackgroundIsNotSaved() throws {
+        let temp = try Temp()
+        let path = temp.base + "/last-colors.json"
+        let file = LastColorsFile(path: path)
+        file.save(NvimColors(background: "purple", groups: [:]))
+        #expect(!FileManager.default.fileExists(atPath: path))
+        file.save(sample)
+        file.save(NvimColors(background: "purple", groups: [:]))
+        #expect(file.load(for: .dark) == sample)
+        #expect(file.load(for: .light) == nil)
+    }
+
+    @Test func anEntryUnderAnUnknownKeyIsIgnored() throws {
+        let temp = try Temp()
+        let path = temp.base + "/last-colors.json"
+        let purple = NvimColors(background: "purple", groups: [:])
+        try JSONEncoder().encode(["purple": purple, "dark": sample]).write(to: URL(fileURLWithPath: path))
+        let file = LastColorsFile(path: path)
+        #expect(file.load(for: .dark) == sample)
+        #expect(file.load(for: .light) == nil)
     }
 
     @Test func saveIsAtomic() throws {

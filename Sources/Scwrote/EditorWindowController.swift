@@ -110,7 +110,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         themeBase: ThemeBase, lastColorsFile: LastColorsFile, settingsStore: SettingsStore
     ) {
         let saved = request.restoresSession ? session.readWindowState() : nil
-        let savedColors = lastColorsFile.load()
+        let savedColors = lastColorsFile.load(for: .dark)
         let theme = themeBase.theme(nvim: savedColors)
         let window = EditorWindow(
             contentRect: NSRect(x: 0, y: 0, width: 960, height: 640),
