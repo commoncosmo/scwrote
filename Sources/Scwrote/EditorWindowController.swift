@@ -51,6 +51,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// When to set nvim's `background` as the appearance mode changes, from
     /// the one nvim was started with (see `LaunchRequest.shellCommand`).
     private var backgroundFollower: BackgroundFollower
+    /// The light and dark colors nvim has: launched with, or sent since.
+    private var colorChoices: ColorChoices
     private let nvimQueue = DispatchQueue(label: "scwrote.nvim")
     /// A second connection that only listens, for the preview.
     let previewEvents: NvimEventListener
@@ -106,16 +108,16 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// A launch that restores brings back `session`'s window side: frame,
     /// panes, dividers and browser (see EditorWindowController+Session).
     /// The window and every pane start in the launch theme: the report
-    /// `lastColorsFile` remembers for `background`, the one nvim is started
+    /// `lastColorsFile` remembers for `colors.background`, the one nvim is started
     /// with (the other one's if it has none for that), resolved against `themeBase` (Ghostty's colors alone if there's
     /// none).
     init(
         request: LaunchRequest, session: SessionFolder, controller: TerminalController, nvimSocket: String,
-        themeBase: ThemeBase, background: NvimBackground, lastColorsFile: LastColorsFile,
+        themeBase: ThemeBase, colors: LaunchColors, lastColorsFile: LastColorsFile,
         settingsStore: SettingsStore
     ) {
         let saved = request.restoresSession ? session.readWindowState() : nil
-        let savedColors = lastColorsFile.launchColors(for: background)
+        let savedColors = lastColorsFile.launchColors(for: colors.background)
         let theme = themeBase.theme(nvim: savedColors)
         let window = EditorWindow(
             contentRect: NSRect(x: 0, y: 0, width: 960, height: 640),
@@ -155,7 +157,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         self.theme = theme
         self.lastColorsFile = lastColorsFile
         self.savedColors = savedColors
-        backgroundFollower = BackgroundFollower(launchedWith: background)
+        backgroundFollower = BackgroundFollower(launchedWith: colors.background)
+        colorChoices = ColorChoices(light: colors.light, dark: colors.dark)
         super.init(window: window)
 
         window.delegate = self
@@ -400,6 +403,23 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         setNvimBackground(backgroundFollower.ownershipKnown(owned: owned))
     }
 
+    /// The light or dark colors setting changed (or some other setting did:
+    /// a pair nvim already has isn't sent again). nvim reloads scwrote's
+    /// colorscheme if it's the current one, then reports its colors, which
+    /// recolor the window.
+    func colorChoicesChanged(light: LightColors, dark: DarkColors) {
+        let choices = ColorChoices(light: light, dark: dark)
+        guard choices != colorChoices else { return }
+        colorChoices = choices
+        Task {
+            do {
+                try await nvimCall { try $0.setColorChoices(light: light, dark: dark) }
+            } catch {
+                FileHandle.standardError.write(Data("scwrote: couldn't set nvim's colors: \(error)\n".utf8))
+            }
+        }
+    }
+
     /// Sets nvim's `background`, if there's one to set. nvim then reports
     /// its colors, which recolor the window.
     private func setNvimBackground(_ background: NvimBackground?) {
@@ -642,4 +662,10 @@ final class TerminalContainerView: NSView {
         override var acceptsFirstResponder: Bool { false }
         override func hitTest(_: NSPoint) -> NSView? { nil }
     }
+}
+
+/// The light and dark colors settings, as a pair.
+private struct ColorChoices: Equatable {
+    var light: LightColors
+    var dark: DarkColors
 }

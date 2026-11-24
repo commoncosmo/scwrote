@@ -35,6 +35,10 @@ private final class ColorschemeNvim {
         try control.setBackground(background)
     }
 
+    func setColorChoices(light: LightColors, dark: DarkColors) throws {
+        try control.setColorChoices(light: light, dark: dark)
+    }
+
     var colorsName: String? {
         get throws {
             if case let .string(name) = try lua("return vim.g.colors_name") { name } else { nil }
@@ -244,6 +248,49 @@ struct ScwroteColorschemeTests {
         for group in ["Include", "Define"] {
             #expect(try nvim.color(group, "fg") == keyword, "\(palette.value): \(group) isn't the keyword color")
         }
+    }
+
+    /// A choice changed in Settings: nvim takes it at once, and reports the
+    /// colors it now has, which recolor the window.
+    @Test func aChangedChoiceReloadsTheColorscheme() throws {
+        let folder = runtimeFolder.replacingOccurrences(of: " ", with: "\\ ")
+        let reports = try Reports(arguments: [
+            "--cmd", "set rtp+=\(folder)",
+            "--cmd", "let g:scwrote_light_colors = '\(LightColors.warmPaper.rawValue)'",
+            "--cmd", "let g:scwrote_dark_colors = '\(DarkColors.softDark.rawValue)'",
+            "--cmd", "set background=light",
+            "--cmd", "colorscheme scwrote",
+        ])
+        let first = try #require(reports.report(after: 0))
+        #expect(first.groups["Normal"]?.bg == RGBColor(rgb: 0xf3efe7))
+        let client = NvimClient(
+            socketPath: reports.nvim.socketPath, connectTimeout: 10, queuesNotifications: false, waitsOutTimeouts: true)
+        defer { client.close() }
+
+        try client.setColorChoices(light: .coolSlate, dark: .softDark)
+
+        #expect(try client.request("nvim_exec_lua", [.string("return vim.g.colors_name"), .array([])]) == .string("scwrote"))
+        let coolSlate = try #require(reports.report(after: 1) { $0.groups["Normal"]?.bg == RGBColor(rgb: 0xeef2f6) })
+        #expect(coolSlate.groups["ScwroteBrowser"]?.bg == RGBColor(rgb: 0xe2e8ef))
+    }
+
+    /// A config that picked its own colorscheme keeps it.
+    @Test func aChangedChoiceLeavesAnotherColorschemeAlone() throws {
+        let nvim = try ColorschemeNvim([
+            "--cmd", "let g:scwrote_light_colors = '\(LightColors.warmPaper.rawValue)'",
+            "--cmd", "let g:scwrote_dark_colors = '\(DarkColors.softDark.rawValue)'",
+            "--cmd", "set background=light",
+            "--cmd", "colorscheme scwrote",
+            "-c", "colorscheme desert",
+        ])
+        let normal = try nvim.group("Normal")
+
+        try nvim.setColorChoices(light: .coolSlate, dark: .nvimDefault)
+
+        #expect(try nvim.colorsName == "desert")
+        #expect(try nvim.group("Normal") == normal)
+        #expect(try nvim.lua("return { vim.g.scwrote_light_colors, vim.g.scwrote_dark_colors }")
+            == .array([.string("coolSlate"), .string("nvimDefault")]))
     }
 
     /// Ghostty hands the command to a shell, so the launch's words go through

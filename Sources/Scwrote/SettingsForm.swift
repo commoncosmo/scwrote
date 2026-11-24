@@ -23,6 +23,21 @@ struct SettingsForm: View {
                 }
                 .pickerStyle(.segmented)
                 .disabled(store.problem != nil)
+                Picker("Light colors", selection: lightColorsBinding) {
+                    Text("Warm paper").tag(LightColors.warmPaper)
+                    Text("Cool slate").tag(LightColors.coolSlate)
+                }
+                .pickerStyle(.segmented)
+                .disabled(store.problem != nil)
+                Picker("Dark colors", selection: darkColorsBinding) {
+                    Text("Soft dark").tag(DarkColors.softDark)
+                    Text("nvim default").tag(DarkColors.nvimDefault)
+                }
+                .pickerStyle(.segmented)
+                .disabled(store.problem != nil)
+                Text("Used when your nvim config picks no colorscheme.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
             Section("Quick open") {
                 Toggle(isOn: binding(.showsHiddenFilesInQuickOpen)) {
@@ -58,5 +73,13 @@ struct SettingsForm: View {
 
     private var modeBinding: Binding<AppearanceMode> {
         Binding(get: { store.settings.appearanceMode }, set: { _ = store.set($0) })
+    }
+
+    private var lightColorsBinding: Binding<LightColors> {
+        Binding(get: { store.settings.lightColors }, set: { _ = store.set($0) })
+    }
+
+    private var darkColorsBinding: Binding<DarkColors> {
+        Binding(get: { store.settings.darkColors }, set: { _ = store.set($0) })
     }
 }
