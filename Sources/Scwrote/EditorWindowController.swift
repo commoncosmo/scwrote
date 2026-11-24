@@ -48,6 +48,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// launch, or saved since), so an equal report doesn't rewrite it.
     private let lastColorsFile: LastColorsFile
     private var savedColors: NvimColors?
+    /// The `background` nvim was started with (see `LaunchRequest.shellCommand`).
+    let launchBackground: NvimBackground
     private let nvimQueue = DispatchQueue(label: "scwrote.nvim")
     /// A second connection that only listens, for the preview.
     let previewEvents: NvimEventListener
@@ -103,14 +105,16 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// A launch that restores brings back `session`'s window side: frame,
     /// panes, dividers and browser (see EditorWindowController+Session).
     /// The window and every pane start in the launch theme: the report
-    /// `lastColorsFile` remembers, resolved against `themeBase` (Ghostty's
-    /// colors alone if there's none).
+    /// `lastColorsFile` remembers for `background`, the one nvim is started
+    /// with, resolved against `themeBase` (Ghostty's colors alone if there's
+    /// none).
     init(
         request: LaunchRequest, session: SessionFolder, controller: TerminalController, nvimSocket: String,
-        themeBase: ThemeBase, lastColorsFile: LastColorsFile, settingsStore: SettingsStore
+        themeBase: ThemeBase, background: NvimBackground, lastColorsFile: LastColorsFile,
+        settingsStore: SettingsStore
     ) {
         let saved = request.restoresSession ? session.readWindowState() : nil
-        let savedColors = lastColorsFile.load(for: .dark)
+        let savedColors = lastColorsFile.load(for: background)
         let theme = themeBase.theme(nvim: savedColors)
         let window = EditorWindow(
             contentRect: NSRect(x: 0, y: 0, width: 960, height: 640),
@@ -150,6 +154,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         self.theme = theme
         self.lastColorsFile = lastColorsFile
         self.savedColors = savedColors
+        launchBackground = background
         super.init(window: window)
 
         window.delegate = self
