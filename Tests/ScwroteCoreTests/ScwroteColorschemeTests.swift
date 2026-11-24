@@ -274,6 +274,27 @@ struct ScwroteColorschemeTests {
         #expect(coolSlate.groups["ScwroteBrowser"]?.bg == RGBColor(rgb: 0xe2e8ef))
     }
 
+    /// Changing the choice for the mode that isn't showing changes nothing
+    /// on screen, so it doesn't reload: a config's own highlights stay.
+    @Test func aHiddenModesChoiceLeavesTheHighlightsAlone() throws {
+        let nvim = try ColorschemeNvim([
+            "--cmd", "let g:scwrote_light_colors = '\(LightColors.warmPaper.rawValue)'",
+            "--cmd", "let g:scwrote_dark_colors = '\(DarkColors.softDark.rawValue)'",
+            "--cmd", "set background=light",
+            "--cmd", "colorscheme scwrote",
+            "-c", "hi Comment guifg=#00ff00",
+        ])
+
+        try nvim.setColorChoices(light: .warmPaper, dark: .nvimDefault)
+
+        #expect(try nvim.color("Comment", "fg") == 0x00ff00)
+        #expect(try nvim.color("Normal", "bg") == 0xf3efe7)
+        #expect(try nvim.lua("return vim.g.scwrote_dark_colors") == .string("nvimDefault"))
+        // The dark choice shows when the mode switches.
+        try nvim.setBackground(.dark)
+        #expect(try nvim.color("Normal", "bg") == 0x14161b)
+    }
+
     /// A config that picked its own colorscheme keeps it.
     @Test func aChangedChoiceLeavesAnotherColorschemeAlone() throws {
         let nvim = try ColorschemeNvim([

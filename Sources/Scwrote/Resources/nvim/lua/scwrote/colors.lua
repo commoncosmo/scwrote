@@ -27,9 +27,13 @@ function M.choice(background)
   return options[1]
 end
 
+-- The choice for the current 'background': what load() applies.
+function M.current()
+  return M.choice(vim.o.background == "light" and "light" or "dark")
+end
+
 function M.load()
-  local background = vim.o.background == "light" and "light" or "dark"
-  local choice = M.choice(background)
+  local choice = M.current()
   vim.cmd("hi clear")
   vim.g.colors_name = "scwrote"
   local palette = M.palettes[choice]

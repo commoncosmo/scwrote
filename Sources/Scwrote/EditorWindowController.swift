@@ -405,8 +405,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
     /// The light or dark colors setting changed (or some other setting did:
     /// a pair nvim already has isn't sent again). nvim reloads scwrote's
-    /// colorscheme if it's the current one, then reports its colors, which
-    /// recolor the window.
+    /// colorscheme if it's the current one and the showing mode's colors
+    /// changed, then reports its colors, which recolor the window.
     func colorChoicesChanged(light: LightColors, dark: DarkColors) {
         let choices = ColorChoices(light: light, dark: dark)
         guard choices != colorChoices else { return }
