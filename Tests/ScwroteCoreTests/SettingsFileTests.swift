@@ -179,4 +179,59 @@ private final class Temp {
                 as? [String: Any])
         #expect((target["folders"] as? [String: Any])?["reopen"] as? Bool == false)
     }
+
+    @Test func appearanceModeDefaultsToSystem() throws {
+        let t = try Temp()
+        try t.put(#"{"folders":{"reopen":false}}"#)
+        guard case .loaded(let settings) = t.file.load() else { Issue.record("expected loaded"); return }
+        #expect(settings.appearanceMode == .system)
+    }
+
+    @Test func appearanceModeReadsEachValue() throws {
+        let t = try Temp()
+        for (text, mode) in [("light", AppearanceMode.light), ("dark", .dark), ("system", .system)] {
+            try t.put(#"{"appearance":{"mode":"\#(text)"}}"#)
+            guard case .loaded(let settings) = t.file.load() else { Issue.record("expected loaded"); return }
+            #expect(settings.appearanceMode == mode)
+        }
+    }
+
+    @Test func anUnknownOrWrongTypedModeIsSystem() throws {
+        let t = try Temp()
+        for value in [#""Light""#, "3", "null", "true", "[]"] {
+            try t.put(#"{"appearance":{"mode":\#(value)},"folders":{"reopen":false}}"#)
+            #expect(t.file.load() == .loaded(Settings(showsHiddenFilesInQuickOpen: true, reopensFolders: false)))
+        }
+    }
+
+    @Test func writingTheModeKeepsOtherKeys() throws {
+        let t = try Temp()
+        try t.put(#"{"quickOpen":{"showHiddenFiles":false},"x":1}"#)
+        try t.file.write(AppearanceMode.dark)
+        let json = try t.json()
+        #expect(json["appearance"] as? [String: String] == ["mode": "dark"])
+        #expect((json["quickOpen"] as? [String: Any])?["showHiddenFiles"] as? Bool == false)
+        #expect(json["x"] as? Int == 1)
+    }
+
+    @Test func writingTheModeOverAnUnreadableFileThrows() throws {
+        let t = try Temp()
+        try t.put("{ // c")
+        #expect(throws: SettingsFileUnreadable.self) { try t.file.write(AppearanceMode.dark) }
+        #expect(try t.bytes() == Data("{ // c".utf8))
+    }
+}
+
+@Suite struct AppearanceModeTests {
+    @Test func systemFollowsTheSystemAppearance() {
+        #expect(AppearanceMode.system.background(systemIsDark: true) == .dark)
+        #expect(AppearanceMode.system.background(systemIsDark: false) == .light)
+    }
+
+    @Test func lightAndDarkIgnoreTheSystem() {
+        for dark in [true, false] {
+            #expect(AppearanceMode.light.background(systemIsDark: dark) == .light)
+            #expect(AppearanceMode.dark.background(systemIsDark: dark) == .dark)
+        }
+    }
 }

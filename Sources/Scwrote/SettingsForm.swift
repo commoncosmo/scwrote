@@ -1,8 +1,8 @@
 import ScwroteCore
 import SwiftUI
 
-/// The Settings window's one page. Each toggle applies and writes its setting
-/// at once; while the file can't be read, a note says why and the toggles are
+/// The Settings window's one page. Each control applies and writes its setting
+/// at once; while the file can't be read, a note says why and the controls are
 /// off, so nothing is written over it.
 struct SettingsForm: View {
     let store: SettingsStore
@@ -11,6 +11,18 @@ struct SettingsForm: View {
         Form {
             if let problem = store.problem {
                 Text(Self.note(path: store.file.path, problem: problem)).foregroundStyle(.red)
+            }
+            Section("Appearance") {
+                Picker(selection: modeBinding) {
+                    Text("System").tag(AppearanceMode.system)
+                    Text("Light").tag(AppearanceMode.light)
+                    Text("Dark").tag(AppearanceMode.dark)
+                } label: {
+                    Text("Mode")
+                    Text("System follows macOS.")
+                }
+                .pickerStyle(.segmented)
+                .disabled(store.problem != nil)
             }
             Section("Quick open") {
                 Toggle(isOn: binding(.showsHiddenFilesInQuickOpen)) {
@@ -42,5 +54,9 @@ struct SettingsForm: View {
 
     private func binding(_ key: SettingKey) -> Binding<Bool> {
         Binding(get: { key.value(in: store.settings) }, set: { _ = store.set(key, $0) })
+    }
+
+    private var modeBinding: Binding<AppearanceMode> {
+        Binding(get: { store.settings.appearanceMode }, set: { _ = store.set($0) })
     }
 }

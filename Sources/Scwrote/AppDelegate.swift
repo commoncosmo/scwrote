@@ -9,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) lazy var settingsStore = SettingsStore(
         file: SettingsFile(environment: ProcessInfo.processInfo.environment, home: NSHomeDirectory())
     )
+    /// Whether macOS is dark, for the System appearance mode. Made at launch.
+    private lazy var systemAppearance = SystemAppearance()
     /// Made the first time Settings opens.
     private var settingsWindow: SettingsWindowController?
     /// The `scwrote` launcher waiting to hear that this app is in front.
@@ -16,6 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         settingsStore.startWatching()
+        // From the start, so no change of the mode's background is missed.
+        systemAppearance.onChange { [weak self] _ in self?.appearanceChanged() }
+        settingsStore.onChange { [weak self] _ in self?.appearanceChanged() }
         NSApp.mainMenu = MainMenu.make()
 
         let environment = ProcessInfo.processInfo.environment
@@ -52,11 +57,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ).honoring(settingsStore.settings) // Reopen is read once: a later change doesn't touch this window.
         // nvim listens here so the file browser can tell it what to open.
         let nvimSocket = NSTemporaryDirectory() + "scwrote-\(getpid()).sock"
+        // nvim starts in the mode's brightness, and so does the window.
+        let background = effectiveBackground
         let controller: TerminalController
         let config: String
         do {
             (controller, config) = try makeTerminalController(
-                command: request.shellCommand(nvimPath: nvim, listenAddress: nvimSocket),
+                command: request.shellCommand(nvimPath: nvim, listenAddress: nvimSocket, background: background),
                 environment: environment
             )
         } catch {
@@ -69,14 +76,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The session folder is keyed by the folder nvim starts in: the
         // folder for a folder launch, the shell's for a file launch.
         let sessions = SessionStore(environment: environment, home: NSHomeDirectory())
-        // Start in the colors nvim last reported, so a colorscheme unlike
-        // Ghostty's doesn't flash Ghostty's colors first.
+        // Start in the colors nvim last reported in this brightness, so a
+        // colorscheme unlike Ghostty's doesn't flash Ghostty's colors first.
         let editor = EditorWindowController(
             request: request,
             session: sessions.folder(for: request.workingDirectory),
             controller: controller,
             nvimSocket: nvimSocket,
             themeBase: ThemeBase(configContents: config),
+            background: background,
             lastColorsFile: LastColorsFile(environment: environment, home: NSHomeDirectory()),
             settingsStore: settingsStore
         )
@@ -90,6 +98,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editors.append(editor)
         editor.showWindow(nil)
         NSApp.activate()
+    }
+
+    /// The background the appearance mode asks for now.
+    private var effectiveBackground: NvimBackground {
+        settingsStore.settings.appearanceMode.background(systemIsDark: systemAppearance.isDark)
+    }
+
+    /// macOS's appearance or the settings changed: every window follows the
+    /// mode's background (each ignores a background it already has).
+    private func appearanceChanged() {
+        let background = effectiveBackground
+        for editor in editors { editor.effectiveBackgroundChanged(to: background) }
     }
 
     /// Settings… in the scwrote menu, and Cmd+, from the editor window: shows

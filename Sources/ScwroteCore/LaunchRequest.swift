@@ -109,10 +109,12 @@ public struct LaunchRequest: Equatable, Sendable {
     }
 
     /// The command Ghostty runs. nvim listens on `listenAddress` so scwrote can
-    /// talk to it. Ghostty hands the command to a shell, so every word is
+    /// talk to it, and starts with `background` set by a `--cmd`, which runs
+    /// before the user's config (and their own `--cmd`s), so either can
+    /// override it. Ghostty hands the command to a shell, so every word is
     /// single-quoted to keep spaces and quotes in paths intact.
-    public func shellCommand(nvimPath: String, listenAddress: String) -> String {
-        ([nvimPath, "--listen", listenAddress] + nvimArguments)
+    public func shellCommand(nvimPath: String, listenAddress: String, background: NvimBackground) -> String {
+        ([nvimPath, "--listen", listenAddress, "--cmd", "set background=\(background.rawValue)"] + nvimArguments)
             .map(Self.singleQuoted)
             .joined(separator: " ")
     }

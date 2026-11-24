@@ -1,3 +1,22 @@
+/// The `background` nvim is told to use.
+public enum NvimBackground: String, Sendable {
+    case light, dark
+}
+
+/// Which appearance the editor uses: the system's, or always light or dark.
+public enum AppearanceMode: String, CaseIterable, Sendable {
+    case system, light, dark
+
+    /// The `background` this mode asks for, given whether macOS is in dark mode.
+    public func background(systemIsDark: Bool) -> NvimBackground {
+        switch self {
+        case .system: systemIsDark ? .dark : .light
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
+
 /// The user's preferences, as scwrote applies them.
 public struct Settings: Equatable, Sendable {
     /// Whether quick open lists hidden files and folders.
@@ -5,13 +24,17 @@ public struct Settings: Equatable, Sendable {
     /// Whether launching in a folder restores that folder's saved session.
     public var reopensFolders: Bool
 
-    public init(showsHiddenFilesInQuickOpen: Bool, reopensFolders: Bool) {
+    /// Whether the editor follows macOS's appearance or stays light or dark.
+    public var appearanceMode: AppearanceMode
+
+    public init(showsHiddenFilesInQuickOpen: Bool, reopensFolders: Bool, appearanceMode: AppearanceMode = .system) {
         self.showsHiddenFilesInQuickOpen = showsHiddenFilesInQuickOpen
         self.reopensFolders = reopensFolders
+        self.appearanceMode = appearanceMode
     }
 
     /// What applies when there is no file, or a value in it is missing or of the wrong type.
-    public static let defaults = Settings(showsHiddenFilesInQuickOpen: true, reopensFolders: true)
+    public static let defaults = Settings(showsHiddenFilesInQuickOpen: true, reopensFolders: true, appearanceMode: .system)
 }
 
 /// One setting, with where its value lives in settings.json.

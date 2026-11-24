@@ -72,6 +72,9 @@ public enum PreviewEvent: Equatable, Sendable {
     /// The colors of nvim's colorscheme, sent on install and whenever the
     /// colorscheme or `background` changes (see `ColorAutocommands`).
     case colors(NvimColors)
+    /// Whether scwrote owns `background`: sent once, after startup, by
+    /// `BackgroundOwnership`. False when the user's config set it.
+    case backgroundOwner(owned: Bool)
 
     static let method = "scwrote_preview"
 
@@ -80,6 +83,13 @@ public enum PreviewEvent: Equatable, Sendable {
         if method == NvimColors.method {
             guard let colors = NvimColors(params: params) else { return nil }
             self = .colors(colors)
+            return
+        }
+        if method == BackgroundOwnership.method {
+            guard params.count == 1, case let .map(fields) = params[0],
+                  case let .bool(owned)? = fields[.string("owned")]
+            else { return nil }
+            self = .backgroundOwner(owned: owned)
             return
         }
         guard method == Self.method, params.count == 1, case let .map(fields) = params[0],
