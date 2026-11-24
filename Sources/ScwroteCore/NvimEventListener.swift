@@ -14,7 +14,8 @@ public final class NvimEventListener: @unchecked Sendable {
     /// The listening connection's channel, once nvim has said it.
     private var channel: Int64?
     private var sendsText = false
-    /// Whether the color autocommands are installed (or being installed); once.
+    /// Whether the color autocommands and the background ownership report
+    /// are installed (or being installed); once.
     private var colorsInstalled = false
 
     public init(socketPath: String, connectTimeout: TimeInterval = 2) {
@@ -90,6 +91,10 @@ public final class NvimEventListener: @unchecked Sendable {
                     _ = try control.request(
                         "nvim_exec_lua",
                         [.string(ColorAutocommands.lua), .array(ColorAutocommands.arguments(channel: channel))]
+                    )
+                    _ = try control.request(
+                        "nvim_exec_lua",
+                        [.string(BackgroundOwnership.lua), .array(BackgroundOwnership.arguments(channel: channel))]
                     )
                 }
             } catch {

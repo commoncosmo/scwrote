@@ -136,6 +136,18 @@ struct PreviewEventTests {
         #expect(PreviewEvent(method: "scwrote_colors", params: [.map([.string("background"): .int(1)])]) == nil)
         #expect(PreviewEvent(method: "scwrote_colors", params: []) == nil)
     }
+
+    @Test func backgroundOwnerDecodes() {
+        let params: [MessagePackValue] = [.map([.string("owned"): .bool(true)])]
+
+        #expect(PreviewEvent(method: "scwrote_background_owner", params: params) == .backgroundOwner(owned: true))
+    }
+
+    @Test func backgroundOwnerWithoutABoolIsNil() {
+        #expect(PreviewEvent(method: "scwrote_background_owner", params: [.map([.string("owned"): .int(1)])]) == nil)
+        #expect(PreviewEvent(method: "scwrote_background_owner", params: [.map([:])]) == nil)
+        #expect(PreviewEvent(method: "scwrote_background_owner", params: []) == nil)
+    }
 }
 
 struct BufferSnapshotLineCountTests {

@@ -243,10 +243,22 @@ struct NvimEventListenerTests {
             switch event {
             case let .buffer(snapshot): snapshot.path != session.file
             case let .cursor(path, _): path != session.file
-            case .modified, .unsaved, .colors: false
+            case .modified, .unsaved, .colors, .backgroundOwner: false
             }
         }
         #expect(strays.isEmpty)
+    }
+
+    /// Once, however often the preview autocommands are reinstalled.
+    @Test func whoOwnsBackgroundIsReportedOnce() throws {
+        let session = try Session(contents: "# hi\n", sendsText: false)
+        #expect(session.log.waitFor(timeout: 10) { $0.events.contains(.backgroundOwner(owned: true)) })
+
+        session.listener.setSendsText(true)
+        #expect(session.log.waitFor { $0.buffers.contains { $0.text != nil } })
+        Thread.sleep(forTimeInterval: 0.3)
+
+        #expect(session.log.events.filter { $0 == .backgroundOwner(owned: true) }.count == 1)
     }
 
     @Test func hugeBuffersAreSentWithoutText() throws {

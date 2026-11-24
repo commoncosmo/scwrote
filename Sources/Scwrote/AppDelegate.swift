@@ -56,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let config: String
         do {
             (controller, config) = try makeTerminalController(
-                command: request.shellCommand(nvimPath: nvim, listenAddress: nvimSocket),
+                command: request.shellCommand(nvimPath: nvim, listenAddress: nvimSocket, background: .dark),
                 environment: environment
             )
         } catch {

@@ -205,8 +205,23 @@ struct LaunchRequestTests {
         )
 
         #expect(
-            request.shellCommand(nvimPath: "/opt/homebrew/bin/nvim", listenAddress: "/tmp/s.sock")
-                == #"'/opt/homebrew/bin/nvim' '--listen' '/tmp/s.sock' 'my notes.md' 'it'\''s.md'"#
+            request.shellCommand(nvimPath: "/opt/homebrew/bin/nvim", listenAddress: "/tmp/s.sock", background: .dark)
+                == #"'/opt/homebrew/bin/nvim' '--listen' '/tmp/s.sock' '--cmd' 'set background=dark' 'my notes.md' 'it'\''s.md'"#
+        )
+    }
+
+    @Test func shellCommandSetsTheBackgroundBeforeTheUsersArguments() {
+        let request = LaunchRequest(
+            workingDirectory: "/tmp",
+            nvimArguments: ["--cmd", "x"],
+            title: "tmp",
+            browserRoot: "/tmp",
+            startsInBrowser: true
+        )
+
+        #expect(
+            request.shellCommand(nvimPath: "/opt/homebrew/bin/nvim", listenAddress: "/tmp/s.sock", background: .light)
+                == "'/opt/homebrew/bin/nvim' '--listen' '/tmp/s.sock' '--cmd' 'set background=light' '--cmd' 'x'"
         )
     }
 }

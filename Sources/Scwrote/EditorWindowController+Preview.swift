@@ -49,6 +49,8 @@ extension EditorWindowController {
         case let .colors(report):
             receiveColors(report)
             return
+        case .backgroundOwner:
+            return
         case .modified, .unsaved: break
         }
         var unsaved = browserView.unsaved
